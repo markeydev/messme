@@ -4,12 +4,16 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { channelsAPI, type Channel, type ChannelMessage, type Chat } from '@/lib/api'
+import {
+  channelsAPI, chatsAPI, usersAPI, profileAPI,
+  type Channel, type ChannelMessage, type Chat, type User,
+} from '@/lib/api'
 import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
 import {
   ArrowLeft, Hash, Volume2, Plus, Trash2, Send, Loader2,
   Mic, MicOff, PhoneOff, Gamepad2, X, Pencil, Check,
+  Headphones, EarOff, UserPlus, Camera,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -25,8 +29,22 @@ interface VoicePeer {
   stream?: MediaStream
 }
 
+interface PersistedVoice {
+  chatId: string
+  channel: Channel
+  stream: MediaStream
+  pcs: Map<string, RTCPeerConnection>
+  audioEls: Map<string, HTMLAudioElement>
+  peers: VoicePeer[]
+  isMuted: boolean
+  isDeafened: boolean
+}
+
+// Module-level: survives component unmounts (user switching between chats)
+let _persistedVoice: PersistedVoice | null = null
+
 export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
-  const { user } = useMessengerStore()
+  const { user, updateChatMembers, updateChat } = useMessengerStore()
 
   // ── Channels ──────────────────────────────────────────────────────────────
   const [channels, setChannels] = useState<Channel[]>([])
@@ -56,12 +74,132 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   const [activeVoiceChannel, setActiveVoiceChannel] = useState<Channel | null>(null)
   const [voicePeers, setVoicePeers] = useState<VoicePeer[]>([])
   const [isMicMuted, setIsMicMuted] = useState(false)
+  const [isDeafened, setIsDeafened] = useState(false)
   const [isJoiningVoice, setIsJoiningVoice] = useState(false)
   const [ping, setPing] = useState<number | null>(null)
+  const [speakingUsers, setSpeakingUsers] = useState<Set<string>>(new Set())
+  const [userVolumes, setUserVolumes] = useState<Record<string, number>>({})
+  const [userVolumeMenu, setUserVolumeMenu] = useState<{
+    userId: string; username: string; x: number; y: number
+  } | null>(null)
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map())
   const audioElements = useRef<Map<string, HTMLAudioElement>>(new Map())
+  const audioCtxRef = useRef<AudioContext | null>(null)
+  const analyserNodes = useRef<Map<string, AnalyserNode>>(new Map())
+  const userVolumesRef = useRef<Record<string, number>>({})
+  // Refs mirroring state for use in cleanup / callbacks
+  const activeVoiceChannelRef = useRef<Channel | null>(null)
+  const voicePeersRef = useRef<VoicePeer[]>([])
+  const isMicMutedRef = useRef(false)
+  const isDeafenedRef = useRef(false)
+
+  // ── Members panel ─────────────────────────────────────────────────────────
+  const [showMembers, setShowMembers] = useState(false)
+  const [memberSearch, setMemberSearch] = useState('')
+  const [memberSearchResults, setMemberSearchResults] = useState<User[]>([])
+  const [selectedToAdd, setSelectedToAdd] = useState<string[]>([])
+  const [isAddingMembers, setIsAddingMembers] = useState(false)
+
+  // ── Avatar upload ─────────────────────────────────────────────────────────
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
+  const avatarFileInputRef = useRef<HTMLInputElement>(null)
+
+  // ── Ref sync (for stable access in cleanup / callbacks) ───────────────────
+  useEffect(() => { activeVoiceChannelRef.current = activeVoiceChannel }, [activeVoiceChannel])
+  useEffect(() => { voicePeersRef.current = voicePeers }, [voicePeers])
+  useEffect(() => { isMicMutedRef.current = isMicMuted }, [isMicMuted])
+  useEffect(() => { isDeafenedRef.current = isDeafened }, [isDeafened])
+  useEffect(() => { userVolumesRef.current = userVolumes }, [userVolumes])
+
+  // ── Voice Activity Detection ──────────────────────────────────────────────
+  const setupAnalyser = useCallback((userId: string, stream: MediaStream) => {
+    if (analyserNodes.current.has(userId)) return
+    if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+      audioCtxRef.current = new AudioContext()
+    }
+    try {
+      const analyser = audioCtxRef.current.createAnalyser()
+      analyser.fftSize = 256
+      audioCtxRef.current.createMediaStreamSource(stream).connect(analyser)
+      analyserNodes.current.set(userId, analyser)
+    } catch {}
+  }, [])
+
+  useEffect(() => {
+    if (!activeVoiceChannel) { setSpeakingUsers(new Set()); return }
+    const buf = new Uint8Array(64)
+    const id = setInterval(() => {
+      const next = new Set<string>()
+      analyserNodes.current.forEach((an, uid) => {
+        an.getByteFrequencyData(buf)
+        if (buf.reduce((s, v) => s + v, 0) / buf.length > 10) next.add(uid)
+      })
+      setSpeakingUsers(prev => {
+        if (prev.size === next.size && [...prev].every(id => next.has(id))) return prev
+        return next
+      })
+    }, 100)
+    return () => clearInterval(id)
+  }, [activeVoiceChannel?.id])
+
+  // ── Restore persisted voice on mount ─────────────────────────────────────
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (_persistedVoice?.chatId === chat.id && user) {
+      const v = _persistedVoice
+      localStreamRef.current = v.stream
+      peerConnections.current = v.pcs
+      audioElements.current = v.audioEls
+      setupAnalyser(user.id, v.stream)
+      for (const peer of v.peers) {
+        if (peer.stream) setupAnalyser(peer.userId, peer.stream)
+      }
+      v.audioEls.forEach(el => { el.volume = v.isDeafened ? 0 : 1 })
+      setActiveVoiceChannel(v.channel)
+      setVoicePeers([...v.peers])
+      setIsMicMuted(v.isMuted)
+      setIsDeafened(v.isDeafened)
+      pingIntervalRef.current = setInterval(async () => {
+        const ms = await messengerSocket.measurePing()
+        setPing(ms)
+      }, 3000)
+      messengerSocket.measurePing().then(setPing)
+    }
+  }, []) // intentionally only runs on mount
+
+  // ── Persist voice on unmount (chat switch) ────────────────────────────────
+  useEffect(() => {
+    return () => {
+      if (activeVoiceChannelRef.current && localStreamRef.current) {
+        _persistedVoice = {
+          chatId: chat.id,
+          channel: activeVoiceChannelRef.current,
+          stream: localStreamRef.current,
+          pcs: peerConnections.current,
+          audioEls: audioElements.current,
+          peers: voicePeersRef.current,
+          isMuted: isMicMutedRef.current,
+          isDeafened: isDeafenedRef.current,
+        }
+      }
+      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current)
+    }
+  }, [chat.id])
+
+  // ── Member search ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!memberSearch.trim()) { setMemberSearchResults([]); return }
+    const t = setTimeout(async () => {
+      const r = await usersAPI.search(memberSearch)
+      if (r.users) {
+        const ids = new Set(chat.members.map(m => m.id))
+        setMemberSearchResults(r.users.filter(u => !ids.has(u.id) && u.id !== user?.id))
+      }
+    }, 300)
+    return () => clearTimeout(t)
+  }, [memberSearch, chat.members, user?.id])
 
   // ── Load channels ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -116,21 +254,21 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   // ── Socket: voice events ──────────────────────────────────────────────────
   useEffect(() => {
     const onJoined = (data: { channelId: string; userId: string; username: string; avatarUrl?: string | null }) => {
-      if (data.channelId !== activeVoiceChannel?.id) return
+      if (data.channelId !== activeVoiceChannelRef.current?.id) return
       setVoicePeers(prev => prev.find(p => p.userId === data.userId) ? prev : [...prev, { userId: data.userId, username: data.username, avatarUrl: data.avatarUrl }])
       createOffer(data.userId, data.channelId)
     }
     const onLeft = (data: { channelId: string; userId: string }) => {
-      if (data.channelId !== activeVoiceChannel?.id) return
+      if (data.channelId !== activeVoiceChannelRef.current?.id) return
       setVoicePeers(prev => prev.filter(p => p.userId !== data.userId))
       closePeer(data.userId)
     }
     const onMembers = (data: { channelId: string; members: Array<{ userId: string; username: string; avatarUrl?: string | null }> }) => {
-      if (data.channelId !== activeVoiceChannel?.id) return
+      if (data.channelId !== activeVoiceChannelRef.current?.id) return
       setVoicePeers(data.members.filter(m => m.userId !== user?.id))
     }
     const onOffer = async (data: { channelId: string; fromUserId: string; offer: RTCSessionDescriptionInit }) => {
-      if (data.channelId !== activeVoiceChannel?.id) return
+      if (data.channelId !== activeVoiceChannelRef.current?.id) return
       await handleIncomingOffer(data.fromUserId, data.channelId, data.offer)
     }
     const onAnswer = async (data: { channelId: string; fromUserId: string; answer: RTCSessionDescriptionInit }) => {
@@ -156,15 +294,15 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       messengerSocket.off('vc-answer', onAnswer)
       messengerSocket.off('vc-ice', onIce)
     }
-  }, [activeVoiceChannel?.id, user?.id])
+  }, [user?.id]) // uses activeVoiceChannelRef (ref) — no state dep needed
 
-  // ── Close context menu on click outside ───────────────────────────────────
+  // ── Close context menus on click outside ─────────────────────────────────
   useEffect(() => {
-    if (!ctxMenu) return
-    const close = () => setCtxMenu(null)
+    if (!ctxMenu && !userVolumeMenu) return
+    const close = () => { setCtxMenu(null); setUserVolumeMenu(null) }
     window.addEventListener('click', close)
     return () => window.removeEventListener('click', close)
-  }, [ctxMenu])
+  }, [ctxMenu, userVolumeMenu])
 
   // ── WebRTC ────────────────────────────────────────────────────────────────
   const createPeerConnection = useCallback((remoteUserId: string, channelId: string): RTCPeerConnection => {
@@ -177,6 +315,8 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       let el = audioElements.current.get(remoteUserId)
       if (!el) { el = new Audio(); el.autoplay = true; audioElements.current.set(remoteUserId, el) }
       el.srcObject = stream
+      el.volume = isDeafenedRef.current ? 0 : Math.min(2, (userVolumesRef.current[remoteUserId] ?? 100) / 100)
+      setupAnalyser(remoteUserId, stream)
     }
     peerConnections.current.set(remoteUserId, pc)
     return pc
@@ -203,6 +343,8 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     peerConnections.current.delete(remoteUserId)
     const el = audioElements.current.get(remoteUserId)
     if (el) { el.srcObject = null; audioElements.current.delete(remoteUserId) }
+    analyserNodes.current.delete(remoteUserId)
+    setSpeakingUsers(prev => { const n = new Set(prev); n.delete(remoteUserId); return n })
   }, [])
 
   const joinVoiceChannel = async (channel: Channel) => {
@@ -212,10 +354,10 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
       localStreamRef.current = stream
+      setupAnalyser(user.id, stream)
       setActiveVoiceChannel(channel)
       setVoicePeers([])
       messengerSocket.joinVoiceChannel(channel.id, user.id, user.username)
-      // start ping measuring
       pingIntervalRef.current = setInterval(async () => {
         const ms = await messengerSocket.measurePing()
         setPing(ms)
@@ -227,28 +369,72 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   }
 
   const leaveVoiceChannel = useCallback(async () => {
-    if (!user || !activeVoiceChannel) return
-    messengerSocket.leaveVoiceChannel(activeVoiceChannel.id, user.id)
+    if (!user || !activeVoiceChannelRef.current) return
+    _persistedVoice = null // explicit leave
+    messengerSocket.leaveVoiceChannel(activeVoiceChannelRef.current.id, user.id)
     peerConnections.current.forEach(pc => pc.close())
     peerConnections.current.clear()
     audioElements.current.forEach(el => { el.srcObject = null })
     audioElements.current.clear()
+    analyserNodes.current.clear()
+    audioCtxRef.current?.close().catch(() => {})
+    audioCtxRef.current = null
     localStreamRef.current?.getTracks().forEach(t => t.stop())
     localStreamRef.current = null
-    if (pingIntervalRef.current) clearInterval(pingIntervalRef.current)
+    if (pingIntervalRef.current) { clearInterval(pingIntervalRef.current); pingIntervalRef.current = null }
     setPing(null)
     setActiveVoiceChannel(null)
     setVoicePeers([])
-  }, [user, activeVoiceChannel])
+    setSpeakingUsers(new Set())
+  }, [user])
 
-  useEffect(() => () => { leaveVoiceChannel() }, [])
-
-  // Fix: toggle mic properly — muted = tracks disabled
+  // ── Mic / deafen toggles ────────────────────────────────────────────────────────
   const toggleMic = () => {
     if (!localStreamRef.current) return
     const newMuted = !isMicMuted
     localStreamRef.current.getAudioTracks().forEach(t => { t.enabled = !newMuted })
     setIsMicMuted(newMuted)
+  }
+
+  const toggleDeafen = () => {
+    const newDeafened = !isDeafened
+    if (newDeafened && !isMicMutedRef.current) {
+      localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = false })
+      setIsMicMuted(true)
+    }
+    audioElements.current.forEach((el, uid) => {
+      el.volume = newDeafened ? 0 : Math.min(2, (userVolumesRef.current[uid] ?? 100) / 100)
+    })
+    setIsDeafened(newDeafened)
+  }
+
+  // ── Members management ────────────────────────────────────────────────────────────
+  const handleAddMembers = async () => {
+    if (!selectedToAdd.length) return
+    setIsAddingMembers(true)
+    const r = await chatsAPI.addMembers(chat.id, selectedToAdd)
+    if (r.newMembers) {
+      updateChatMembers(chat.id, [...chat.members, ...r.newMembers])
+    }
+    setSelectedToAdd([])
+    setMemberSearch('')
+    setMemberSearchResults([])
+    setShowMembers(false)
+    setIsAddingMembers(false)
+  }
+
+  // ── Avatar upload ─────────────────────────────────────────────────────────────
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setIsUploadingAvatar(true)
+    const uploaded = await profileAPI.uploadAvatar(file, 'group')
+    if (uploaded.url) {
+      await chatsAPI.updateGroupSettings(chat.id, chat.title, uploaded.url)
+      updateChat(chat.id, { avatarUrl: uploaded.url })
+    }
+    setIsUploadingAvatar(false)
   }
 
   // ── Send message ──────────────────────────────────────────────────────────
@@ -413,14 +599,31 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div className="flex items-center gap-2 flex-1 min-w-0">
-            <Avatar className="h-7 w-7 flex-shrink-0">
-              {chat.avatarUrl && <AvatarImage src={chat.avatarUrl} alt={chat.title} />}
-              <AvatarFallback className="bg-[#5d6cf5] text-white text-[10px] font-bold rounded-lg">
-                <Gamepad2 className="h-3.5 w-3.5" />
-              </AvatarFallback>
-            </Avatar>
-            <span className="font-bold text-sm text-white truncate">{chat.title}</span>
+            <button
+              className="group relative flex-shrink-0"
+              onClick={() => avatarFileInputRef.current?.click()}
+              title="Изменить аватар группы"
+            >
+              <Avatar className="h-7 w-7">
+                {chat.avatarUrl && <AvatarImage src={chat.avatarUrl} alt={chat.title} />}
+                <AvatarFallback className="bg-[#5d6cf5] text-white text-[10px] font-bold rounded-lg">
+                  {isUploadingAvatar ? <Loader2 className="h-3 w-3 animate-spin" /> : <Gamepad2 className="h-3.5 w-3.5" />}
+                </AvatarFallback>
+              </Avatar>
+              <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                <Camera className="h-3 w-3 text-white" />
+              </div>
+            </button>
+            <span className="font-bold text-sm text-white truncate flex-1">{chat.title}</span>
           </div>
+          <button
+            onClick={() => setShowMembers(true)}
+            className="h-6 w-6 flex items-center justify-center text-white/40 hover:text-white/80 flex-shrink-0 transition-colors"
+            title="Участники"
+          >
+            <UserPlus className="h-4 w-4" />
+          </button>
+          <input ref={avatarFileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
         </div>
 
         {/* Channels */}
@@ -473,16 +676,22 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                     <div className="ml-5 mt-1 space-y-0.5">
                       {/* Self */}
                       <div className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] text-[#8b97ff]">
-                        <Avatar className="h-5 w-5">
+                        <Avatar className={cn('h-5 w-5 ring-1 ring-offset-1 ring-offset-[#13141f] transition-all',
+                          speakingUsers.has(user?.id ?? '') ? 'ring-green-400' : 'ring-transparent')}>
                           {user?.avatarUrl && <AvatarImage src={user.avatarUrl} />}
                           <AvatarFallback className="bg-[#5d6cf5] text-white text-[8px] font-bold">{getInitials(user?.username ?? '?')}</AvatarFallback>
                         </Avatar>
                         <span className="truncate">{user?.username}</span>
-                        {isMicMuted && <MicOff className="h-2.5 w-2.5 text-red-400 flex-shrink-0" />}
+                        {(isMicMuted || isDeafened) && <MicOff className="h-2.5 w-2.5 text-red-400 flex-shrink-0" />}
                       </div>
                       {voicePeers.map(p => (
-                        <div key={p.userId} className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] text-white/50">
-                          <Avatar className="h-5 w-5">
+                        <div
+                          key={p.userId}
+                          className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] text-white/50 cursor-context-menu"
+                          onContextMenu={e => { e.preventDefault(); setUserVolumeMenu({ userId: p.userId, username: p.username, x: e.clientX, y: e.clientY }) }}
+                        >
+                          <Avatar className={cn('h-5 w-5 ring-1 ring-offset-1 ring-offset-[#13141f] transition-all',
+                            speakingUsers.has(p.userId) ? 'ring-green-400' : 'ring-transparent')}>
                             {p.avatarUrl && <AvatarImage src={p.avatarUrl} />}
                             <AvatarFallback className="bg-white/10 text-white text-[8px] font-bold">{getInitials(p.username)}</AvatarFallback>
                           </Avatar>
@@ -505,8 +714,16 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
               <button
                 onClick={toggleMic}
                 className={cn('h-6 w-6 flex items-center justify-center rounded hover:bg-white/10 transition-colors', isMicMuted ? 'text-red-400' : 'text-white/60')}
+                title={isMicMuted ? 'Включить микрофон' : 'Выключить микрофон'}
               >
                 {isMicMuted ? <MicOff className="h-3 w-3" /> : <Mic className="h-3 w-3" />}
+              </button>
+              <button
+                onClick={toggleDeafen}
+                className={cn('h-6 w-6 flex items-center justify-center rounded hover:bg-white/10 transition-colors', isDeafened ? 'text-red-400' : 'text-white/60')}
+                title={isDeafened ? 'Включить звук' : 'Выключить звук'}
+              >
+                {isDeafened ? <EarOff className="h-3 w-3" /> : <Headphones className="h-3 w-3" />}
               </button>
               <button onClick={leaveVoiceChannel} className="h-6 w-6 flex items-center justify-center rounded hover:bg-red-500/20 text-white/40 hover:text-red-400 transition-colors">
                 <PhoneOff className="h-3 w-3" />
@@ -561,19 +778,27 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                 <div className="flex flex-col gap-2 w-full max-w-xs">
                   {/* Self */}
                   <div className={cn('flex items-center gap-3 px-4 py-2.5 rounded-xl ring-1 transition-all',
-                    isMicMuted ? 'ring-red-500/40 bg-red-500/5' : 'ring-[#5d6cf5]/40 bg-[#5d6cf5]/5')}>
-                    <Avatar className="h-10 w-10 flex-shrink-0">
+                    speakingUsers.has(user?.id ?? '') ? 'ring-green-400 bg-green-400/5' : isMicMuted ? 'ring-red-500/40 bg-red-500/5' : 'ring-[#5d6cf5]/40 bg-[#5d6cf5]/5')}>
+                    <Avatar className={cn('h-10 w-10 flex-shrink-0 ring-2 ring-offset-2 ring-offset-[#1a1b26] transition-all',
+                      speakingUsers.has(user?.id ?? '') ? 'ring-green-400' : 'ring-transparent')}>
                       {user?.avatarUrl && <AvatarImage src={user.avatarUrl} />}
                       <AvatarFallback className="bg-[#5d6cf5] text-white font-bold">{getInitials(user?.username ?? '?')}</AvatarFallback>
                     </Avatar>
                     <span className="font-medium text-white flex-1">{user?.username}</span>
-                    {isMicMuted
-                      ? <MicOff className="h-4 w-4 text-red-400 flex-shrink-0" />
-                      : <Mic className="h-4 w-4 text-[#5d6cf5] flex-shrink-0" />}
+                    <div className="flex items-center gap-1">
+                      {isMicMuted ? <MicOff className="h-4 w-4 text-red-400 flex-shrink-0" /> : <Mic className="h-4 w-4 text-[#5d6cf5] flex-shrink-0" />}
+                      {isDeafened && <EarOff className="h-4 w-4 text-red-400 flex-shrink-0" />}
+                    </div>
                   </div>
                   {voicePeers.map(p => (
-                    <div key={p.userId} className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-white/[0.04] ring-1 ring-white/10">
-                      <Avatar className="h-10 w-10 flex-shrink-0">
+                    <div
+                      key={p.userId}
+                      className={cn('flex items-center gap-3 px-4 py-2.5 rounded-xl ring-1 cursor-context-menu transition-all',
+                        speakingUsers.has(p.userId) ? 'ring-green-400 bg-green-400/5' : 'ring-white/10 bg-white/[0.04]')}
+                      onContextMenu={e => { e.preventDefault(); setUserVolumeMenu({ userId: p.userId, username: p.username, x: e.clientX, y: e.clientY }) }}
+                    >
+                      <Avatar className={cn('h-10 w-10 flex-shrink-0 ring-2 ring-offset-2 ring-offset-[#1a1b26] transition-all',
+                        speakingUsers.has(p.userId) ? 'ring-green-400' : 'ring-transparent')}>
                         {p.avatarUrl && <AvatarImage src={p.avatarUrl} />}
                         <AvatarFallback className="bg-white/10 text-white font-bold">{getInitials(p.username)}</AvatarFallback>
                       </Avatar>
@@ -589,8 +814,17 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                     onClick={toggleMic}
                     className={cn('h-14 w-14 rounded-full flex items-center justify-center transition-all shadow-lg',
                       isMicMuted ? 'bg-red-500 hover:bg-red-600' : 'bg-white/[0.12] hover:bg-white/[0.20]')}
+                    title={isMicMuted ? 'Включить микрофон' : 'Выключить микрофон'}
                   >
                     {isMicMuted ? <MicOff className="h-6 w-6 text-white" /> : <Mic className="h-6 w-6 text-white" />}
+                  </button>
+                  <button
+                    onClick={toggleDeafen}
+                    className={cn('h-14 w-14 rounded-full flex items-center justify-center transition-all shadow-lg',
+                      isDeafened ? 'bg-red-500 hover:bg-red-600' : 'bg-white/[0.12] hover:bg-white/[0.20]')}
+                    title={isDeafened ? 'Включить наушники' : 'Выключить наушники'}
+                  >
+                    {isDeafened ? <EarOff className="h-6 w-6 text-white" /> : <Headphones className="h-6 w-6 text-white" />}
                   </button>
                   <button
                     onClick={leaveVoiceChannel}
@@ -739,8 +973,104 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
         )}
       </div>
 
-      {/* ── Create Channel Modal ───────────────────────────────────────────── */}
-      {showCreateChannel && (
+      {/* ── User Volume Context Menu ──────────────────────────────────────── */}
+      {userVolumeMenu && (
+        <div
+          className="fixed z-50 bg-[#1c1d2e] border border-white/[0.10] rounded-xl shadow-2xl p-3 w-56"
+          style={{ left: userVolumeMenu.x, top: userVolumeMenu.y }}
+          onClick={e => e.stopPropagation()}
+        >
+          <p className="text-xs font-semibold text-white/60 mb-2 truncate">Громкость: {userVolumeMenu.username}</p>
+          <div className="flex items-center gap-2">
+            <Volume2 className="h-3.5 w-3.5 text-white/40 flex-shrink-0" />
+            <input
+              type="range" min="0" max="200"
+              value={userVolumes[userVolumeMenu.userId] ?? 100}
+              onChange={e => {
+                const v = Number(e.target.value)
+                setUserVolumes(prev => ({ ...prev, [userVolumeMenu.userId]: v }))
+                const el = audioElements.current.get(userVolumeMenu.userId)
+                if (el) el.volume = isDeafened ? 0 : Math.min(2, v / 100)
+              }}
+              className="flex-1 accent-[#5d6cf5]"
+            />
+            <span className="text-xs text-white/50 w-8 text-right">
+              {userVolumes[userVolumeMenu.userId] ?? 100}%
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Add Members Modal ─────────────────────────────────────────────── */}
+      {showMembers && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowMembers(false)}>
+          <div className="bg-[#1c1d2e] border border-white/[0.10] rounded-2xl w-80 p-5 shadow-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
+              <h3 className="font-bold text-white text-base">Участники</h3>
+              <button onClick={() => setShowMembers(false)} className="text-white/40 hover:text-white/80"><X className="h-5 w-5" /></button>
+            </div>
+
+            {/* Current members */}
+            <div className="flex-1 min-h-0 overflow-y-auto mb-3 space-y-1">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-white/40 mb-2">Сейчас ({chat.members.length})</p>
+              {chat.members.map(m => (
+                <div key={m.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg">
+                  <Avatar className="h-7 w-7 flex-shrink-0">
+                    {m.avatarUrl && <AvatarImage src={m.avatarUrl} />}
+                    <AvatarFallback className="bg-[#5d6cf5]/40 text-white text-xs font-bold">{getInitials(m.username)}</AvatarFallback>
+                  </Avatar>
+                  <span className="text-sm text-white/80 truncate">{m.username}</span>
+                  {m.id === chat.ownerId && <span className="text-[10px] bg-[#5d6cf5]/30 text-[#8b97ff] px-1.5 py-0.5 rounded font-medium flex-shrink-0">Владелец</span>}
+                </div>
+              ))}
+            </div>
+
+            {/* Search + add */}
+            <div className="flex-shrink-0 border-t border-white/[0.06] pt-3 space-y-2">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-white/40">Добавить</p>
+              <Input
+                placeholder="Поиск пользователей..."
+                value={memberSearch}
+                onChange={e => setMemberSearch(e.target.value)}
+                className="bg-white/[0.07] border-white/[0.10] text-white placeholder:text-white/30 rounded-xl"
+              />
+              {memberSearchResults.length > 0 && (
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {memberSearchResults.map(u => {
+                    const sel = selectedToAdd.includes(u.id)
+                    return (
+                      <button
+                        key={u.id}
+                        onClick={() => setSelectedToAdd(prev => sel ? prev.filter(id => id !== u.id) : [...prev, u.id])}
+                        className={cn('w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-colors',
+                          sel ? 'bg-[#5d6cf5]/20 text-white' : 'hover:bg-white/[0.06] text-white/70')}
+                      >
+                        <Avatar className="h-6 w-6 flex-shrink-0">
+                          {u.avatarUrl && <AvatarImage src={u.avatarUrl} />}
+                          <AvatarFallback className="bg-white/10 text-white text-[10px] font-bold">{getInitials(u.username)}</AvatarFallback>
+                        </Avatar>
+                        <span className="text-sm flex-1 truncate">{u.username}</span>
+                        {sel && <Check className="h-3.5 w-3.5 text-[#5d6cf5] flex-shrink-0" />}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              {selectedToAdd.length > 0 && (
+                <Button
+                  onClick={handleAddMembers}
+                  disabled={isAddingMembers}
+                  className="w-full bg-[#5d6cf5] hover:bg-[#4a5be0] text-white"
+                >
+                  {isAddingMembers ? <Loader2 className="h-4 w-4 animate-spin" /> : `Добавить (${selectedToAdd.length})`}
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Create Channel Modal ───────────────────────────────────────────── */}      {showCreateChannel && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowCreateChannel(false)}>
           <div className="bg-[#1c1d2e] border border-white/[0.10] rounded-2xl w-80 p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
