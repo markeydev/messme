@@ -13,8 +13,13 @@ import { messengerSocket } from '@/lib/socket'
 import {
   ArrowLeft, Hash, Volume2, Plus, Trash2, Send, Loader2,
   Mic, MicOff, PhoneOff, Gamepad2, X, Pencil, Check,
-  Headphones, EarOff, UserPlus, Camera,
+  Headphones, EarOff, UserPlus, Camera, LogOut, Video, VideoOff,
+  ScreenShare, ScreenShareOff, Monitor,
 } from 'lucide-react'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
 
 interface GameChatWindowProps {
@@ -27,24 +32,30 @@ interface VoicePeer {
   username: string
   avatarUrl?: string | null
   stream?: MediaStream
+  videoStream?: MediaStream
+  screenStream?: MediaStream
 }
 
 interface PersistedVoice {
   chatId: string
   channel: Channel
   stream: MediaStream
+  localVideoStream: MediaStream | null
+  localScreenStream: MediaStream | null
+  isScreenSharing: boolean
   pcs: Map<string, RTCPeerConnection>
   audioEls: Map<string, HTMLAudioElement>
   peers: VoicePeer[]
   isMuted: boolean
   isDeafened: boolean
+  isCameraOn: boolean
 }
 
 // Module-level: survives component unmounts (user switching between chats)
 let _persistedVoice: PersistedVoice | null = null
 
 export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
-  const { user, updateChatMembers, updateChat } = useMessengerStore()
+  const { user, updateChatMembers, updateChat, removeChat, setActiveChat } = useMessengerStore()
 
   // ── Channels ──────────────────────────────────────────────────────────────
   const [channels, setChannels] = useState<Channel[]>([])
@@ -84,6 +95,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   } | null>(null)
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
+  const localVideoStreamRef = useRef<MediaStream | null>(null)
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map())
   const audioElements = useRef<Map<string, HTMLAudioElement>>(new Map())
   const audioCtxRef = useRef<AudioContext | null>(null)
@@ -95,12 +107,32 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   const isMicMutedRef = useRef(false)
   const isDeafenedRef = useRef(false)
 
+  // ── Camera / video ────────────────────────────────────────────────────────
+  const [isCameraOn, setIsCameraOn] = useState(false)
+  const [localVideoStream, setLocalVideoStream] = useState<MediaStream | null>(null)
+  const [focusedTile, setFocusedTile] = useState<string | null>(null) // userId, 'self', 'self_screen', or `${userId}_screen`
+  const isCameraOnRef = useRef(false)
+  useEffect(() => { isCameraOnRef.current = isCameraOn }, [isCameraOn])
+
+  // ── Screen share ──────────────────────────────────────────────────────────
+  const [isScreenSharing, setIsScreenSharing] = useState(false)
+  const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null)
+  const localScreenStreamRef = useRef<MediaStream | null>(null)
+  const isScreenSharingRef = useRef(false)
+  const expectingScreenTrack = useRef<Set<string>>(new Set())
+  useEffect(() => { isScreenSharingRef.current = isScreenSharing }, [isScreenSharing])
+
+  // ── Channel occupants (visible without joining) ───────────────────────────
+  const [channelOccupants, setChannelOccupants] = useState<Record<string, Array<{ userId: string; username: string; avatarUrl?: string | null }>>>({})
+
   // ── Members panel ─────────────────────────────────────────────────────────
   const [showMembers, setShowMembers] = useState(false)
   const [memberSearch, setMemberSearch] = useState('')
   const [memberSearchResults, setMemberSearchResults] = useState<User[]>([])
   const [selectedToAdd, setSelectedToAdd] = useState<string[]>([])
   const [isAddingMembers, setIsAddingMembers] = useState(false)
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
+  const [isLeavingGroup, setIsLeavingGroup] = useState(false)
 
   // ── Avatar upload ─────────────────────────────────────────────────────────
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
@@ -150,6 +182,8 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     if (_persistedVoice?.chatId === chat.id && user) {
       const v = _persistedVoice
       localStreamRef.current = v.stream
+      localVideoStreamRef.current = v.localVideoStream
+      localScreenStreamRef.current = v.localScreenStream
       peerConnections.current = v.pcs
       audioElements.current = v.audioEls
       setupAnalyser(user.id, v.stream)
@@ -161,6 +195,10 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       setVoicePeers([...v.peers])
       setIsMicMuted(v.isMuted)
       setIsDeafened(v.isDeafened)
+      setIsCameraOn(v.isCameraOn)
+      setLocalVideoStream(v.localVideoStream)
+      setIsScreenSharing(v.isScreenSharing)
+      setLocalScreenStream(v.localScreenStream)
       pingIntervalRef.current = setInterval(async () => {
         const ms = await messengerSocket.measurePing()
         setPing(ms)
@@ -177,11 +215,15 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
           chatId: chat.id,
           channel: activeVoiceChannelRef.current,
           stream: localStreamRef.current,
+          localVideoStream: localVideoStreamRef.current,
+          localScreenStream: localScreenStreamRef.current,
+          isScreenSharing: isScreenSharingRef.current,
           pcs: peerConnections.current,
           audioEls: audioElements.current,
           peers: voicePeersRef.current,
           isMuted: isMicMutedRef.current,
           isDeafened: isDeafenedRef.current,
+          isCameraOn: isCameraOnRef.current,
         }
       }
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current)
@@ -209,6 +251,9 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
         setChannels(r.channels)
         const firstText = r.channels.find(c => c.type === 'TEXT')
         if (firstText) setActiveChannel(firstText)
+        // Request current occupants for all voice channels
+        const voiceIds = r.channels.filter(c => c.type === 'VOICE').map(c => c.id)
+        if (voiceIds.length > 0) messengerSocket.vcGetOccupants(voiceIds)
       }
       setIsLoadingChannels(false)
     })
@@ -254,18 +299,47 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   // ── Socket: voice events ──────────────────────────────────────────────────
   useEffect(() => {
     const onJoined = (data: { channelId: string; userId: string; username: string; avatarUrl?: string | null }) => {
+      // Always update occupant list (for sidebar visibility)
+      setChannelOccupants(prev => ({
+        ...prev,
+        [data.channelId]: [
+          ...(prev[data.channelId] ?? []).filter(m => m.userId !== data.userId),
+          { userId: data.userId, username: data.username, avatarUrl: data.avatarUrl },
+        ],
+      }))
+      // WebRTC: only if we're in this channel
       if (data.channelId !== activeVoiceChannelRef.current?.id) return
       setVoicePeers(prev => prev.find(p => p.userId === data.userId) ? prev : [...prev, { userId: data.userId, username: data.username, avatarUrl: data.avatarUrl }])
       createOffer(data.userId, data.channelId)
     }
     const onLeft = (data: { channelId: string; userId: string }) => {
+      // Always update occupant list
+      setChannelOccupants(prev => ({
+        ...prev,
+        [data.channelId]: (prev[data.channelId] ?? []).filter(m => m.userId !== data.userId),
+      }))
+      // WebRTC: only if we're in this channel
       if (data.channelId !== activeVoiceChannelRef.current?.id) return
       setVoicePeers(prev => prev.filter(p => p.userId !== data.userId))
       closePeer(data.userId)
     }
     const onMembers = (data: { channelId: string; members: Array<{ userId: string; username: string; avatarUrl?: string | null }> }) => {
+      // Update occupants for this channel (pre-existing members when we joined)
+      setChannelOccupants(prev => ({ ...prev, [data.channelId]: data.members }))
       if (data.channelId !== activeVoiceChannelRef.current?.id) return
       setVoicePeers(data.members.filter(m => m.userId !== user?.id))
+    }
+    const onVcOccupants = (data: Record<string, Array<{ userId: string; username: string; avatarUrl?: string | null }>>) => {
+      setChannelOccupants(prev => ({ ...prev, ...data }))
+    }
+    const onScreenStart = (data: { channelId: string; userId: string }) => {
+      if (data.channelId !== activeVoiceChannelRef.current?.id) return
+      expectingScreenTrack.current.add(data.userId)
+    }
+    const onScreenStop = (data: { channelId: string; userId: string }) => {
+      if (data.channelId !== activeVoiceChannelRef.current?.id) return
+      expectingScreenTrack.current.delete(data.userId)
+      setVoicePeers(prev => prev.map(p => p.userId === data.userId ? { ...p, screenStream: undefined } : p))
     }
     const onOffer = async (data: { channelId: string; fromUserId: string; offer: RTCSessionDescriptionInit }) => {
       if (data.channelId !== activeVoiceChannelRef.current?.id) return
@@ -283,6 +357,9 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     messengerSocket.on('voice-channel-joined', onJoined)
     messengerSocket.on('voice-channel-left', onLeft)
     messengerSocket.on('voice-channel-members', onMembers)
+    messengerSocket.on('vc-occupants', onVcOccupants)
+    messengerSocket.on('vc-screen-start', onScreenStart)
+    messengerSocket.on('vc-screen-stop', onScreenStop)
     messengerSocket.on('vc-offer', onOffer)
     messengerSocket.on('vc-answer', onAnswer)
     messengerSocket.on('vc-ice', onIce)
@@ -290,6 +367,9 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       messengerSocket.off('voice-channel-joined', onJoined)
       messengerSocket.off('voice-channel-left', onLeft)
       messengerSocket.off('voice-channel-members', onMembers)
+      messengerSocket.off('vc-occupants', onVcOccupants)
+      messengerSocket.off('vc-screen-start', onScreenStart)
+      messengerSocket.off('vc-screen-stop', onScreenStop)
       messengerSocket.off('vc-offer', onOffer)
       messengerSocket.off('vc-answer', onAnswer)
       messengerSocket.off('vc-ice', onIce)
@@ -311,12 +391,21 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     pc.onicecandidate = e => { if (e.candidate) messengerSocket.sendVcIce(channelId, remoteUserId, e.candidate) }
     pc.ontrack = e => {
       const stream = e.streams[0]
-      setVoicePeers(prev => prev.map(p => p.userId === remoteUserId ? { ...p, stream } : p))
-      let el = audioElements.current.get(remoteUserId)
-      if (!el) { el = new Audio(); el.autoplay = true; audioElements.current.set(remoteUserId, el) }
-      el.srcObject = stream
-      el.volume = isDeafenedRef.current ? 0 : Math.min(2, (userVolumesRef.current[remoteUserId] ?? 100) / 100)
-      setupAnalyser(remoteUserId, stream)
+      if (e.track.kind === 'audio') {
+        setVoicePeers(prev => prev.map(p => p.userId === remoteUserId ? { ...p, stream } : p))
+        let el = audioElements.current.get(remoteUserId)
+        if (!el) { el = new Audio(); el.autoplay = true; audioElements.current.set(remoteUserId, el) }
+        el.srcObject = stream
+        el.volume = isDeafenedRef.current ? 0 : Math.min(2, (userVolumesRef.current[remoteUserId] ?? 100) / 100)
+        setupAnalyser(remoteUserId, stream)
+      } else if (e.track.kind === 'video') {
+        if (expectingScreenTrack.current.has(remoteUserId)) {
+          expectingScreenTrack.current.delete(remoteUserId)
+          setVoicePeers(prev => prev.map(p => p.userId === remoteUserId ? { ...p, screenStream: stream } : p))
+        } else {
+          setVoicePeers(prev => prev.map(p => p.userId === remoteUserId ? { ...p, videoStream: stream } : p))
+        }
+      }
     }
     peerConnections.current.set(remoteUserId, pc)
     return pc
@@ -357,7 +446,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       setupAnalyser(user.id, stream)
       setActiveVoiceChannel(channel)
       setVoicePeers([])
-      messengerSocket.joinVoiceChannel(channel.id, user.id, user.username)
+      messengerSocket.joinVoiceChannel(channel.id, chat.id, user.id, user.username, user.avatarUrl)
       pingIntervalRef.current = setInterval(async () => {
         const ms = await messengerSocket.measurePing()
         setPing(ms)
@@ -381,11 +470,20 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     audioCtxRef.current = null
     localStreamRef.current?.getTracks().forEach(t => t.stop())
     localStreamRef.current = null
+    localVideoStreamRef.current?.getTracks().forEach(t => t.stop())
+    localVideoStreamRef.current = null
+    localScreenStreamRef.current?.getTracks().forEach(t => t.stop())
+    localScreenStreamRef.current = null
     if (pingIntervalRef.current) { clearInterval(pingIntervalRef.current); pingIntervalRef.current = null }
     setPing(null)
     setActiveVoiceChannel(null)
     setVoicePeers([])
     setSpeakingUsers(new Set())
+    setIsCameraOn(false)
+    setLocalVideoStream(null)
+    setIsScreenSharing(false)
+    setLocalScreenStream(null)
+    setFocusedTile(null)
   }, [user])
 
   // ── Mic / deafen toggles ────────────────────────────────────────────────────────
@@ -406,6 +504,68 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       el.volume = newDeafened ? 0 : Math.min(2, (userVolumesRef.current[uid] ?? 100) / 100)
     })
     setIsDeafened(newDeafened)
+  }
+
+  const toggleCamera = async () => {
+    if (isCameraOn) {
+      // Turn off: stop tracks, remove from peer connections
+      localVideoStreamRef.current?.getTracks().forEach(t => {
+        t.stop()
+        peerConnections.current.forEach(pc => {
+          pc.getSenders().filter(s => s.track === t).forEach(s => pc.removeTrack(s))
+        })
+      })
+      localVideoStreamRef.current = null
+      setLocalVideoStream(null)
+      setIsCameraOn(false)
+      setFocusedTile(null)
+    } else {
+      try {
+        const vStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+        localVideoStreamRef.current = vStream
+        setLocalVideoStream(vStream)
+        setIsCameraOn(true)
+        // Add video track to all existing peer connections
+        const vTrack = vStream.getVideoTracks()[0]
+        peerConnections.current.forEach(pc => {
+          pc.addTrack(vTrack, vStream)
+        })
+      } catch { console.error('Camera denied') }
+    }
+  }
+
+  // ── Screen share ──────────────────────────────────────────────────────────
+  const toggleScreen = async () => {
+    if (isScreenSharing) {
+      localScreenStreamRef.current?.getTracks().forEach(t => {
+        t.stop()
+        peerConnections.current.forEach(pc => {
+          pc.getSenders().filter(s => s.track === t).forEach(s => pc.removeTrack(s))
+        })
+      })
+      localScreenStreamRef.current = null
+      setLocalScreenStream(null)
+      setIsScreenSharing(false)
+      if (activeVoiceChannelRef.current) messengerSocket.sendVcScreenStop(activeVoiceChannelRef.current.id)
+    } else {
+      try {
+        const sStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
+        const sTrack = sStream.getVideoTracks()[0]
+        // Signal peers BEFORE adding the track (WebRTC is slower than socket)
+        if (activeVoiceChannelRef.current) messengerSocket.sendVcScreenStart(activeVoiceChannelRef.current.id)
+        sTrack.onended = () => {
+          // User pressed browser's native "Stop sharing" button
+          localScreenStreamRef.current = null
+          setLocalScreenStream(null)
+          setIsScreenSharing(false)
+          if (activeVoiceChannelRef.current) messengerSocket.sendVcScreenStop(activeVoiceChannelRef.current.id)
+        }
+        peerConnections.current.forEach(pc => pc.addTrack(sTrack, sStream))
+        localScreenStreamRef.current = sStream
+        setLocalScreenStream(sStream)
+        setIsScreenSharing(true)
+      } catch { /* user cancelled or denied */ }
+    }
   }
 
   // ── Members management ────────────────────────────────────────────────────────────
@@ -435,6 +595,18 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       updateChat(chat.id, { avatarUrl: uploaded.url })
     }
     setIsUploadingAvatar(false)
+  }
+
+  // ── Leave group ───────────────────────────────────────────────────────────
+  const handleLeaveGroup = async () => {
+    setIsLeavingGroup(true)
+    await leaveVoiceChannel()
+    _persistedVoice = null
+    await chatsAPI.leaveGroup(chat.id)
+    removeChat(chat.id)
+    setActiveChat(null)
+    onBack?.()
+    setIsLeavingGroup(false)
   }
 
   // ── Send message ──────────────────────────────────────────────────────────
@@ -623,6 +795,13 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
           >
             <UserPlus className="h-4 w-4" />
           </button>
+          <button
+            onClick={() => setShowLeaveConfirm(true)}
+            className="h-6 w-6 flex items-center justify-center text-white/40 hover:text-red-400 flex-shrink-0 transition-colors"
+            title="Покинуть группу"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
           <input ref={avatarFileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
         </div>
 
@@ -671,35 +850,43 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                       if (activeVoiceChannel?.id !== ch.id) joinVoiceChannel(ch)
                     }}
                   />
-                  {/* Members in this voice channel */}
-                  {activeVoiceChannel?.id === ch.id && (
-                    <div className="ml-5 mt-1 space-y-0.5">
-                      {/* Self */}
-                      <div className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] text-[#8b97ff]">
-                        <Avatar className={cn('h-5 w-5 ring-1 ring-offset-1 ring-offset-[#13141f] transition-all',
-                          speakingUsers.has(user?.id ?? '') ? 'ring-green-400' : 'ring-transparent')}>
-                          {user?.avatarUrl && <AvatarImage src={user.avatarUrl} />}
-                          <AvatarFallback className="bg-[#5d6cf5] text-white text-[8px] font-bold">{getInitials(user?.username ?? '?')}</AvatarFallback>
-                        </Avatar>
-                        <span className="truncate">{user?.username}</span>
-                        {(isMicMuted || isDeafened) && <MicOff className="h-2.5 w-2.5 text-red-400 flex-shrink-0" />}
+                  {/* Members in this voice channel — always visible */}
+                  {(() => {
+                    const occupants = channelOccupants[ch.id] ?? []
+                    const isConnected = activeVoiceChannel?.id === ch.id
+                    if (!isConnected && occupants.length === 0) return null
+                    return (
+                      <div className="ml-5 mt-1 space-y-0.5">
+                        {/* Self (only when connected) */}
+                        {isConnected && (
+                          <div className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] text-[#8b97ff]">
+                            <Avatar className={cn('h-5 w-5 ring-1 ring-offset-1 ring-offset-[#13141f] transition-all',
+                              speakingUsers.has(user?.id ?? '') ? 'ring-green-400' : 'ring-transparent')}>
+                              {user?.avatarUrl && <AvatarImage src={user.avatarUrl} />}
+                              <AvatarFallback className="bg-[#5d6cf5] text-white text-[8px] font-bold">{getInitials(user?.username ?? '?')}</AvatarFallback>
+                            </Avatar>
+                            <span className="truncate">{user?.username}</span>
+                            {(isMicMuted || isDeafened) && <MicOff className="h-2.5 w-2.5 text-red-400 flex-shrink-0" />}
+                          </div>
+                        )}
+                        {/* Other occupants */}
+                        {occupants.map(p => (
+                          <div
+                            key={p.userId}
+                            className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] text-white/50 cursor-context-menu"
+                            onContextMenu={isConnected ? e => { e.preventDefault(); setUserVolumeMenu({ userId: p.userId, username: p.username, x: e.clientX, y: e.clientY }) } : undefined}
+                          >
+                            <Avatar className={cn('h-5 w-5 ring-1 ring-offset-1 ring-offset-[#13141f] transition-all',
+                              speakingUsers.has(p.userId) ? 'ring-green-400' : 'ring-transparent')}>
+                              {p.avatarUrl && <AvatarImage src={p.avatarUrl} />}
+                              <AvatarFallback className="bg-white/10 text-white text-[8px] font-bold">{getInitials(p.username)}</AvatarFallback>
+                            </Avatar>
+                            <span className="truncate">{p.username}</span>
+                          </div>
+                        ))}
                       </div>
-                      {voicePeers.map(p => (
-                        <div
-                          key={p.userId}
-                          className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] text-white/50 cursor-context-menu"
-                          onContextMenu={e => { e.preventDefault(); setUserVolumeMenu({ userId: p.userId, username: p.username, x: e.clientX, y: e.clientY }) }}
-                        >
-                          <Avatar className={cn('h-5 w-5 ring-1 ring-offset-1 ring-offset-[#13141f] transition-all',
-                            speakingUsers.has(p.userId) ? 'ring-green-400' : 'ring-transparent')}>
-                            {p.avatarUrl && <AvatarImage src={p.avatarUrl} />}
-                            <AvatarFallback className="bg-white/10 text-white text-[8px] font-bold">{getInitials(p.username)}</AvatarFallback>
-                          </Avatar>
-                          <span className="truncate">{p.username}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                    )
+                  })()}
                 </div>
               ))}
           </div>
@@ -724,6 +911,20 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                 title={isDeafened ? 'Включить звук' : 'Выключить звук'}
               >
                 {isDeafened ? <EarOff className="h-3 w-3" /> : <Headphones className="h-3 w-3" />}
+              </button>
+              <button
+                onClick={toggleCamera}
+                className={cn('h-6 w-6 flex items-center justify-center rounded hover:bg-white/10 transition-colors', isCameraOn ? 'text-[#8b97ff]' : 'text-white/60')}
+                title={isCameraOn ? 'Выключить камеру' : 'Включить камеру'}
+              >
+                {isCameraOn ? <Video className="h-3 w-3" /> : <VideoOff className="h-3 w-3" />}
+              </button>
+              <button
+                onClick={toggleScreen}
+                className={cn('h-6 w-6 flex items-center justify-center rounded hover:bg-white/10 transition-colors', isScreenSharing ? 'text-green-400' : 'text-white/60')}
+                title={isScreenSharing ? 'Остановить демонстрацию' : 'Демонстрация экрана'}
+              >
+                {isScreenSharing ? <ScreenShare className="h-3 w-3" /> : <ScreenShareOff className="h-3 w-3" />}
               </button>
               <button onClick={leaveVoiceChannel} className="h-6 w-6 flex items-center justify-center rounded hover:bg-red-500/20 text-white/40 hover:text-red-400 transition-colors">
                 <PhoneOff className="h-3 w-3" />
@@ -761,88 +962,210 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
 
         ) : activeChannel.type === 'VOICE' ? (
           /* ── Voice channel view ── */
-          <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
-            <Volume2 className="h-16 w-16 text-[#5d6cf5] opacity-60" />
-            <div className="text-center">
-              <h3 className="text-xl font-bold text-white mb-1">{activeChannel.name}</h3>
-              <p className="text-white/40 text-sm">
-                {activeVoiceChannel?.id === activeChannel.id
-                  ? `Подключено · ${voicePeers.length + 1} участников`
-                  : 'Голосовой канал'}
-              </p>
+          <div className="flex-1 flex flex-col min-h-0 p-4 gap-3">
+            {/* Channel name bar */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <Volume2 className="h-5 w-5 text-[#5d6cf5] opacity-60 flex-shrink-0" />
+              <span className="font-bold text-white text-lg">{activeChannel.name}</span>
+              {activeVoiceChannel?.id === activeChannel.id && (
+                <span className="text-white/40 text-sm ml-1">· {voicePeers.length + 1} участников</span>
+              )}
             </div>
 
             {activeVoiceChannel?.id === activeChannel.id ? (
               <>
-                {/* Participant list */}
-                <div className="flex flex-col gap-2 w-full max-w-xs">
-                  {/* Self */}
-                  <div className={cn('flex items-center gap-3 px-4 py-2.5 rounded-xl ring-1 transition-all',
-                    speakingUsers.has(user?.id ?? '') ? 'ring-green-400 bg-green-400/5' : isMicMuted ? 'ring-red-500/40 bg-red-500/5' : 'ring-[#5d6cf5]/40 bg-[#5d6cf5]/5')}>
-                    <Avatar className={cn('h-10 w-10 flex-shrink-0 ring-2 ring-offset-2 ring-offset-[#1a1b26] transition-all',
-                      speakingUsers.has(user?.id ?? '') ? 'ring-green-400' : 'ring-transparent')}>
-                      {user?.avatarUrl && <AvatarImage src={user.avatarUrl} />}
-                      <AvatarFallback className="bg-[#5d6cf5] text-white font-bold">{getInitials(user?.username ?? '?')}</AvatarFallback>
-                    </Avatar>
-                    <span className="font-medium text-white flex-1">{user?.username}</span>
-                    <div className="flex items-center gap-1">
-                      {isMicMuted ? <MicOff className="h-4 w-4 text-red-400 flex-shrink-0" /> : <Mic className="h-4 w-4 text-[#5d6cf5] flex-shrink-0" />}
-                      {isDeafened && <EarOff className="h-4 w-4 text-red-400 flex-shrink-0" />}
-                    </div>
-                  </div>
-                  {voicePeers.map(p => (
+                {/* ── Video / participant tiles area ── */}
+                {(() => {
+                  // Build tiles list: self + peers
+                  const tiles = [
+                    { id: 'self', userId: user?.id ?? 'self', username: user?.username ?? '?', avatarUrl: user?.avatarUrl, videoStream: localVideoStream ?? undefined, isSelf: true, isScreen: false },
+                    ...(isScreenSharing && localScreenStream ? [{ id: 'self_screen', userId: user?.id ?? 'self', username: `${user?.username ?? '?'} (экран)`, avatarUrl: null as string | null | undefined, videoStream: localScreenStream, isSelf: true, isScreen: true }] : []),
+                    ...voicePeers.flatMap(p => [
+                      { id: p.userId, userId: p.userId, username: p.username, avatarUrl: p.avatarUrl, videoStream: p.videoStream, isSelf: false, isScreen: false },
+                      ...(p.screenStream ? [{ id: `${p.userId}_screen`, userId: p.userId, username: `${p.username} (экран)`, avatarUrl: null as string | null | undefined, videoStream: p.screenStream, isSelf: false, isScreen: true }] : []),
+                    ]),
+                  ]
+                  const hasVideo = tiles.some(t => !!t.videoStream)
+                  const focused = focusedTile ?? (hasVideo ? tiles.find(t => t.videoStream)?.id ?? null : null)
+                  const focusedTileData = focused ? tiles.find(t => t.id === focused) : null
+                  const thumbs = tiles.filter(t => t.id !== focused)
+
+                  const TileVideo = ({ tile, big }: { tile: typeof tiles[0]; big?: boolean }) => (
                     <div
-                      key={p.userId}
-                      className={cn('flex items-center gap-3 px-4 py-2.5 rounded-xl ring-1 cursor-context-menu transition-all',
-                        speakingUsers.has(p.userId) ? 'ring-green-400 bg-green-400/5' : 'ring-white/10 bg-white/[0.04]')}
-                      onContextMenu={e => { e.preventDefault(); setUserVolumeMenu({ userId: p.userId, username: p.username, x: e.clientX, y: e.clientY }) }}
+                      className={cn(
+                        'group relative overflow-hidden rounded-xl bg-[#0d0e18] flex items-center justify-center cursor-pointer select-none',
+                        big ? 'w-full h-full' : 'h-full aspect-video flex-shrink-0',
+                        speakingUsers.has(tile.userId) && !tile.isScreen ? 'ring-2 ring-green-400' : 'ring-1 ring-white/10'
+                      )}
+                      onClick={() => setFocusedTile(tile.id === focused ? null : tile.id)}
                     >
-                      <Avatar className={cn('h-10 w-10 flex-shrink-0 ring-2 ring-offset-2 ring-offset-[#1a1b26] transition-all',
-                        speakingUsers.has(p.userId) ? 'ring-green-400' : 'ring-transparent')}>
-                        {p.avatarUrl && <AvatarImage src={p.avatarUrl} />}
-                        <AvatarFallback className="bg-white/10 text-white font-bold">{getInitials(p.username)}</AvatarFallback>
-                      </Avatar>
-                      <span className="font-medium text-white flex-1">{p.username}</span>
-                      <Mic className="h-4 w-4 text-white/30 flex-shrink-0" />
+                      {tile.videoStream ? (
+                        <video
+                          autoPlay
+                          playsInline
+                          muted={tile.isSelf}
+                          className="w-full h-full object-cover"
+                          ref={el => { if (el) el.srcObject = tile.videoStream! }}
+                        />
+                      ) : (
+                        <Avatar className={cn(
+                          'ring-2 ring-offset-2 ring-offset-[#0d0e18] transition-all',
+                          big ? 'h-20 w-20' : 'h-10 w-10',
+                          speakingUsers.has(tile.userId) ? 'ring-green-400' : 'ring-transparent'
+                        )}>
+                          {tile.avatarUrl && <AvatarImage src={tile.avatarUrl} />}
+                          <AvatarFallback className={cn(big ? 'text-xl' : 'text-xs', 'font-bold', tile.isSelf ? 'bg-[#5d6cf5] text-white' : 'bg-white/10 text-white')}>
+                            {getInitials(tile.username)}
+                          </AvatarFallback>
+                        </Avatar>
+                      )}
+                      {/* Screen share icon badge */}
+                      {tile.isScreen && (
+                        <div className="absolute top-1.5 left-2">
+                          <Monitor className={cn('text-white/60', big ? 'h-4 w-4' : 'h-3 w-3')} />
+                        </div>
+                      )}
+                      {/* Name badge */}
+                      <div className="absolute bottom-1.5 left-2 flex items-center gap-1">
+                        <span className={cn('text-white font-medium drop-shadow-lg', big ? 'text-sm' : 'text-[10px]')}>{tile.username}</span>
+                        {tile.isSelf && !tile.isScreen && (isMicMuted || isDeafened) && <MicOff className={cn('text-red-400', big ? 'h-3.5 w-3.5' : 'h-2.5 w-2.5')} />}
+                      </div>
+                      {/* Volume slider (peer tiles only, right side, visible on hover) */}
+                      {!tile.isSelf && !tile.isScreen && (
+                        <div
+                          className="absolute right-1.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center gap-0.5"
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <input
+                            type="range"
+                            min="0"
+                            max="200"
+                            value={userVolumes[tile.userId] ?? 100}
+                            onChange={e => {
+                              const vol = parseInt(e.target.value)
+                              setUserVolumes(prev => ({ ...prev, [tile.userId]: vol }))
+                              const el = audioElements.current.get(tile.userId)
+                              if (el) el.volume = Math.min(2, vol / 100)
+                            }}
+                            className="h-16 cursor-pointer accent-[#5d6cf5]"
+                            style={{ writingMode: 'vertical-lr', direction: 'rtl' } as React.CSSProperties}
+                          />
+                          <span className="text-[8px] text-white/60 font-mono">{userVolumes[tile.userId] ?? 100}%</span>
+                        </div>
+                      )}
                     </div>
-                  ))}
-                </div>
+                  )
+
+                  return (
+                    <div className="flex-1 flex flex-col gap-2 w-full min-h-0">
+                      {/* Main / focused tile */}
+                      <div className="flex-1 min-h-0 relative">
+                        {focusedTileData ? (
+                          <TileVideo tile={focusedTileData} big />
+                        ) : (
+                          /* Grid when nothing focused */
+                          <div className={cn(
+                            'w-full h-full grid gap-2',
+                            tiles.length === 1 ? 'grid-cols-1' :
+                            tiles.length <= 2 ? 'grid-cols-2' :
+                            tiles.length <= 4 ? 'grid-cols-2' :
+                            'grid-cols-3'
+                          )}>
+                            {tiles.map(tile => (
+                              <div key={tile.id} className="min-h-0 relative">
+                                <TileVideo tile={tile} big />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Thumbnail strip (shown only when something is focused) */}
+                      {focusedTileData && thumbs.length > 0 && (
+                        <div className="flex gap-2 h-20 flex-shrink-0 overflow-x-auto">
+                          {thumbs.map(tile => (
+                            <div key={tile.id} className="h-full" style={{ width: 'calc(20vh * 16/9)' }}>
+                              <TileVideo tile={tile} />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
 
                 {/* Controls */}
-                <div className="flex items-center gap-4 mt-2">
+                <div className="flex items-center gap-3 mt-2 flex-shrink-0">
                   <button
                     onClick={toggleMic}
-                    className={cn('h-14 w-14 rounded-full flex items-center justify-center transition-all shadow-lg',
+                    className={cn('h-12 w-12 rounded-full flex items-center justify-center transition-all shadow-lg',
                       isMicMuted ? 'bg-red-500 hover:bg-red-600' : 'bg-white/[0.12] hover:bg-white/[0.20]')}
                     title={isMicMuted ? 'Включить микрофон' : 'Выключить микрофон'}
                   >
-                    {isMicMuted ? <MicOff className="h-6 w-6 text-white" /> : <Mic className="h-6 w-6 text-white" />}
+                    {isMicMuted ? <MicOff className="h-5 w-5 text-white" /> : <Mic className="h-5 w-5 text-white" />}
                   </button>
                   <button
                     onClick={toggleDeafen}
-                    className={cn('h-14 w-14 rounded-full flex items-center justify-center transition-all shadow-lg',
+                    className={cn('h-12 w-12 rounded-full flex items-center justify-center transition-all shadow-lg',
                       isDeafened ? 'bg-red-500 hover:bg-red-600' : 'bg-white/[0.12] hover:bg-white/[0.20]')}
                     title={isDeafened ? 'Включить наушники' : 'Выключить наушники'}
                   >
-                    {isDeafened ? <EarOff className="h-6 w-6 text-white" /> : <Headphones className="h-6 w-6 text-white" />}
+                    {isDeafened ? <EarOff className="h-5 w-5 text-white" /> : <Headphones className="h-5 w-5 text-white" />}
+                  </button>
+                  <button
+                    onClick={toggleCamera}
+                    className={cn('h-12 w-12 rounded-full flex items-center justify-center transition-all shadow-lg',
+                      isCameraOn ? 'bg-[#5d6cf5] hover:bg-[#4a5be0]' : 'bg-white/[0.12] hover:bg-white/[0.20]')}
+                    title={isCameraOn ? 'Выключить камеру' : 'Включить камеру'}
+                  >
+                    {isCameraOn ? <Video className="h-5 w-5 text-white" /> : <VideoOff className="h-5 w-5 text-white" />}
+                  </button>
+                  <button
+                    onClick={toggleScreen}
+                    className={cn('h-12 w-12 rounded-full flex items-center justify-center transition-all shadow-lg',
+                      isScreenSharing ? 'bg-green-600 hover:bg-green-700' : 'bg-white/[0.12] hover:bg-white/[0.20]')}
+                    title={isScreenSharing ? 'Остановить демонстрацию' : 'Демонстрация экрана'}
+                  >
+                    {isScreenSharing ? <ScreenShare className="h-5 w-5 text-white" /> : <ScreenShareOff className="h-5 w-5 text-white" />}
                   </button>
                   <button
                     onClick={leaveVoiceChannel}
-                    className="h-14 w-14 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center transition-all shadow-lg"
+                    className="h-12 w-12 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center transition-all shadow-lg"
                   >
-                    <PhoneOff className="h-6 w-6 text-white" />
+                    <PhoneOff className="h-5 w-5 text-white" />
                   </button>
                 </div>
-                {ping !== null && <span className={cn('text-xs font-mono', pingColor)}>Пинг: {ping} мс</span>}
+                {ping !== null && <span className={cn('text-xs font-mono flex-shrink-0', pingColor)}>Пинг: {ping} мс</span>}
               </>
             ) : (
-              <button
-                onClick={() => joinVoiceChannel(activeChannel)}
-                disabled={isJoiningVoice}
-                className="px-8 h-12 rounded-full bg-[#5d6cf5] hover:bg-[#4a5be0] text-white font-semibold transition-all shadow-[0_8px_24px_rgba(93,108,245,0.4)] disabled:opacity-50"
-              >
-                {isJoiningVoice ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : 'Подключиться'}
-              </button>
+              /* Not connected to this voice channel */
+              <div className="flex-1 flex flex-col items-center justify-center gap-6">
+                {/* Show current occupants even when not connected */}
+                {(() => {
+                  const occupants = channelOccupants[activeChannel.id] ?? []
+                  if (occupants.length === 0) return null
+                  return (
+                    <div className="flex flex-wrap gap-3 justify-center max-w-xs">
+                      {occupants.map(p => (
+                        <div key={p.userId} className="flex flex-col items-center gap-1">
+                          <Avatar className="h-10 w-10">
+                            {p.avatarUrl && <AvatarImage src={p.avatarUrl} />}
+                            <AvatarFallback className="bg-white/10 text-white text-xs font-bold">{getInitials(p.username)}</AvatarFallback>
+                          </Avatar>
+                          <span className="text-[10px] text-white/50 truncate max-w-[60px] text-center">{p.username}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })()}
+                <button
+                  onClick={() => joinVoiceChannel(activeChannel)}
+                  disabled={isJoiningVoice}
+                  className="px-8 h-12 rounded-full bg-[#5d6cf5] hover:bg-[#4a5be0] text-white font-semibold transition-all shadow-[0_8px_24px_rgba(93,108,245,0.4)] disabled:opacity-50"
+                >
+                  {isJoiningVoice ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : 'Подключиться'}
+                </button>
+              </div>
             )}
           </div>
 
@@ -1114,6 +1437,28 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
           </div>
         </div>
       )}
+
+      {/* ── Leave Group AlertDialog ───────────────────────────────────────── */}
+      <AlertDialog open={showLeaveConfirm} onOpenChange={setShowLeaveConfirm}>
+        <AlertDialogContent className="bg-[#1c1d2e] border-white/[0.10] max-w-xs">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-white">Покинуть группу?</AlertDialogTitle>
+            <AlertDialogDescription className="text-white/50">
+              Вы покинете «{chat.title}». Вернуться можно только по приглашению.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-white/[0.10] text-white hover:bg-white/[0.08]">Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleLeaveGroup}
+              disabled={isLeavingGroup}
+              className="bg-red-500 hover:bg-red-600 text-white border-0"
+            >
+              {isLeavingGroup ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Покинуть'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

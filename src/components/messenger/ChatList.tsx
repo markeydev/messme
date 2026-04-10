@@ -8,7 +8,11 @@ import { Badge } from '@/components/ui/badge'
 import { chatsAPI, usersAPI, profileAPI, type Chat, type User } from '@/lib/api'
 import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
-import { PenSquare, Search, MessageSquare, Users, Check, X, BellOff, UserRound, Camera, Bell, Loader2, LogOut, Sun, Moon, Gamepad2 } from 'lucide-react'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { PenSquare, Search, MessageSquare, Users, Check, X, BellOff, UserRound, Camera, Bell, Loader2, LogOut, Sun, Moon, Gamepad2, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export type Tab = 'chats' | 'search' | 'profile'
@@ -23,11 +27,34 @@ interface ChatListProps {
 }
 
 export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout, activeTab, onTabChange }: ChatListProps) {
-  const { chats, addChat, user, unreadCounts, mutedChats, updateUser, notificationsEnabled, setNotificationsEnabled, darkMode, setDarkMode } = useMessengerStore()
+  const { chats, addChat, user, unreadCounts, mutedChats, updateUser, notificationsEnabled, setNotificationsEnabled, darkMode, setDarkMode, removeChat, setActiveChat } = useMessengerStore()
   const [chatSearchQuery, setChatSearchQuery] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isGroupMode, setIsGroupMode] = useState(false)
   const [groupTitle, setGroupTitle] = useState('')
+
+  // ── Chat context menu ─────────────────────────────────────────────────────
+  const [chatMenu, setChatMenu] = useState<{ chat: Chat; x: number; y: number } | null>(null)
+  const [chatToDelete, setChatToDelete] = useState<Chat | null>(null)
+  const [isDeletingChat, setIsDeletingChat] = useState(false)
+
+  useEffect(() => {
+    if (!chatMenu) return
+    const close = () => setChatMenu(null)
+    window.addEventListener('click', close)
+    window.addEventListener('contextmenu', close)
+    return () => { window.removeEventListener('click', close); window.removeEventListener('contextmenu', close) }
+  }, [chatMenu])
+
+  const handleDeleteConversation = async () => {
+    if (!chatToDelete) return
+    setIsDeletingChat(true)
+    await chatsAPI.deleteConversation(chatToDelete.id)
+    removeChat(chatToDelete.id)
+    setActiveChat(null)
+    setIsDeletingChat(false)
+    setChatToDelete(null)
+  }
   const [isGameMode, setIsGameMode] = useState(false)
 
   // Last message preview text per chat — content is already decrypted server-side
@@ -236,7 +263,10 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
             ) : (
               <div className="px-2 pb-[128px] md:pb-2">
                 {filteredChats.map(chat => (
-                  <button key={chat.id} onClick={() => onSelectChat?.(chat)}
+                  <button
+                    key={chat.id}
+                    onClick={() => onSelectChat?.(chat)}
+                    onContextMenu={e => { e.preventDefault(); setChatMenu({ chat, x: e.clientX, y: e.clientY }) }}
                     className={cn(
                       'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 text-left',
                       activeChatId === chat.id
@@ -267,6 +297,8 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                       <div className="flex items-center gap-1.5 mt-0.5">
                         {chat.lastMessage ? (
                           <span className="text-[13px] text-black/50 dark:text-white/50 truncate leading-snug">{getPreview(chat) || '...'}</span>
+                        ) : chat.gameMode ? (
+                          <span className="text-[13px] text-[#5d6cf5]/70 dark:text-[#8b97ff]/70 truncate leading-snug">🎮 Игровая комната</span>
                         ) : (
                           <span className="text-[13px] text-black/30 dark:text-white/30">Нет сообщений</span>
                         )}
@@ -602,6 +634,58 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
           </button>
         </div>
       </div>
+
+      {/* ── Chat context menu ──────────────────────────────────────────────── */}
+      {chatMenu && (
+        <div
+          className="fixed z-50 bg-white dark:bg-[#1c1c1e] border border-black/[0.08] dark:border-white/[0.08] rounded-xl shadow-2xl py-1 min-w-44"
+          style={{ left: chatMenu.x, top: chatMenu.y }}
+          onClick={e => e.stopPropagation()}
+        >
+          {chatMenu.chat.isGroup && (
+            <button
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+              onClick={() => { setChatToDelete(chatMenu.chat); setChatMenu(null) }}
+            >
+              <LogOut className="h-4 w-4" /> Покинуть группу
+            </button>
+          )}
+          <button
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+            onClick={() => { setChatToDelete(chatMenu.chat); setChatMenu(null) }}
+          >
+            <Trash2 className="h-4 w-4" /> Удалить переписку
+          </button>
+        </div>
+      )}
+
+      {/* ── DeleteConversation/Leave AlertDialog ───────────────────────────── */}
+      <AlertDialog open={!!chatToDelete} onOpenChange={open => { if (!open) setChatToDelete(null) }}>
+        <AlertDialogContent className="bg-white dark:bg-[#1c1c1e] border-black/[0.08] dark:border-white/[0.08] max-w-xs">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-black dark:text-white">
+              {chatToDelete?.isGroup ? 'Покинуть группу?' : 'Удалить переписку?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-black/50 dark:text-white/50">
+              {chatToDelete?.isGroup
+                ? `Вы покинете группу «${chatToDelete.title}». Вернуться можно только по приглашению.`
+                : `Переписка с «${chatToDelete?.title}» будет удалена только у вас.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-black/[0.08] dark:border-white/[0.08] text-black dark:text-white hover:bg-black/[0.05] dark:hover:bg-white/[0.08]">
+              Отмена
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConversation}
+              disabled={isDeletingChat}
+              className="bg-red-500 hover:bg-red-600 text-white border-0"
+            >
+              {isDeletingChat ? <Loader2 className="h-4 w-4 animate-spin" /> : chatToDelete?.isGroup ? 'Покинуть' : 'Удалить'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

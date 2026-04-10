@@ -205,17 +205,31 @@ export async function DELETE(
     }
 
     const chat = await db.chat.findUnique({ where: { id: chatId } })
-    if (!chat || !chat.isGroup) {
-      return NextResponse.json({ error: 'Чат не найден или не является группой' }, { status: 404 })
+    if (!chat) {
+      return NextResponse.json({ error: 'Чат не найден' }, { status: 404 })
     }
 
-    await db.chatMember.deleteMany({
-      where: { chatId, userId: session.userId }
-    })
+    // Optional: kick another member (only group owner can do this)
+    const targetUserId = request.nextUrl.searchParams.get('targetUserId')
+    if (targetUserId) {
+      if (!chat.isGroup) {
+        return NextResponse.json({ error: 'Кикать можно только из групп' }, { status: 400 })
+      }
+      if (chat.ownerId !== session.userId) {
+        return NextResponse.json({ error: 'Только создатель может исключать участников' }, { status: 403 })
+      }
+      if (targetUserId === session.userId) {
+        return NextResponse.json({ error: 'Нельзя исключить самого себя' }, { status: 400 })
+      }
+      await db.chatMember.deleteMany({ where: { chatId, userId: targetUserId } })
+      return NextResponse.json({ success: true })
+    }
 
+    // Self-leave / delete conversation
+    await db.chatMember.deleteMany({ where: { chatId, userId: session.userId } })
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Leave group error:', error)
-    return NextResponse.json({ error: 'Ошибка при выходе из группы' }, { status: 500 })
+    console.error('Leave/kick error:', error)
+    return NextResponse.json({ error: 'Ошибка при выходе из чата' }, { status: 500 })
   }
 }

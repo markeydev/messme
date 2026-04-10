@@ -26,12 +26,15 @@ export interface SocketEvents {
   'call-ended': (data: { chatId: string }) => void
   'call-rejected': (data: { chatId: string }) => void
   // Voice channels (game mode)
-  'voice-channel-joined': (data: { channelId: string; userId: string; username: string }) => void
+  'voice-channel-joined': (data: { channelId: string; userId: string; username: string; avatarUrl?: string | null }) => void
   'voice-channel-left': (data: { channelId: string; userId: string }) => void
-  'voice-channel-members': (data: { channelId: string; members: Array<{ userId: string; username: string }> }) => void
+  'voice-channel-members': (data: { channelId: string; members: Array<{ userId: string; username: string; avatarUrl?: string | null }> }) => void
   'vc-offer': (data: { channelId: string; fromUserId: string; offer: RTCSessionDescriptionInit }) => void
   'vc-answer': (data: { channelId: string; fromUserId: string; answer: RTCSessionDescriptionInit }) => void
   'vc-ice': (data: { channelId: string; fromUserId: string; candidate: RTCIceCandidateInit }) => void
+  'vc-occupants': (data: Record<string, Array<{ userId: string; username: string; avatarUrl?: string | null }>>) => void
+  'vc-screen-start': (data: { channelId: string; userId: string }) => void
+  'vc-screen-stop': (data: { channelId: string; userId: string }) => void
   'channel-message': (data: { channelId: string; message: import('./api').ChannelMessage }) => void
 }
 
@@ -123,6 +126,9 @@ class MessengerSocket {
       'vc-offer',
       'vc-answer',
       'vc-ice',
+      'vc-occupants',
+      'vc-screen-start',
+      'vc-screen-stop',
       'channel-message',
     ]
 
@@ -258,9 +264,9 @@ class MessengerSocket {
 
   // ── Voice channels ──────────────────────────────────────────────────────
 
-  joinVoiceChannel(channelId: string, userId: string, username: string) {
+  joinVoiceChannel(channelId: string, chatId: string, userId: string, username: string, avatarUrl?: string | null) {
     if (this.socket) {
-      this.socket.emit('vc-join', { channelId, userId, username })
+      this.socket.emit('vc-join', { channelId, chatId, userId, username, avatarUrl })
     }
   }
 
@@ -291,6 +297,24 @@ class MessengerSocket {
   broadcastChannelMessage(channelId: string, message: import('./api').ChannelMessage) {
     if (this.socket) {
       this.socket.emit('broadcast-channel-message', { channelId, message })
+    }
+  }
+
+  vcGetOccupants(channelIds: string[]) {
+    if (this.socket) {
+      this.socket.emit('vc-get-occupants', { channelIds })
+    }
+  }
+
+  sendVcScreenStart(channelId: string) {
+    if (this.socket) {
+      this.socket.emit('vc-screen-start', { channelId })
+    }
+  }
+
+  sendVcScreenStop(channelId: string) {
+    if (this.socket) {
+      this.socket.emit('vc-screen-stop', { channelId })
     }
   }
 

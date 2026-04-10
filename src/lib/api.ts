@@ -348,6 +348,22 @@ export const chatsAPI = {
     if (result.data) return { success: true }
     return { error: result.error }
   },
+
+  async deleteConversation(chatId: string): Promise<{ success?: boolean; error?: string }> {
+    const result = await fetchAPI<{ success: boolean }>(`/chats/${chatId}/members`, {
+      method: 'DELETE',
+    })
+    if (result.data) return { success: true }
+    return { error: result.error }
+  },
+
+  async kickMember(chatId: string, targetUserId: string): Promise<{ success?: boolean; error?: string }> {
+    const result = await fetchAPI<{ success: boolean }>(`/chats/${chatId}/members?targetUserId=${encodeURIComponent(targetUserId)}`, {
+      method: 'DELETE',
+    })
+    if (result.data) return { success: true }
+    return { error: result.error }
+  },
 }
 
 // Users API

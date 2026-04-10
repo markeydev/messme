@@ -5,7 +5,11 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Loader2, Camera, X, Check, ArrowLeft, Users, LogOut } from 'lucide-react'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Loader2, Camera, X, Check, ArrowLeft, Users, LogOut, UserMinus } from 'lucide-react'
 import { chatsAPI, profileAPI, type Chat } from '@/lib/api'
 import { useMessengerStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -27,7 +31,7 @@ interface GroupSettingsDialogProps {
 }
 
 export function GroupSettingsDialog({ chat, open, onOpenChange, members, currentUserId, onLeave }: GroupSettingsDialogProps) {
-  const { updateChat } = useMessengerStore()
+  const { updateChat, updateChatMembers } = useMessengerStore()
 
   const [title, setTitle] = useState(chat.title ?? '')
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
@@ -36,7 +40,11 @@ export function GroupSettingsDialog({ chat, open, onOpenChange, members, current
   const [isLeaving, setIsLeaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
+  const [kickTarget, setKickTarget] = useState<{ id: string; username: string } | null>(null)
+  const [isKicking, setIsKicking] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const isOwner = currentUserId === chat.ownerId
 
   const handleClose = () => {
     if (avatarPreview) URL.revokeObjectURL(avatarPreview)
@@ -110,6 +118,24 @@ export function GroupSettingsDialog({ chat, open, onOpenChange, members, current
       setError('Ошибка соединения')
     } finally {
       setIsLeaving(false)
+    }
+  }
+
+  const handleKick = async () => {
+    if (!kickTarget) return
+    setIsKicking(true)
+    try {
+      const result = await chatsAPI.kickMember(chat.id, kickTarget.id)
+      if (result.error) {
+        setError(result.error)
+        return
+      }
+      updateChatMembers(chat.id, members.filter(m => m.id !== kickTarget.id))
+    } catch {
+      setError('Ошибка соединения')
+    } finally {
+      setIsKicking(false)
+      setKickTarget(null)
     }
   }
 
@@ -190,7 +216,7 @@ export function GroupSettingsDialog({ chat, open, onOpenChange, members, current
                 <div
                   key={member.id}
                   className={cn(
-                    'flex items-center gap-3 px-4 py-3',
+                    'flex items-center gap-3 px-4 py-3 group',
                     i < members.length - 1 && 'border-b border-black/[0.04] dark:border-white/[0.04]'
                   )}
                 >
@@ -206,6 +232,15 @@ export function GroupSettingsDialog({ chat, open, onOpenChange, members, current
                   )}
                   {member.id === currentUserId && member.id !== chat.ownerId && (
                     <span className="text-xs text-black/30 dark:text-white/30">Вы</span>
+                  )}
+                  {isOwner && member.id !== currentUserId && member.id !== chat.ownerId && (
+                    <button
+                      onClick={() => setKickTarget({ id: member.id, username: member.username })}
+                      className="opacity-0 group-hover:opacity-100 h-7 w-7 flex items-center justify-center rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all"
+                      title="Исключить"
+                    >
+                      <UserMinus className="h-4 w-4" />
+                    </button>
                   )}
                 </div>
               ))}
@@ -244,6 +279,33 @@ export function GroupSettingsDialog({ chat, open, onOpenChange, members, current
           )}
         </div>
       </ScrollArea>
+
+      {/* Kick confirmation AlertDialog */}
+      <AlertDialog open={!!kickTarget} onOpenChange={open => { if (!open) setKickTarget(null) }}>
+        <AlertDialogContent className="bg-white dark:bg-[#1c1c1e] border-black/[0.08] dark:border-white/[0.08] max-w-xs">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-black dark:text-white">Исключить участника?</AlertDialogTitle>
+            <AlertDialogDescription className="text-black/50 dark:text-white/50">
+              Пользователь <strong className="text-black dark:text-white">{kickTarget?.username}</strong> будет удалён из группы.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              className="border-black/[0.08] dark:border-white/[0.08] text-black dark:text-white hover:bg-black/[0.05] dark:hover:bg-white/[0.08]"
+              onClick={() => setKickTarget(null)}
+            >
+              Отмена
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleKick}
+              disabled={isKicking}
+              className="bg-red-500 hover:bg-red-600 text-white border-0"
+            >
+              {isKicking ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Исключить'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

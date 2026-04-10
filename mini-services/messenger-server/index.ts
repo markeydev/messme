@@ -76,8 +76,9 @@ const userSockets = new Map<string, Set<string>>() // userId -> Set of socketIds
 const chatRooms = new Map<string, ChatRoom>()
 const messages = new Map<string, Message[]>() // chatId -> messages
 
-// Voice channel rooms: channelId -> Set of { userId, username }
-const voiceChannelMembers = new Map<string, Map<string, string>>() // channelId -> Map<userId, username>
+// Voice channel rooms: channelId -> Map<userId, { username, avatarUrl? }>
+const voiceChannelMembers = new Map<string, Map<string, { username: string; avatarUrl?: string | null }>>() // channelId -> Map<userId, info>
+const channelChatMap = new Map<string, string>() // channelId -> chatId
 
 // Connected sockets with their user info
 const socketUsers = new Map<string, { userId: string, chatIds: string[] }>()
@@ -392,25 +393,26 @@ io.on('connection', (socket) => {
 
   // ── Voice Channels (Game Mode) ────────────────────────────────────────────
 
-  socket.on('vc-join', (data: { channelId: string; userId: string; username: string }) => {
-    const { channelId, userId, username } = data
+  socket.on('vc-join', (data: { channelId: string; chatId: string; userId: string; username: string; avatarUrl?: string | null }) => {
+    const { channelId, chatId, userId, username, avatarUrl } = data
     console.log(`[WS] User ${username} joining voice channel ${channelId}`)
+
+    channelChatMap.set(channelId, chatId)
 
     if (!voiceChannelMembers.has(channelId)) {
       voiceChannelMembers.set(channelId, new Map())
     }
     const members = voiceChannelMembers.get(channelId)!
 
-    // Tell existing members about the newcomer
-    members.forEach((_uname, existingUserId) => {
-      notifyUser(existingUserId, 'voice-channel-joined', { channelId, userId, username })
-    })
+    // Tell existing members about the newcomer (for WebRTC signaling)
+    // Broadcasting to the whole chat room covers both voice members and sidebar observers
+    broadcastToChat(chatId, 'voice-channel-joined', { channelId, userId, username, avatarUrl }, socket.id)
 
     // Tell the newcomer about all existing members (for offer creation)
-    const memberList = Array.from(members.entries()).map(([uid, uname]) => ({ userId: uid, username: uname }))
+    const memberList = Array.from(members.entries()).map(([uid, info]) => ({ userId: uid, username: info.username, avatarUrl: info.avatarUrl }))
     notifyUser(userId, 'voice-channel-members', { channelId, members: memberList })
 
-    members.set(userId, username)
+    members.set(userId, { username, avatarUrl })
   })
 
   socket.on('vc-leave', (data: { channelId: string; userId: string }) => {
@@ -418,16 +420,33 @@ io.on('connection', (socket) => {
     const members = voiceChannelMembers.get(channelId)
     if (members) {
       members.delete(userId)
-      if (members.size === 0) voiceChannelMembers.delete(channelId)
+      if (members.size === 0) {
+        voiceChannelMembers.delete(channelId)
+        channelChatMap.delete(channelId)
+      }
     }
-    // Notify remaining members
-    const room = voiceChannelMembers.get(channelId)
-    if (room) {
-      room.forEach((_uname, uid) => {
-        notifyUser(uid, 'voice-channel-left', { channelId, userId })
-      })
+    // Notify ALL chat members so they can update sidebar occupant lists
+    const chatId = channelChatMap.get(channelId)
+    if (chatId) {
+      broadcastToChat(chatId, 'voice-channel-left', { channelId, userId }, socket.id)
+    } else {
+      // Fallback: notify remaining voice members
+      const room = voiceChannelMembers.get(channelId)
+      if (room) room.forEach((_info, uid) => notifyUser(uid, 'voice-channel-left', { channelId, userId }))
     }
     console.log(`[WS] User ${userId} left voice channel ${channelId}`)
+  })
+
+  // ── Request current voice channel occupants ───────────────────────────────
+  socket.on('vc-get-occupants', (data: { channelIds: string[] }) => {
+    const result: Record<string, Array<{ userId: string; username: string; avatarUrl?: string | null }>> = {}
+    data.channelIds.forEach(channelId => {
+      const members = voiceChannelMembers.get(channelId)
+      result[channelId] = members
+        ? Array.from(members.entries()).map(([uid, info]) => ({ userId: uid, username: info.username, avatarUrl: info.avatarUrl }))
+        : []
+    })
+    socket.emit('vc-occupants', result)
   })
 
   socket.on('vc-offer', (data: { channelId: string; toUserId: string; offer: RTCSessionDescriptionInit }) => {
@@ -446,6 +465,26 @@ io.on('connection', (socket) => {
     const fromUserId = socketUsers.get(socket.id)?.userId
     if (!fromUserId) return
     notifyUser(data.toUserId, 'vc-ice', { channelId: data.channelId, fromUserId, candidate: data.candidate })
+  })
+
+  socket.on('vc-screen-start', (data: { channelId: string }) => {
+    const fromUserId = socketUsers.get(socket.id)?.userId
+    if (!fromUserId) return
+    const members = voiceChannelMembers.get(data.channelId)
+    if (!members) return
+    members.forEach((_info, uid) => {
+      if (uid !== fromUserId) notifyUser(uid, 'vc-screen-start', { channelId: data.channelId, userId: fromUserId })
+    })
+  })
+
+  socket.on('vc-screen-stop', (data: { channelId: string }) => {
+    const fromUserId = socketUsers.get(socket.id)?.userId
+    if (!fromUserId) return
+    const members = voiceChannelMembers.get(data.channelId)
+    if (!members) return
+    members.forEach((_info, uid) => {
+      if (uid !== fromUserId) notifyUser(uid, 'vc-screen-stop', { channelId: data.channelId, userId: fromUserId })
+    })
   })
 
   socket.on('broadcast-channel-message', (data: { channelId: string; message: unknown }) => {
@@ -476,10 +515,18 @@ io.on('connection', (socket) => {
           voiceChannelMembers.forEach((members, channelId) => {
             if (members.has(userId)) {
               members.delete(userId)
-              members.forEach((_uname, uid) => {
-                notifyUser(uid, 'voice-channel-left', { channelId, userId })
-              })
-              if (members.size === 0) voiceChannelMembers.delete(channelId)
+              const chatId = channelChatMap.get(channelId)
+              if (chatId) {
+                broadcastToChat(chatId, 'voice-channel-left', { channelId, userId })
+              } else {
+                members.forEach((_info, uid) => {
+                  notifyUser(uid, 'voice-channel-left', { channelId, userId })
+                })
+              }
+              if (members.size === 0) {
+                voiceChannelMembers.delete(channelId)
+                channelChatMap.delete(channelId)
+              }
             }
           })
 
