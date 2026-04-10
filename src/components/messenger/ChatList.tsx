@@ -42,8 +42,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
     if (!chatMenu) return
     const close = () => setChatMenu(null)
     window.addEventListener('click', close)
-    window.addEventListener('contextmenu', close)
-    return () => { window.removeEventListener('click', close); window.removeEventListener('contextmenu', close) }
+    return () => { window.removeEventListener('click', close) }
   }, [chatMenu])
 
   const handleDeleteConversation = async () => {
@@ -266,7 +265,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                   <button
                     key={chat.id}
                     onClick={() => onSelectChat?.(chat)}
-                    onContextMenu={e => { e.preventDefault(); setChatMenu({ chat, x: e.clientX, y: e.clientY }) }}
+                    onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setChatMenu({ chat, x: e.clientX, y: e.clientY }) }}
                     className={cn(
                       'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 text-left',
                       activeChatId === chat.id

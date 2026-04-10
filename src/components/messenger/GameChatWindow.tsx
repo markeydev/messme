@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -521,7 +521,10 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       setFocusedTile(null)
     } else {
       try {
-        const vStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+        const vStream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 2560 }, height: { ideal: 1440 }, frameRate: { ideal: 30 } },
+          audio: false
+        })
         localVideoStreamRef.current = vStream
         setLocalVideoStream(vStream)
         setIsCameraOn(true)
@@ -696,6 +699,11 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     catch { return '' }
   }
   const getInitials = (name: string) => name.slice(0, 2).toUpperCase()
+
+  // Authoritative avatar lookup from chat.members — more reliable than socket-carried avatarUrls
+  const memberMap = useMemo(() => new Map(chat.members.map(m => [m.id, m])), [chat.members])
+  const getMemberAvatar = (userId: string, fallback?: string | null) =>
+    memberMap.get(userId)?.avatarUrl ?? fallback ?? null
 
   const pingColor = ping === null ? '' : ping < 80 ? 'text-green-400' : ping < 180 ? 'text-yellow-400' : 'text-red-400'
 
@@ -878,7 +886,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                           >
                             <Avatar className={cn('h-5 w-5 ring-1 ring-offset-1 ring-offset-[#13141f] transition-all',
                               speakingUsers.has(p.userId) ? 'ring-green-400' : 'ring-transparent')}>
-                              {p.avatarUrl && <AvatarImage src={p.avatarUrl} />}
+                              {getMemberAvatar(p.userId, p.avatarUrl) && <AvatarImage src={getMemberAvatar(p.userId, p.avatarUrl)!} />}
                               <AvatarFallback className="bg-white/10 text-white text-[8px] font-bold">{getInitials(p.username)}</AvatarFallback>
                             </Avatar>
                             <span className="truncate">{p.username}</span>
@@ -981,7 +989,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                     { id: 'self', userId: user?.id ?? 'self', username: user?.username ?? '?', avatarUrl: user?.avatarUrl, videoStream: localVideoStream ?? undefined, isSelf: true, isScreen: false },
                     ...(isScreenSharing && localScreenStream ? [{ id: 'self_screen', userId: user?.id ?? 'self', username: `${user?.username ?? '?'} (экран)`, avatarUrl: null as string | null | undefined, videoStream: localScreenStream, isSelf: true, isScreen: true }] : []),
                     ...voicePeers.flatMap(p => [
-                      { id: p.userId, userId: p.userId, username: p.username, avatarUrl: p.avatarUrl, videoStream: p.videoStream, isSelf: false, isScreen: false },
+                      { id: p.userId, userId: p.userId, username: p.username, avatarUrl: getMemberAvatar(p.userId, p.avatarUrl), videoStream: p.videoStream, isSelf: false, isScreen: false },
                       ...(p.screenStream ? [{ id: `${p.userId}_screen`, userId: p.userId, username: `${p.username} (экран)`, avatarUrl: null as string | null | undefined, videoStream: p.screenStream, isSelf: false, isScreen: true }] : []),
                     ]),
                   ]
@@ -1005,7 +1013,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                           playsInline
                           muted={tile.isSelf}
                           className="w-full h-full object-cover"
-                          ref={el => { if (el) el.srcObject = tile.videoStream! }}
+                          ref={el => { if (el && el.srcObject !== tile.videoStream) el.srcObject = tile.videoStream ?? null }}
                         />
                       ) : (
                         <Avatar className={cn(
@@ -1061,7 +1069,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                       {/* Main / focused tile */}
                       <div className="flex-1 min-h-0 relative">
                         {focusedTileData ? (
-                          <TileVideo tile={focusedTileData} big />
+                          TileVideo({ tile: focusedTileData, big: true })
                         ) : (
                           /* Grid when nothing focused */
                           <div className={cn(
@@ -1073,7 +1081,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                           )}>
                             {tiles.map(tile => (
                               <div key={tile.id} className="min-h-0 relative">
-                                <TileVideo tile={tile} big />
+                                {TileVideo({ tile, big: true })}
                               </div>
                             ))}
                           </div>
@@ -1085,7 +1093,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                         <div className="flex gap-2 h-20 flex-shrink-0 overflow-x-auto">
                           {thumbs.map(tile => (
                             <div key={tile.id} className="h-full" style={{ width: 'calc(20vh * 16/9)' }}>
-                              <TileVideo tile={tile} />
+                              {TileVideo({ tile, big: false })}
                             </div>
                           ))}
                         </div>
@@ -1149,7 +1157,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                       {occupants.map(p => (
                         <div key={p.userId} className="flex flex-col items-center gap-1">
                           <Avatar className="h-10 w-10">
-                            {p.avatarUrl && <AvatarImage src={p.avatarUrl} />}
+                            {getMemberAvatar(p.userId, p.avatarUrl) && <AvatarImage src={getMemberAvatar(p.userId, p.avatarUrl)!} />}
                             <AvatarFallback className="bg-white/10 text-white text-xs font-bold">{getInitials(p.username)}</AvatarFallback>
                           </Avatar>
                           <span className="text-[10px] text-white/50 truncate max-w-[60px] text-center">{p.username}</span>
@@ -1194,6 +1202,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                   >
                     {showHeader ? (
                       <Avatar className="h-9 w-9 flex-shrink-0 mt-0.5">
+                        {getMemberAvatar(msg.senderId) && <AvatarImage src={getMemberAvatar(msg.senderId)!} />}
                         <AvatarFallback className="bg-[#5d6cf5]/40 text-white text-xs font-bold">{getInitials(msg.senderUsername)}</AvatarFallback>
                       </Avatar>
                     ) : (

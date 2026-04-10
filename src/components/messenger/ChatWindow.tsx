@@ -95,8 +95,14 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.id])
 
-  // Reflect store updates for group title/avatar
+  // Reflect store updates for group title/avatar/members
   const currentChat = chats.find(c => c.id === chat.id) ?? chat
+
+  // Keep chatMembers in sync with store (avatar / profile changes propagate here)
+  useEffect(() => {
+    setChatMembers(currentChat.members)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentChat.members])
 
   useEffect(() => {
     if (scrollRef.current) {
