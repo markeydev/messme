@@ -309,6 +309,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       }))
       // WebRTC: only if we're in this channel
       if (data.channelId !== activeVoiceChannelRef.current?.id) return
+      playVcSound(0.2)
       setVoicePeers(prev => prev.find(p => p.userId === data.userId) ? prev : [...prev, { userId: data.userId, username: data.username, avatarUrl: data.avatarUrl }])
       createOffer(data.userId, data.channelId)
     }
@@ -320,6 +321,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       }))
       // WebRTC: only if we're in this channel
       if (data.channelId !== activeVoiceChannelRef.current?.id) return
+      playVcSound(0.2)
       setVoicePeers(prev => prev.filter(p => p.userId !== data.userId))
       closePeer(data.userId)
     }
@@ -387,7 +389,14 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   // ── WebRTC ────────────────────────────────────────────────────────────────
   const createPeerConnection = useCallback((remoteUserId: string, channelId: string): RTCPeerConnection => {
     const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] })
+    // Add all active local tracks: audio, camera, screen
     localStreamRef.current?.getTracks().forEach(t => pc.addTrack(t, localStreamRef.current!))
+    if (localVideoStreamRef.current) {
+      localVideoStreamRef.current.getTracks().forEach(t => pc.addTrack(t, localVideoStreamRef.current!))
+    }
+    if (localScreenStreamRef.current) {
+      localScreenStreamRef.current.getTracks().forEach(t => pc.addTrack(t, localScreenStreamRef.current!))
+    }
     pc.onicecandidate = e => { if (e.candidate) messengerSocket.sendVcIce(channelId, remoteUserId, e.candidate) }
     pc.ontrack = e => {
       const stream = e.streams[0]
@@ -419,7 +428,11 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   }, [createPeerConnection])
 
   const handleIncomingOffer = useCallback(async (remoteUserId: string, channelId: string, offer: RTCSessionDescriptionInit) => {
-    const pc = createPeerConnection(remoteUserId, channelId)
+    // Reuse existing PC for renegotiation (e.g. remote added camera/screen track)
+    let pc = peerConnections.current.get(remoteUserId)
+    if (!pc) {
+      pc = createPeerConnection(remoteUserId, channelId)
+    }
     await pc.setRemoteDescription(new RTCSessionDescription(offer))
     const answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
@@ -447,6 +460,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       setActiveVoiceChannel(channel)
       setVoicePeers([])
       messengerSocket.joinVoiceChannel(channel.id, chat.id, user.id, user.username, user.avatarUrl)
+      playVcSound(1)
       pingIntervalRef.current = setInterval(async () => {
         const ms = await messengerSocket.measurePing()
         setPing(ms)
@@ -460,6 +474,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   const leaveVoiceChannel = useCallback(async () => {
     if (!user || !activeVoiceChannelRef.current) return
     _persistedVoice = null // explicit leave
+    playVcSound(1)
     messengerSocket.leaveVoiceChannel(activeVoiceChannelRef.current.id, user.id)
     peerConnections.current.forEach(pc => pc.close())
     peerConnections.current.clear()
@@ -528,11 +543,14 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
         localVideoStreamRef.current = vStream
         setLocalVideoStream(vStream)
         setIsCameraOn(true)
-        // Add video track to all existing peer connections
+        // Add video track to all existing peer connections and renegotiate
         const vTrack = vStream.getVideoTracks()[0]
-        peerConnections.current.forEach(pc => {
+        for (const [peerId, pc] of peerConnections.current) {
           pc.addTrack(vTrack, vStream)
-        })
+          const offer = await pc.createOffer()
+          await pc.setLocalDescription(offer)
+          messengerSocket.sendVcOffer(activeVoiceChannelRef.current?.id ?? '', peerId, offer)
+        }
       } catch { console.error('Camera denied') }
     }
   }
@@ -563,7 +581,13 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
           setIsScreenSharing(false)
           if (activeVoiceChannelRef.current) messengerSocket.sendVcScreenStop(activeVoiceChannelRef.current.id)
         }
-        peerConnections.current.forEach(pc => pc.addTrack(sTrack, sStream))
+        // Add screen track and renegotiate with each peer
+        for (const [peerId, pc] of peerConnections.current) {
+          pc.addTrack(sTrack, sStream)
+          const offer = await pc.createOffer()
+          await pc.setLocalDescription(offer)
+          messengerSocket.sendVcOffer(activeVoiceChannelRef.current?.id ?? '', peerId, offer)
+        }
         localScreenStreamRef.current = sStream
         setLocalScreenStream(sStream)
         setIsScreenSharing(true)
@@ -699,6 +723,15 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     catch { return '' }
   }
   const getInitials = (name: string) => name.slice(0, 2).toUpperCase()
+
+  // ── Voice sounds ──────────────────────────────────────────────────────────
+  const playVcSound = useCallback((volume = 1) => {
+    try {
+      const a = new Audio('/call_end.mp3')
+      a.volume = Math.min(1, Math.max(0, volume))
+      a.play().catch(() => {})
+    } catch {}
+  }, [])
 
   // Authoritative avatar lookup from chat.members — more reliable than socket-carried avatarUrls
   const memberMap = useMemo(() => new Map(chat.members.map(m => [m.id, m])), [chat.members])
@@ -1090,11 +1123,12 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
 
                       {/* Thumbnail strip (shown only when something is focused) */}
                       {focusedTileData && thumbs.length > 0 && (
-                        <div className="flex gap-2 h-20 flex-shrink-0 overflow-x-auto">
+                        <div className="flex gap-2 flex-shrink-0 overflow-x-auto py-1">
                           {thumbs.map(tile => (
-                            <div key={tile.id} className="h-full" style={{ width: 'calc(20vh * 16/9)' }}>
+                            <div key={tile.id} className="h-20" style={{ width: 'calc(20vh * 16/9)' }}>
                               {TileVideo({ tile, big: false })}
                             </div>
+
                           ))}
                         </div>
                       )}
