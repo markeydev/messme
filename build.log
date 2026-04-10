@@ -1,0 +1,150 @@
+ Image messme-messenger-server Building 
+ Image messme-migrate Building 
+ Image messme-app Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.58kB done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 1.19kB done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/node:22-alpine
+#3 DONE 0.5s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 429B done
+#4 DONE 0.0s
+
+#5 [deps 1/4] FROM docker.io/library/node:22-alpine@sha256:4d64b49e6c891c8fc821007cb1cdc6c0db7773110ac2c34bf2e6960adef62ed3
+#5 DONE 0.0s
+
+#6 [deps 2/4] WORKDIR /app
+#6 CACHED
+
+#7 [internal] load build context
+#7 transferring context: 9.59kB 0.0s done
+#7 DONE 0.0s
+
+#8 [deps 3/4] COPY package.json package-lock.json* ./
+#8 DONE 0.1s
+
+#9 [runner 3/6] RUN addgroup --system --gid 1001 nodejs  && adduser  --system --uid 1001 nextjs
+#9 DONE 1.4s
+
+#10 [deps 4/4] RUN npm ci
+#10 9.199 npm warn deprecated intersection-observer@0.10.0: The Intersection Observer polyfill is no longer needed and can safely be removed. Intersection Observer has been Baseline since 2019.
+#10 47.88 
+#10 47.88 added 1004 packages, and audited 1005 packages in 46s
+#10 47.88 
+#10 47.88 295 packages are looking for funding
+#10 47.88   run `npm fund` for details
+#10 47.89 
+#10 47.89 3 moderate severity vulnerabilities
+#10 47.89 
+#10 47.89 To address all issues (including breaking changes), run:
+#10 47.89   npm audit fix --force
+#10 47.89 
+#10 47.89 Run `npm audit` for details.
+#10 47.89 npm notice
+#10 47.89 npm notice New major version of npm available! 10.9.7 -> 11.12.1
+#10 47.89 npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.12.1
+#10 47.89 npm notice To update run: npm install -g npm@11.12.1
+#10 47.89 npm notice
+#10 DONE 48.7s
+
+#11 [builder 1/5] WORKDIR /app
+#11 DONE 0.1s
+
+#12 [builder 2/5] COPY --from=deps /app/node_modules ./node_modules
+#12 DONE 44.5s
+
+#13 [builder 3/5] COPY . .
+#13 DONE 0.1s
+
+#14 [builder 4/5] RUN npx prisma generate
+#14 3.120 Prisma schema loaded from prisma/schema.prisma
+#14 3.718 
+#14 3.718 ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 217ms
+#14 3.718 
+#14 3.718 Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+#14 3.718 
+#14 3.718 Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+#14 3.718 
+#14 DONE 3.9s
+
+#15 [builder 5/5] RUN npm run build
+#15 0.714 
+#15 0.714 > nextjs_tailwind_shadcn_ts@0.2.0 build
+#15 0.714 > next build
+#15 0.714 
+#15 1.784 ⚠ `eslint` configuration in next.config.ts is no longer supported. See more info here: https://nextjs.org/docs/app/api-reference/cli/next#next-lint-options
+#15 1.793 ⚠ Invalid next.config.ts options detected: 
+#15 1.793 ⚠     Unrecognized key(s) in object: 'eslint'
+#15 1.793 ⚠ See more info here: https://nextjs.org/docs/messages/invalid-next-config
+#15 1.807 Attention: Next.js now collects completely anonymous telemetry regarding usage.
+#15 1.807 This information is used to shape Next.js' roadmap and prioritize features.
+#15 1.807 You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+#15 1.808 https://nextjs.org/telemetry
+#15 1.808 
+#15 1.840 ▲ Next.js 16.2.2 (Turbopack)
+#15 1.841 
+#15 1.943   Creating an optimized production build ...
+#15 19.71 ✓ Compiled successfully in 17.3s
+#15 19.73   Skipping validation of types
+#15 19.75   Finished TypeScript config validation in 23ms ...
+#15 19.76   Collecting page data using 1 worker ...
+#15 21.45 ⚠ Using edge runtime on a page currently disables static generation for that page
+#15 21.53   Generating static pages using 1 worker (0/13) ...
+#15 21.62   Generating static pages using 1 worker (3/13) 
+#15 21.62   Generating static pages using 1 worker (6/13) 
+#15 21.81   Generating static pages using 1 worker (9/13) 
+#15 21.91 ✓ Generating static pages using 1 worker (13/13) in 381ms
+#15 21.93   Finalizing page optimization ...
+#15 22.65 
+#15 22.66 Route (app)
+#15 22.66 ┌ ○ /
+#15 22.66 ├ ○ /_not-found
+#15 22.66 ├ ƒ /api
+#15 22.66 ├ ƒ /api/auth/login
+#15 22.66 ├ ƒ /api/auth/me
+#15 22.66 ├ ƒ /api/auth/register
+#15 22.66 ├ ƒ /api/chats
+#15 22.66 ├ ƒ /api/chats/[id]
+#15 22.66 ├ ƒ /api/chats/[id]/members
+#15 22.66 ├ ƒ /api/chats/[id]/messages
+#15 22.66 ├ ƒ /api/chats/[id]/messages/[messageId]
+#15 22.66 ├ ƒ /api/chats/[id]/settings
+#15 22.66 ├ ƒ /api/chats/create
+#15 22.66 ├ ƒ /api/push/subscribe
+#15 22.66 ├ ƒ /api/upload
+#15 22.66 ├ ƒ /api/users/[id]/public-key
+#15 22.66 ├ ƒ /api/users/search
+#15 22.66 ├ ƒ /apple-touch-icon
+#15 22.66 └ ○ /icon.svg
+#15 22.66 
+#15 22.66 
+#15 22.66 ○  (Static)   prerendered as static content
+#15 22.66 ƒ  (Dynamic)  server-rendered on demand
+#15 22.66 
+#15 DONE 22.9s
+
+#16 [runner 4/6] COPY --from=builder /app/public ./public
+#16 DONE 0.1s
+
+#17 [runner 5/6] COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+#17 DONE 0.9s
+
+#18 [runner 6/6] COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+#18 DONE 0.1s
+
+#19 exporting to image
+#19 exporting layers
+#19 exporting layers 0.6s done
+#19 writing image sha256:123bd6a83251f0628b84fc0cd5b6d1dfe89c1d8ca089126fb6cc65a9621641b9 done
+#19 naming to docker.io/library/messme-app done
+#19 DONE 0.6s
+
+#20 resolving provenance for metadata file
+#20 DONE 0.0s
+ Image messme-app Built 

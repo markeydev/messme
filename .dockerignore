@@ -1,0 +1,21 @@
+# Git
+.git
+.gitignore
+
+# Local env — NEVER bake into image (NEXT_PUBLIC_* are compiled at build time!)
+.env
+.env.local
+.env.*.local
+
+# Next.js build cache (will be rebuilt inside Docker)
+.next
+
+# Local node_modules (will be installed inside Docker)
+node_modules
+mini-services/messenger-server/node_modules
+
+# Dev/docs
+*.md
+dev.ps1
+Caddyfile
+docker-compose.dev.yml

@@ -1,0 +1,607 @@
+﻿'use client'
+
+import { useState, useRef, useEffect } from 'react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
+import { chatsAPI, usersAPI, profileAPI, type Chat, type User } from '@/lib/api'
+import { useMessengerStore } from '@/lib/store'
+import { messengerSocket } from '@/lib/socket'
+import { PenSquare, Search, MessageSquare, Users, Check, X, BellOff, UserRound, Camera, Bell, Loader2, LogOut, Sun, Moon, Gamepad2 } from 'lucide-react'
+import { cn } from '@/lib/utils'
+
+export type Tab = 'chats' | 'search' | 'profile'
+
+interface ChatListProps {
+  onSelectChat?: (chat: Chat) => void
+  activeChatId?: string | null
+  onProfileClick?: () => void
+  onLogout?: () => void
+  activeTab: Tab
+  onTabChange: (tab: Tab) => void
+}
+
+export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout, activeTab, onTabChange }: ChatListProps) {
+  const { chats, addChat, user, unreadCounts, mutedChats, updateUser, notificationsEnabled, setNotificationsEnabled, darkMode, setDarkMode } = useMessengerStore()
+  const [chatSearchQuery, setChatSearchQuery] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [isGroupMode, setIsGroupMode] = useState(false)
+  const [groupTitle, setGroupTitle] = useState('')
+  const [isGameMode, setIsGameMode] = useState(false)
+
+  // Last message preview text per chat — content is already decrypted server-side
+  const getPreview = (chat: Chat): string => {
+    const lm = chat.lastMessage
+    if (!lm) return ''
+    const type = (lm as any).type as string | undefined
+    if (type === 'AUDIO') return '🎤 Голосовое'
+    if (type === 'IMAGE') return '🖼️ Фото'
+    if (type === 'FILE') return `📎 ${(lm as any).fileName ?? 'Файл'}`
+    if (type === 'VIDEO_NOTE') return '🎥 Видеосообщение'
+    return lm.content ?? ''
+  }
+
+  const [userSearchQuery, setUserSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<User[]>([])
+  const [selectedUsers, setSelectedUsers] = useState<User[]>([])
+
+  // Profile state
+  const [profileUsername, setProfileUsername] = useState(user?.username ?? '')
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
+  const [avatarFile, setAvatarFile] = useState<File | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  const [profileError, setProfileError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const filteredChats = chats.filter(chat =>
+    chat.title.toLowerCase().includes(chatSearchQuery.toLowerCase())
+  )
+
+  const handleUserSearch = async (query: string) => {
+    setUserSearchQuery(query)
+    if (query.length >= 2) {
+      const result = await usersAPI.search(query)
+      if (result.users) setSearchResults(result.users.filter(u => u.id !== user?.id))
+    } else {
+      setSearchResults([])
+    }
+  }
+
+  const toggleUserSelection = (u: User) => {
+    setSelectedUsers(prev =>
+      prev.some(x => x.id === u.id) ? prev.filter(x => x.id !== u.id) : [...prev, u]
+    )
+  }
+
+  const handleCreateChat = async () => {
+    if (selectedUsers.length === 0) return
+    setIsLoading(true)
+    const result = await chatsAPI.create(
+      selectedUsers.map(u => u.id),
+      isGroupMode,
+      isGroupMode ? groupTitle : undefined,
+      isGroupMode ? isGameMode : false
+    )
+    if (result.chat) {
+      addChat(result.chat)
+      if (result.isNew && result.chat.memberIds) {
+        messengerSocket.notifyChatCreated(result.chat, result.chat.memberIds)
+      }
+      resetSearch()
+      onTabChange('chats')
+      onSelectChat?.(result.chat)
+    }
+    setIsLoading(false)
+  }
+
+  const resetSearch = () => {
+    setSelectedUsers([])
+    setUserSearchQuery('')
+    setSearchResults([])
+    setGroupTitle('')
+    setIsGroupMode(false)
+    setIsGameMode(false)
+  }
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setAvatarFile(file)
+    setAvatarPreview(URL.createObjectURL(file))
+    e.target.value = ''
+  }
+
+  const clearAvatarPreview = () => {
+    if (avatarPreview) URL.revokeObjectURL(avatarPreview)
+    setAvatarPreview(null)
+    setAvatarFile(null)
+  }
+
+  const handleProfileSave = async () => {
+    if (!user) return
+    setProfileError(null)
+    setIsSaving(true)
+    try {
+      let newAvatarUrl: string | null | undefined = undefined
+      if (avatarFile) {
+        const uploaded = await profileAPI.uploadAvatar(avatarFile, 'user')
+        if (uploaded.error || !uploaded.url) {
+          setProfileError(uploaded.error ?? 'Ошибка загрузки аватара')
+          setIsSaving(false)
+          return
+        }
+        newAvatarUrl = uploaded.url
+      }
+      const trimmed = profileUsername.trim()
+      const result = await profileAPI.updateProfile(
+        trimmed || user.username,
+        newAvatarUrl !== undefined ? newAvatarUrl : undefined
+      )
+      if (result.error || !result.user) {
+        setProfileError(result.error ?? 'Ошибка сохранения')
+        return
+      }
+      updateUser(result.user)
+      if (avatarPreview) URL.revokeObjectURL(avatarPreview)
+      setAvatarPreview(null)
+      setAvatarFile(null)
+    } catch {
+      setProfileError('Ошибка соединения')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const formatTime = (dateStr?: string | null) => {
+    if (!dateStr) return ''
+    try {
+      const date = new Date(dateStr)
+      if (isNaN(date.getTime())) return ''
+      const now = new Date()
+      const diff = now.getTime() - date.getTime()
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+      if (days === 0) return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+      if (days === 1) return 'Вчера'
+      if (days < 7) return date.toLocaleDateString('ru-RU', { weekday: 'short' })
+      return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
+    } catch { return '' }
+  }
+
+  const getInitials = (name: string) =>
+    name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+
+  const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0)
+
+  return (
+    <div className="flex flex-col flex-1 min-h-0 bg-white dark:bg-[#111112]">
+      {/* Header */}
+      <div className="px-4 pt-5 pb-3 flex items-center justify-between flex-shrink-0">
+        <h1 className="text-[22px] font-bold text-black dark:text-white tracking-[-0.5px]">
+          {activeTab === 'chats' ? 'Чаты' : activeTab === 'search' ? 'Поиск' : 'Профиль'}
+        </h1>
+        {activeTab === 'chats' && (
+          <button
+            onClick={() => { resetSearch(); onTabChange('search') }}
+            className="h-9 w-9 flex items-center justify-center rounded-full bg-black/[0.06] dark:bg-white/[0.08] text-black/50 dark:text-white/50 hover:bg-black/[0.10] dark:hover:bg-white/[0.12] transition-colors"
+          >
+            <PenSquare className="h-[17px] w-[17px]" />
+          </button>
+        )}
+      </div>
+
+      {/* Tab: Chats */}
+      {activeTab === 'chats' && (
+        <>
+          {/* Search bar */}
+          <div className="px-3 pb-2 flex-shrink-0">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-black/30" />
+              <Input
+                placeholder="Поиск..."
+                value={chatSearchQuery}
+                onChange={e => setChatSearchQuery(e.target.value)}
+                className="pl-9 h-9 bg-black/[0.05] dark:bg-white/[0.07] border-0 text-black dark:text-white placeholder:text-black/30 dark:placeholder:text-white/30 focus-visible:ring-1 focus-visible:ring-[#152cff]/30 rounded-xl text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            {filteredChats.length === 0 ? (
+              /* Empty state */
+              <div className="relative flex flex-col items-center justify-center py-12 px-4 min-h-[320px] overflow-hidden">
+                {/* Decorative background text watermark */}
+                <div aria-hidden className="absolute inset-0 flex flex-col items-center justify-center select-none pointer-events-none overflow-hidden">
+                  <span className="text-[56px] font-black text-black/[0.04] dark:text-white/[0.04] leading-tight tracking-tight whitespace-nowrap">
+                    {chatSearchQuery ? 'Не найдено' : 'Найди людей'}
+                  </span>
+                  {!chatSearchQuery && (
+                  <span className="text-[56px] font-black text-black/[0.04] dark:text-white/[0.04] leading-tight tracking-tight whitespace-nowrap">
+                      Начни общаться
+                    </span>
+                  )}
+                </div>
+                {/* Icon */}
+                <div className="relative z-10 mb-5 w-[88px] h-[88px] rounded-full bg-[#eef1ff] dark:bg-[#1e1e24] flex items-center justify-center shadow-[0_8px_28px_rgba(21,44,255,0.14)]">
+                  <MessageSquare className="h-9 w-9 text-[#152cff]/50" />
+                </div>
+                {/* CTA */}
+                <Button
+                  onClick={() => { resetSearch(); onTabChange('search') }}
+                  className="relative z-10 bg-white dark:bg-white/[0.08] hover:bg-gray-50 dark:hover:bg-white/[0.12] text-black dark:text-white border-0 rounded-full px-8 h-[42px] text-[15px] font-medium shadow-[0_4px_16px_rgba(0,0,0,0.12)]"
+                >
+                  Начать общение
+                </Button>
+              </div>
+            ) : (
+              <div className="px-2 pb-[128px] md:pb-2">
+                {filteredChats.map(chat => (
+                  <button key={chat.id} onClick={() => onSelectChat?.(chat)}
+                    className={cn(
+                      'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 text-left',
+                      activeChatId === chat.id
+                        ? 'bg-[#152cff]/[0.08] dark:bg-[#5d6cf5]/[0.15]'
+                        : 'hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+                    )}>
+                    <Avatar className="h-12 w-12 flex-shrink-0">
+                      {chat.avatarUrl && <AvatarImage src={chat.avatarUrl} alt={chat.title} />}
+                      <AvatarFallback className={cn(
+                        'font-semibold text-white text-sm',
+                        chat.isGroup ? 'bg-violet-500' : 'bg-[#152cff]'
+                      )}>
+                        {chat.isGroup ? <Users className="h-5 w-5" /> : getInitials(chat.title)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold truncate text-[14px] text-black dark:text-white">
+                          {chat.title}
+                        </span>
+                        {chat.lastMessage?.createdAt && (
+                          <span className={cn('text-[11px] flex-shrink-0',
+                            (unreadCounts[chat.id] ?? 0) > 0 ? 'text-[#152cff]' : 'text-black/40 dark:text-white/40')}>
+                            {formatTime(chat.lastMessage.createdAt)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        {chat.lastMessage ? (
+                          <span className="text-[13px] text-black/50 dark:text-white/50 truncate leading-snug">{getPreview(chat) || '...'}</span>
+                        ) : (
+                          <span className="text-[13px] text-black/30 dark:text-white/30">Нет сообщений</span>
+                        )}
+                        <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+                          {mutedChats[chat.id] && (
+                            <BellOff className="h-3 w-3 text-black/30 dark:text-white/30" />
+                          )}
+                          {(unreadCounts[chat.id] ?? 0) > 0 && (
+                            <span className={cn(
+                              'flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white leading-none',
+                              mutedChats[chat.id] ? 'bg-black/20' : 'bg-[#152cff]'
+                            )}>
+                              {(unreadCounts[chat.id] ?? 0) > 99 ? '99+' : unreadCounts[chat.id]}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Tab: Search (find people / create chats) */}
+      {activeTab === 'search' && (
+        <div className="flex flex-col flex-1 min-h-0 px-3">
+          {/* Personal / Group toggle */}
+          <div className="flex bg-black/[0.05] dark:bg-white/[0.07] rounded-xl p-1 gap-1 mb-3 flex-shrink-0">
+            <button
+              onClick={() => setIsGroupMode(false)}
+              className={cn('flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm transition-all font-medium',
+                !isGroupMode ? 'bg-white dark:bg-white/[0.12] text-black dark:text-white shadow-sm' : 'text-black/40 dark:text-white/40 hover:text-black/60 dark:hover:text-white/60')}
+            >
+              <MessageSquare className="h-4 w-4" /> Личный
+            </button>
+            <button
+              onClick={() => setIsGroupMode(true)}
+              className={cn('flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm transition-all font-medium',
+                isGroupMode ? 'bg-white dark:bg-white/[0.12] text-black dark:text-white shadow-sm' : 'text-black/40 dark:text-white/40 hover:text-black/60 dark:hover:text-white/60')}
+            >
+              <Users className="h-4 w-4" /> Группа
+            </button>
+          </div>
+
+          {isGroupMode && (
+            <>
+              <Input
+                placeholder="Название группы"
+                value={groupTitle}
+                onChange={e => setGroupTitle(e.target.value)}
+                className="mb-2 bg-black/[0.05] dark:bg-white/[0.07] border-0 text-black dark:text-white placeholder:text-black/30 dark:placeholder:text-white/30 rounded-xl h-10 flex-shrink-0"
+              />
+              {/* Game mode toggle */}
+              <button
+                onClick={() => setIsGameMode(g => !g)}
+                className={cn(
+                  'mb-3 flex-shrink-0 w-full flex items-center gap-3 px-3 h-11 rounded-xl transition-all border',
+                  isGameMode
+                    ? 'bg-[#5d6cf5]/[0.12] border-[#5d6cf5]/30 text-[#5d6cf5]'
+                    : 'bg-black/[0.05] dark:bg-white/[0.07] border-transparent text-black/50 dark:text-white/50'
+                )}
+              >
+                <Gamepad2 className="h-4 w-4 flex-shrink-0" />
+                <span className="text-sm font-medium flex-1 text-left">Game Mode</span>
+                <span className={cn(
+                  'text-[11px] px-2 py-0.5 rounded-full font-semibold',
+                  isGameMode ? 'bg-[#5d6cf5] text-white' : 'bg-black/[0.08] dark:bg-white/[0.10] text-black/40 dark:text-white/40'
+                )}>
+                  {isGameMode ? 'ON' : 'OFF'}
+                </span>
+              </button>
+            </>
+          )}
+
+          <div className="relative mb-3 flex-shrink-0">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-black/30 dark:text-white/30" />
+            <Input
+              placeholder="Поиск пользователей..."
+              value={userSearchQuery}
+              onChange={e => handleUserSearch(e.target.value)}
+              autoFocus
+              className="pl-9 bg-black/[0.05] dark:bg-white/[0.07] border-0 text-black dark:text-white placeholder:text-black/30 dark:placeholder:text-white/30 rounded-xl h-10 focus-visible:ring-1 focus-visible:ring-[#152cff]/30"
+            />
+          </div>
+
+          {selectedUsers.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-3 flex-shrink-0">
+              {selectedUsers.map(u => (
+                <Badge key={u.id}
+                  className="bg-[#152cff]/10 text-[#152cff] border-[#152cff]/20 cursor-pointer hover:bg-[#152cff]/15 pr-1.5"
+                  onClick={() => toggleUserSelection(u)}>
+                  {u.username}
+                  <X className="h-3 w-3 ml-1 inline" />
+                </Badge>
+              ))}
+            </div>
+          )}
+
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            {searchResults.length > 0 && (
+              <div className="space-y-0.5 pb-[128px] md:pb-2">
+                {searchResults.map(u => (
+                  <button key={u.id} onClick={() => toggleUserSelection(u)}
+                    className="w-full flex items-center gap-3 px-2 py-2.5 rounded-xl hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors">
+                    <Avatar className="h-9 w-9 flex-shrink-0">
+                      {u.avatarUrl && <AvatarImage src={u.avatarUrl} alt={u.username} />}
+                      <AvatarFallback className="bg-[#152cff] text-white text-xs font-medium">
+                        {getInitials(u.username)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="text-sm flex-1 text-left text-black dark:text-white">{u.username}</span>
+                    {selectedUsers.some(x => x.id === u.id) && (
+                      <Check className="h-4 w-4 text-[#152cff]" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+            {userSearchQuery.length >= 2 && searchResults.length === 0 && (
+              <p className="text-center text-sm text-black/40 dark:text-white/40 py-8 pb-[128px] md:pb-8">Пользователи не найдены</p>
+            )}
+            {!userSearchQuery && (
+              <div className="flex flex-col items-center justify-center py-10 pb-[128px] md:pb-10 text-black/30 dark:text-white/30">
+                <Search className="h-8 w-8 mb-2 opacity-40" />
+                <p className="text-sm">Введите имя для поиска</p>
+              </div>
+            )}
+          </div>
+
+          {selectedUsers.length > 0 && (
+            <div className="pt-3 pb-[128px] md:pb-3 flex-shrink-0">
+              <Button onClick={handleCreateChat} disabled={isLoading}
+                className="w-full bg-[#152cff] hover:bg-[#1124e0] h-10 rounded-xl text-white font-medium">
+                {isLoading ? 'Создание...' : `Создать ${isGroupMode ? 'группу' : 'чат'}`}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tab: Profile */}
+      {activeTab === 'profile' && (
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="px-4 pb-[128px] md:pb-6 flex flex-col items-center gap-5 pt-2">
+            {/* Avatar */}
+            <div className="relative mt-2">
+              <Avatar className="h-24 w-24 cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+                {(avatarPreview ?? user?.avatarUrl) && <AvatarImage src={avatarPreview ?? user?.avatarUrl!} className="object-cover" />}
+                <AvatarFallback className="bg-[#5d6cf5] text-white text-2xl font-bold">
+                  {getInitials(profileUsername || user?.username || '?')}
+                </AvatarFallback>
+              </Avatar>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="absolute bottom-0 right-0 h-8 w-8 rounded-full bg-[#5d6cf5] flex items-center justify-center shadow-[0px_6px_20px_0px_rgba(21,44,255,0.25)] transition-colors hover:bg-[#4a5be0]"
+              >
+                <Camera className="h-4 w-4 text-white" />
+              </button>
+              {avatarPreview && (
+                <button
+                  onClick={clearAvatarPreview}
+                  className="absolute top-0 right-0 h-6 w-6 rounded-full bg-black/20 hover:bg-black/30 flex items-center justify-center"
+                >
+                  <X className="h-3.5 w-3.5 text-white" />
+                </button>
+              )}
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+            </div>
+
+            {/* Username */}
+            <div className="w-full space-y-1.5">
+              <label className="text-xs text-black/40 dark:text-white/40 font-semibold uppercase tracking-wider px-1">Имя пользователя</label>
+              <Input
+                value={profileUsername}
+                onChange={e => setProfileUsername(e.target.value)}
+                placeholder="Введите имя"
+                className="bg-black/[0.05] dark:bg-white/[0.07] border-0 text-black dark:text-white placeholder:text-black/30 dark:placeholder:text-white/30 rounded-xl h-11 text-[15px]"
+                onKeyDown={e => { if (e.key === 'Enter') handleProfileSave() }}
+              />
+            </div>
+
+            {/* Email (read-only) */}
+            {user?.email && (
+              <div className="w-full space-y-1.5">
+                <label className="text-xs text-black/40 dark:text-white/40 font-semibold uppercase tracking-wider px-1">Email</label>
+                <div className="bg-black/[0.05] dark:bg-white/[0.07] rounded-xl h-11 flex items-center px-3">
+                  <span className="text-[15px] text-black/50 dark:text-white/50">{user.email}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Notifications toggle */}
+            <div className="w-full flex items-center justify-between bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 h-14">
+              <div className="flex items-center gap-3">
+                {notificationsEnabled
+                  ? <Bell className="h-5 w-5 text-black/50 dark:text-white/50" />
+                  : <BellOff className="h-5 w-5 text-black/30 dark:text-white/30" />
+                }
+                <div>
+                  <p className="text-[15px] font-medium text-black dark:text-white">Уведомления</p>
+                  <p className="text-xs text-black/40 dark:text-white/40">{notificationsEnabled ? 'Включены' : 'Отключены'}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setNotificationsEnabled(!notificationsEnabled)}
+                className={cn(
+                  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none',
+                  notificationsEnabled ? 'bg-[#5d6cf5]' : 'bg-black/[0.15] dark:bg-white/[0.15]'
+                )}
+              >
+                <span className={cn(
+                  'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                  notificationsEnabled ? 'translate-x-6' : 'translate-x-1'
+                )} />
+              </button>
+            </div>
+
+            {/* Dark mode toggle */}
+            <div className="w-full flex items-center justify-between bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 h-14">
+              <div className="flex items-center gap-3">
+                {darkMode
+                  ? <Moon className="h-5 w-5 text-black/50 dark:text-white/50" />
+                  : <Sun className="h-5 w-5 text-black/50" />
+                }
+                <div>
+                  <p className="text-[15px] font-medium text-black dark:text-white">Тёмная тема</p>
+                  <p className="text-xs text-black/40 dark:text-white/40">{darkMode ? 'Включена' : 'Выключена'}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setDarkMode(!darkMode)}
+                className={cn(
+                  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none',
+                  darkMode ? 'bg-[#5d6cf5]' : 'bg-black/[0.15] dark:bg-white/[0.15]'
+                )}
+              >
+                <span className={cn(
+                  'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                  darkMode ? 'translate-x-6' : 'translate-x-1'
+                )} />
+              </button>
+            </div>
+
+            {profileError && <p className="text-red-500 text-sm text-center">{profileError}</p>}
+
+            {/* Save */}
+            <Button
+              onClick={handleProfileSave}
+              disabled={isSaving || !profileUsername.trim()}
+              className="w-full bg-[#5d6cf5] hover:bg-[#4a5be0] h-11 rounded-xl text-white font-semibold text-[15px] shadow-[0px_6px_20px_0px_rgba(21,44,255,0.25)]"
+            >
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Check className="h-4 w-4 mr-1.5" />Сохранить</>}
+            </Button>
+
+            {/* Logout */}
+            <button
+              onClick={() => onLogout?.()}
+              className="w-full flex items-center justify-center gap-2 h-11 rounded-xl bg-red-50 dark:bg-red-500/[0.12] text-red-500 font-semibold text-[15px] hover:bg-red-100 dark:hover:bg-red-500/[0.18] transition-colors"
+            >
+              <LogOut className="h-4 w-4" />
+              Выйти
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Bottom navigation — desktop only; mobile nav is rendered in the parent page */}
+      <div className="hidden md:block flex-shrink-0 px-3 pt-2 pb-3" style={{ background: darkMode ? 'rgba(17,17,18,0.85)' : 'rgba(255,255,255,0.8)', backdropFilter: 'blur(20px)', boxShadow: darkMode ? '0px -1px 0px 0px rgba(255,255,255,0.06)' : '0px -1px 0px 0px rgba(0,0,0,0.06)' }}>
+        <div className="flex items-center justify-around bg-black/[0.05] dark:bg-white/[0.08] rounded-2xl px-1 py-2">
+          {/* Chats tab */}
+          <button
+            onClick={() => onTabChange('chats')}
+            className="flex flex-col items-center gap-1 flex-1"
+          >
+            <div className={cn(
+              'relative w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200',
+              activeTab === 'chats'
+                ? 'bg-white/80 dark:bg-white/[0.15]'
+                : ''
+            )}
+            style={activeTab === 'chats' ? { boxShadow: '0px 6px 20px 0px rgba(21,44,255,0.25)' } : undefined}
+            >
+              <MessageSquare className={cn('h-5 w-5', activeTab === 'chats' ? 'text-black dark:text-white' : 'text-black/60 dark:text-white/60')} />
+              {totalUnread > 0 && activeTab !== 'chats' && (
+                <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#5d6cf5] px-1 text-[10px] font-bold text-white leading-none">
+                  {totalUnread > 99 ? '99+' : totalUnread}
+                </span>
+              )}
+            </div>
+            <span className={cn('text-[11px] font-bold', activeTab === 'chats' ? 'text-black dark:text-white' : 'text-black/60 dark:text-white/60')}>Чаты</span>
+          </button>
+
+          {/* Search tab */}
+          <button
+            onClick={() => { resetSearch(); onTabChange('search') }}
+            className="flex flex-col items-center gap-1 flex-1"
+          >
+            <div className={cn(
+              'w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200',
+              activeTab === 'search' ? 'bg-white/80 dark:bg-white/[0.15]' : ''
+            )}
+            style={activeTab === 'search' ? { boxShadow: '0px 6px 20px 0px rgba(21,44,255,0.25)' } : undefined}
+            >
+              <Search className={cn('h-5 w-5', activeTab === 'search' ? 'text-black dark:text-white' : 'text-black/60 dark:text-white/60')} />
+            </div>
+            <span className={cn('text-[11px] font-bold', activeTab === 'search' ? 'text-black dark:text-white' : 'text-black/60 dark:text-white/60')}>Поиск</span>
+          </button>
+
+          {/* Profile tab */}
+          <button
+            onClick={() => { setProfileUsername(user?.username ?? ''); setProfileError(null); onTabChange('profile') }}
+            className="flex flex-col items-center gap-1 flex-1"
+          >
+            <div className="w-10 h-10 rounded-full flex items-center justify-center">
+              {user ? (
+                <div className="relative">
+                  <Avatar className="h-[30px] w-[30px]">
+                    {user.avatarUrl && <AvatarImage src={user.avatarUrl} alt={user.username} />}
+                    <AvatarFallback className="bg-[#5d6cf5] text-white text-[10px] font-medium">
+                      {getInitials(user.username)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-[#0ed221] rounded-full border-2 border-white dark:border-[#111112]" />
+                </div>
+              ) : (
+                <UserRound className="h-5 w-5 text-black/60 dark:text-white/60" />
+              )}
+            </div>
+            <span className="text-[11px] font-bold text-black/60 dark:text-white/60">Профиль</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -1,0 +1,107 @@
+services:
+  # ── PostgreSQL ────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       messme
+      POSTGRES_USER:     messme
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-messme_secret}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U messme -d messme"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── coturn TURN/STUN relay (WebRTC media via server) ─────────────────────────
+  coturn:
+    image: coturn/coturn:latest
+    restart: unless-stopped
+    network_mode: host          # needs host network to bind UDP/TCP on real IPs
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: >
+      -c /etc/coturn/turnserver.conf
+      --user=messme:${TURN_PASSWORD:?TURN_PASSWORD is required}
+      --external-ip=${TURN_EXTERNAL_IP:?TURN_EXTERNAL_IP is required}
+
+  # ── WebSocket server ──────────────────────────────────────────────────────────
+  messenger-server:
+    build:
+      context: ./mini-services/messenger-server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3003:3003"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3003/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      start_period: 5s
+
+  # ── Migrations (one-shot: runs prisma migrate deploy then exits) ─────────────
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrator
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql://messme:${POSTGRES_PASSWORD:-messme_secret}@postgres:5432/messme
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Next.js app ───────────────────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+      args:
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}
+        NEXT_PUBLIC_TURN_URL: turn:${TURN_EXTERNAL_IP:-aty-market.ru}:3478
+        NEXT_PUBLIC_TURN_USERNAME: messme
+        NEXT_PUBLIC_TURN_PASSWORD: ${TURN_PASSWORD:-}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NODE_ENV:     production
+      DATABASE_URL: postgresql://messme:${POSTGRES_PASSWORD:-messme_secret}@postgres:5432/messme
+      SECRET_KEY:   ${SECRET_KEY:?SECRET_KEY is required}
+      # Server-side message encryption key (64-char hex = 32 bytes AES-256)
+      # Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+      MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY:?MESSAGE_ENCRYPTION_KEY is required}
+      # S3 / file uploads
+      S3_ENDPOINT:   ${S3_ENDPOINT:?S3_ENDPOINT is required}
+      S3_BUCKET:     ${S3_BUCKET:?S3_BUCKET is required}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?S3_ACCESS_KEY is required}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?S3_SECRET_KEY is required}
+      S3_REGION:     ${S3_REGION:-us-east-1}
+      # Web Push
+      VAPID_PUBLIC_KEY:  ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      # Mail (Maddy on host)
+      MAIL_HOST:     host.docker.internal
+      MAIL_USER:     ${MAIL_USER:?MAIL_USER is required}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:?MAIL_PASSWORD is required}
+      # TURN server for WebRTC calls
+      NEXT_PUBLIC_TURN_URL:      turn:${TURN_EXTERNAL_IP:-aty-market.ru}:3478
+      NEXT_PUBLIC_TURN_USERNAME: messme
+      NEXT_PUBLIC_TURN_PASSWORD: ${TURN_PASSWORD:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      messenger-server:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: node server.js
+
+volumes:
+  postgres_data:

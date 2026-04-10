@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String             @id @default(cuid())
+  username        String             @unique
+  email           String             @unique
+  passwordHash    String
+  avatarUrl       String?
+  isVerified      Boolean            @default(false)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  chatMemberships ChatMember[]
+  chats           Chat[]
+  sentMessages    Message[]
+  sessions        Session[]
+  pushSubscriptions PushSubscription[]
+  channelMessages  ChannelMessage[]
+
+  @@map("users")
+}
+
+model VerificationCode {
+  id        String   @id @default(cuid())
+  email     String
+  code      String
+  type      String   // 'email_verify' | 'password_reset'
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([email, type])
+  @@map("verification_codes")
+}
+
+model Chat {
+  id        String       @id @default(cuid())
+  title     String?
+  isGroup   Boolean      @default(false)
+  gameMode  Boolean      @default(false)
+  avatarUrl String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  ownerId   String?
+  members   ChatMember[]
+  owner     User?        @relation(fields: [ownerId], references: [id])
+  messages  Message[]
+  channels  Channel[]
+
+  @@map("chats")
+}
+
+model ChatMember {
+  id       String   @id @default(cuid())
+  chatId   String
+  userId   String
+  joinedAt DateTime @default(now())
+  chat     Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([chatId, userId])
+  @@map("chat_members")
+}
+
+model Message {
+  id                    String      @id @default(cuid())
+  chatId                String
+  senderId              String
+  encryptedContent      String
+  createdAt             DateTime    @default(now())
+  isEdited              Boolean     @default(false)
+  replyToId             String?
+  forwardedFromUsername String?
+  isForwarded           Boolean     @default(false)
+  audioDuration         Int?
+  audioUrl              String?
+  type                  MessageType @default(TEXT)
+  fileName              String?
+  fileSize              Int?
+  fileUrl               String?
+  videoNoteUrl          String?
+  videoNoteDuration     Int?
+  chat                  Chat        @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  replyTo               Message?    @relation("MessageReplies", fields: [replyToId], references: [id])
+  replies               Message[]   @relation("MessageReplies")
+  sender                User        @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([chatId])
+  @@index([senderId])
+  @@map("messages")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+enum MessageType {
+  TEXT
+  AUDIO
+  IMAGE
+  FILE
+  VIDEO_NOTE
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("push_subscriptions")
+}
+
+model Channel {
+  id        String           @id @default(cuid())
+  chatId    String
+  name      String
+  type      ChannelType      @default(TEXT)
+  position  Int              @default(0)
+  createdAt DateTime         @default(now())
+  chat      Chat             @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  messages  ChannelMessage[]
+
+  @@index([chatId])
+  @@map("channels")
+}
+
+model ChannelMessage {
+  id             String   @id @default(cuid())
+  channelId      String
+  senderId       String
+  senderUsername String
+  content        String
+  createdAt      DateTime @default(now())
+  channel        Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  sender         User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([channelId])
+  @@map("channel_messages")
+}
+
+enum ChannelType {
+  TEXT
+  VOICE
+}
