@@ -112,6 +112,17 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
     setActiveStoryUserId(storyUserId)
   }
 
+  const handleOpenChatWithViewer = async (viewer: { id: string; username: string; avatarUrl?: string | null }) => {
+    const result = await chatsAPI.create([viewer.id], false)
+    if (!result.chat) return
+    addChat(result.chat)
+    if (result.isNew && result.chat.memberIds) {
+      messengerSocket.notifyChatCreated(result.chat, result.chat.memberIds)
+    }
+    onTabChange('chats')
+    onSelectChat?.(result.chat)
+  }
+
   const readVideoDuration = (file: File): Promise<number> =>
     new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file)
@@ -891,6 +902,8 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
       <StoryViewer
         open={!!activeStoryUserId}
         userId={activeStoryUserId}
+        storyUserIds={storyFeed.map(item => item.user.id)}
+        onOpenChatWithUser={handleOpenChatWithViewer}
         onOpenChange={open => {
           if (!open) {
             setActiveStoryUserId(null)

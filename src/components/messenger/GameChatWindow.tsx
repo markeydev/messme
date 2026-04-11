@@ -14,7 +14,7 @@ import {
   ArrowLeft, Hash, Volume2, Plus, Trash2, Send, Loader2,
   Mic, MicOff, PhoneOff, Gamepad2, X, Pencil, Check,
   Headphones, EarOff, UserPlus, Camera, LogOut, Video, VideoOff,
-  ScreenShare, ScreenShareOff, Monitor,
+  ScreenShare, ScreenShareOff, Monitor, PanelLeft,
 } from 'lucide-react'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -25,7 +25,6 @@ import { cn } from '@/lib/utils'
 interface GameChatWindowProps {
   chat: Chat
   onBack?: () => void
-  onSwitchToClassic?: () => void
 }
 
 interface VoicePeer {
@@ -58,7 +57,7 @@ const MAX_AUDIO_VOLUME = 2
 // Limit simultaneously rendered video tiles to reduce UI jank with many active cameras.
 const MAX_VISIBLE_VIDEO_TILES = 9
 
-export function GameChatWindow({ chat, onBack, onSwitchToClassic }: GameChatWindowProps) {
+export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   const { user, updateChatMembers, updateChat, removeChat, setActiveChat } = useMessengerStore()
 
   // ── Channels ──────────────────────────────────────────────────────────────
@@ -141,6 +140,7 @@ export function GameChatWindow({ chat, onBack, onSwitchToClassic }: GameChatWind
   // ── Avatar upload ─────────────────────────────────────────────────────────
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
   const avatarFileInputRef = useRef<HTMLInputElement>(null)
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
   // ── Ref sync (for stable access in cleanup / callbacks) ───────────────────
   useEffect(() => { activeVoiceChannelRef.current = activeVoiceChannel }, [activeVoiceChannel])
@@ -749,6 +749,8 @@ export function GameChatWindow({ chat, onBack, onSwitchToClassic }: GameChatWind
     memberMap.get(userId)?.avatarUrl ?? fallback ?? null
 
   const pingColor = ping === null ? '' : ping < 80 ? 'text-green-400' : ping < 180 ? 'text-yellow-400' : 'text-red-400'
+  const isSpeakingActive = (userId: string, isSelf = false) =>
+    speakingUsers.has(userId) && (!isSelf || (!isMicMuted && !isDeafened))
 
   // ── Channel row component (reused for text + voice) ───────────────────────
   const ChannelRow = ({ ch, isActive, onClick }: { ch: Channel; isActive: boolean; onClick: () => void }) => {
@@ -777,7 +779,10 @@ export function GameChatWindow({ chat, onBack, onSwitchToClassic }: GameChatWind
         ) : (
           <>
             <button
-              onClick={onClick}
+              onClick={() => {
+                onClick()
+                setMobileSidebarOpen(false)
+              }}
               className={cn(
                 'flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-sm transition-colors text-left',
                 isActive ? 'bg-white/[0.12] text-white' : 'text-white/50 hover:text-white/80 hover:bg-white/[0.06]'
@@ -811,25 +816,29 @@ export function GameChatWindow({ chat, onBack, onSwitchToClassic }: GameChatWind
   }
 
   return (
-    <div className="flex h-full min-h-0 bg-[#1a1b26] text-white overflow-hidden">
+    <div className="relative flex h-full min-h-0 bg-[#1a1b26] text-white overflow-hidden">
+
+      {mobileSidebarOpen && (
+        <button
+          className="md:hidden absolute inset-0 z-20 bg-black/55"
+          onClick={() => setMobileSidebarOpen(false)}
+          aria-label="Закрыть боковую панель"
+        />
+      )}
 
       {/* ── Left Sidebar ──────────────────────────────────────────────────── */}
-      <div className="w-60 flex-shrink-0 flex flex-col bg-[#13141f] border-r border-white/[0.06] min-h-0">
+      <div className={cn(
+        'w-60 md:w-60 flex-shrink-0 flex flex-col bg-[#13141f] border-r border-white/[0.06] min-h-0',
+        'absolute md:relative z-30 inset-y-0 left-0 w-[85vw] max-w-72 md:max-w-none',
+        'transition-transform duration-200',
+        mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+      )}>
 
         {/* Header */}
         <div className="flex items-center gap-2 px-3 h-14 border-b border-white/[0.06] flex-shrink-0">
           <button onClick={onBack} className="h-7 w-7 flex items-center justify-center rounded-full hover:bg-white/[0.08] text-white/50 hover:text-white transition-colors flex-shrink-0">
             <ArrowLeft className="h-4 w-4" />
           </button>
-          {onSwitchToClassic && (
-            <button
-              onClick={onSwitchToClassic}
-              className="h-7 px-2.5 rounded-lg text-[11px] font-semibold bg-white/[0.10] hover:bg-white/[0.16] text-white/85 transition-colors flex-shrink-0"
-              title="Вернуться в обычный интерфейс"
-            >
-              Messme UI
-            </button>
-          )}
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <button
               className="group relative flex-shrink-0"
@@ -921,7 +930,7 @@ export function GameChatWindow({ chat, onBack, onSwitchToClassic }: GameChatWind
                         {isConnected && (
                           <div className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] text-[#8b97ff]">
                             <Avatar className={cn('h-5 w-5 ring-1 ring-offset-1 ring-offset-[#13141f] transition-all',
-                              speakingUsers.has(user?.id ?? '') ? 'ring-green-400' : 'ring-transparent')}>
+                              isSpeakingActive(user?.id ?? '', true) ? 'ring-green-400' : 'ring-transparent')}>
                               {user?.avatarUrl && <AvatarImage src={user.avatarUrl} />}
                               <AvatarFallback className="bg-[#5d6cf5] text-white text-[8px] font-bold">{getInitials(user?.username ?? '?')}</AvatarFallback>
                             </Avatar>
@@ -937,7 +946,7 @@ export function GameChatWindow({ chat, onBack, onSwitchToClassic }: GameChatWind
                             onContextMenu={isConnected ? e => { e.preventDefault(); setUserVolumeMenu({ userId: p.userId, username: p.username, x: e.clientX, y: e.clientY }) } : undefined}
                           >
                             <Avatar className={cn('h-5 w-5 ring-1 ring-offset-1 ring-offset-[#13141f] transition-all',
-                              speakingUsers.has(p.userId) ? 'ring-green-400' : 'ring-transparent')}>
+                              isSpeakingActive(p.userId) ? 'ring-green-400' : 'ring-transparent')}>
                               {getMemberAvatar(p.userId, p.avatarUrl) && <AvatarImage src={getMemberAvatar(p.userId, p.avatarUrl)!} />}
                               <AvatarFallback className="bg-white/10 text-white text-[8px] font-bold">{getInitials(p.username)}</AvatarFallback>
                             </Avatar>
@@ -1003,7 +1012,14 @@ export function GameChatWindow({ chat, onBack, onSwitchToClassic }: GameChatWind
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
 
         {/* Channel header */}
-        <div className="h-14 flex items-center gap-3 px-4 border-b border-white/[0.06] flex-shrink-0 bg-[#1a1b26]">
+         <div className="h-14 flex items-center gap-3 px-4 border-b border-white/[0.06] flex-shrink-0 bg-[#1a1b26]">
+          <button
+            onClick={() => setMobileSidebarOpen(true)}
+            className="md:hidden h-8 w-8 flex items-center justify-center rounded-lg hover:bg-white/[0.08] text-white/70 hover:text-white transition-colors flex-shrink-0"
+            title="Открыть каналы"
+          >
+            <PanelLeft className="h-4 w-4" />
+          </button>
           {activeChannel ? (
             <>
               {activeChannel.type === 'TEXT' ? <Hash className="h-5 w-5 text-white/40 flex-shrink-0" /> : <Volume2 className="h-5 w-5 text-white/40 flex-shrink-0" />}
@@ -1067,7 +1083,7 @@ export function GameChatWindow({ chat, onBack, onSwitchToClassic }: GameChatWind
                       className={cn(
                         'group relative overflow-hidden rounded-xl bg-[#0d0e18] flex items-center justify-center cursor-pointer select-none',
                         big ? 'w-full h-full' : 'h-full aspect-video flex-shrink-0',
-                        speakingUsers.has(tile.userId) && !tile.isScreen ? 'ring-2 ring-green-400' : 'ring-1 ring-white/10'
+                        isSpeakingActive(tile.userId, tile.isSelf) && !tile.isScreen ? 'ring-2 ring-green-400' : 'ring-1 ring-white/10'
                       )}
                       onClick={() => setFocusedTile(tile.id === focused ? null : tile.id)}
                     >
@@ -1083,7 +1099,7 @@ export function GameChatWindow({ chat, onBack, onSwitchToClassic }: GameChatWind
                         <Avatar className={cn(
                           'ring-2 ring-offset-2 ring-offset-[#0d0e18] transition-all',
                           big ? 'h-20 w-20' : 'h-10 w-10',
-                          speakingUsers.has(tile.userId) ? 'ring-green-400' : 'ring-transparent'
+                          isSpeakingActive(tile.userId, tile.isSelf) ? 'ring-green-400' : 'ring-transparent'
                         )}>
                           {tile.avatarUrl && <AvatarImage src={tile.avatarUrl} />}
                           <AvatarFallback className={cn(big ? 'text-xl' : 'text-xs', 'font-bold', tile.isSelf ? 'bg-[#5d6cf5] text-white' : 'bg-white/10 text-white')}>
