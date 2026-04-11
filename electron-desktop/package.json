@@ -1,0 +1,42 @@
+{
+  "name": "messme-electron-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Messme desktop client (Electron)",
+  "main": "main.js",
+  "author": "markeydev",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron .",
+    "build:win": "electron-builder --win nsis portable"
+  },
+  "dependencies": {
+    "electron": "41.2.0"
+  },
+  "devDependencies": {
+    "electron-builder": "26.8.1"
+  },
+  "build": {
+    "appId": "com.markeydev.messme.desktop",
+    "productName": "Messme Desktop",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "main.js"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "artifactName": "Messme-Desktop-${version}-${arch}.${ext}"
+    }
+  }
+}

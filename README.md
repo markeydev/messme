@@ -38,6 +38,31 @@ bun run dev
 
 Открыть: http://localhost:3000
 
+## 🖥 Desktop client (Electron, Windows)
+
+Desktop-клиент находится в отдельной папке:
+
+```bash
+cd electron-desktop
+npm install
+```
+
+Локальный запуск (откроет `http://localhost:3000`, поэтому web-приложение должно быть запущено отдельно):
+
+```bash
+npm run dev
+```
+
+Сборка Windows-артефактов:
+
+```bash
+npm run build:win
+```
+
+Готовые файлы появляются в `electron-desktop/dist`.
+
+Для релиза в GitHub добавлен workflow `.github/workflows/electron-windows-release.yml`, который собирает Windows клиент и прикладывает артефакты к тегам `v*`.
+
 ## 📁 Структура
 
 ```

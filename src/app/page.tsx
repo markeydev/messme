@@ -209,8 +209,11 @@ export default function MessengerPage() {
       <div className={cn(
         'flex-shrink-0 flex flex-col w-full md:w-80 lg:w-[340px]',
         'bg-white dark:bg-[#111112] border-r border-black/[0.06] dark:border-white/[0.08]',
-        activeChat?.gameMode && 'hidden',
-        activeChat ? 'hidden md:flex' : 'flex'
+        activeChat?.gameMode
+          ? 'hidden'
+          : activeChat
+            ? 'hidden md:flex'
+            : 'flex'
       )}>
         {/* Sidebar header */}
         <div className="flex items-center justify-between px-4 min-h-16 border-b border-black/[0.06] dark:border-white/[0.08] flex-shrink-0" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
