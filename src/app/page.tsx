@@ -29,6 +29,7 @@ export default function MessengerPage() {
   const [chatListTab, setChatListTab] = useState<Tab>('chats')
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [lastPlaymeChat, setLastPlaymeChat] = useState<Chat | null>(null)
+  const [returnedFromPlayme, setReturnedFromPlayme] = useState(false)
   const [playmeOverlayPos, setPlaymeOverlayPos] = useState({ x: 12, y: 12 })
   const dragOffsetRef = useRef<{ dx: number; dy: number } | null>(null)
   // Incoming call state
@@ -166,7 +167,10 @@ export default function MessengerPage() {
   }, [isAuthenticated, user, addChat, addMessage, deleteMessage, updateMessage, incrementUnread])
 
   const handleSelectChat = useCallback(async (chat: Chat) => {
-    if (chat.gameMode) setLastPlaymeChat(chat)
+    if (chat.gameMode) {
+      setLastPlaymeChat(chat)
+      setReturnedFromPlayme(false)
+    }
     setActiveChat(chat)
     clearUnread(chat.id)
     const result = await chatsAPI.getById(chat.id)
@@ -178,6 +182,8 @@ export default function MessengerPage() {
   }, [user, setActiveChat, setMessages, clearUnread, updateChat])
 
   const handleBack = useCallback(() => {
+    if (activeChat?.gameMode) setReturnedFromPlayme(true)
+    else setReturnedFromPlayme(false)
     if (activeChatId && user && !activeChat?.gameMode) messengerSocket.leaveChat(activeChatId, user.id)
     setActiveChat(null)
   }, [activeChatId, activeChat?.gameMode, user, setActiveChat])
@@ -392,11 +398,14 @@ export default function MessengerPage() {
         )
       })()}
 
-      {lastPlaymeChat && activeChat && !activeChat.gameMode && (
+      {lastPlaymeChat && returnedFromPlayme && activeChat && !activeChat.gameMode && activeChat.isGroup && (
         <button
           className="fixed z-30 rounded-xl bg-[#5d6cf5] hover:bg-[#4a5be0] text-white px-3 py-2 shadow-xl flex items-center gap-2 select-none"
           style={{ left: playmeOverlayPos.x, bottom: playmeOverlayPos.y }}
-          onClick={() => setActiveChat(lastPlaymeChat)}
+          onClick={() => {
+            setReturnedFromPlayme(false)
+            setActiveChat(lastPlaymeChat)
+          }}
           onMouseDown={e => {
             dragOffsetRef.current = { dx: e.clientX - playmeOverlayPos.x, dy: e.clientY - (window.innerHeight - playmeOverlayPos.y) }
             const move = (ev: MouseEvent) => {
