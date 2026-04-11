@@ -9,6 +9,8 @@ import { useMessengerStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { Heart, Eye, X, ChevronLeft, ChevronRight } from 'lucide-react'
 
+const IMAGE_STORY_DURATION_MS = 15_000
+
 interface StoryViewerProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -43,10 +45,7 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
     let cancelled = false
     setIsLoading(true)
     const load = async () => {
-      const uniqueUserIds = Array.from(new Set(
-        (storyUserIds?.length ? storyUserIds : [userId]).filter(Boolean)
-      ))
-      if (!uniqueUserIds.includes(userId)) uniqueUserIds.unshift(userId)
+      const uniqueUserIds = Array.from(new Set([userId, ...(storyUserIds ?? [])].filter(Boolean)))
       const loaded = await Promise.all(uniqueUserIds.map(async uid => {
         const result = await storiesAPI.getUserStories(uid)
         return result.stories ?? []
@@ -80,7 +79,7 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
   useEffect(() => {
     if (!open || !activeStory) return
     if (activeStory.mediaType !== 'IMAGE') return
-    const id = setTimeout(() => goNext(), 15000)
+    const id = setTimeout(() => goNext(), IMAGE_STORY_DURATION_MS)
     return () => clearTimeout(id)
   }, [open, activeStory, goNext])
 
