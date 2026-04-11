@@ -35,6 +35,7 @@ export interface SocketEvents {
   'vc-occupants': (data: Record<string, Array<{ userId: string; username: string; avatarUrl?: string | null }>>) => void
   'vc-screen-start': (data: { channelId: string; userId: string }) => void
   'vc-screen-stop': (data: { channelId: string; userId: string }) => void
+  'vc-force-move': (data: { channelId: string; chatId: string; movedByUserId: string }) => void
   'channel-message': (data: { channelId: string; message: import('./api').ChannelMessage }) => void
 }
 
@@ -129,6 +130,7 @@ class MessengerSocket {
       'vc-occupants',
       'vc-screen-start',
       'vc-screen-stop',
+      'vc-force-move',
       'channel-message',
     ]
 
@@ -315,6 +317,12 @@ class MessengerSocket {
   sendVcScreenStop(channelId: string) {
     if (this.socket) {
       this.socket.emit('vc-screen-stop', { channelId })
+    }
+  }
+
+  requestVcMoveMember(chatId: string, channelId: string, targetUserId: string) {
+    if (this.socket) {
+      this.socket.emit('vc-move-member', { chatId, channelId, targetUserId })
     }
   }
 

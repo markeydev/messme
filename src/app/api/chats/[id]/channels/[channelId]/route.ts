@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getGameRoomPermissions } from '@/lib/game-room-permissions'
 
 async function getSession(request: NextRequest) {
   const token = request.headers.get('Authorization')?.replace('Bearer ', '')
@@ -24,6 +25,18 @@ export async function PATCH(
       where: { chatId_userId: { chatId, userId: session.userId } },
     })
     if (!membership) return NextResponse.json({ error: 'Нет доступа' }, { status: 403 })
+
+    const chat = await db.chat.findUnique({
+      where: { id: chatId },
+      select: { ownerId: true, gameMode: true },
+    })
+    if (!chat) return NextResponse.json({ error: 'Чат не найден' }, { status: 404 })
+    if (chat.gameMode) {
+      const perms = await getGameRoomPermissions(chatId, session.userId)
+      if (chat.ownerId !== session.userId && !perms.canRenameChannels) {
+        return NextResponse.json({ error: 'Нет прав на переименование канала' }, { status: 403 })
+      }
+    }
 
     const body = await request.json()
     const { name } = body

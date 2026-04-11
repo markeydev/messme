@@ -520,7 +520,29 @@ export interface ChannelMessage {
   senderId: string
   senderUsername: string
   content: string
+  replyToId?: string | null
+  replyTo?: {
+    id: string
+    senderId: string
+    senderUsername: string
+    content: string
+  } | null
   createdAt: string
+}
+
+export interface GameRoomRole {
+  id: string
+  chatId: string
+  name: string
+  color: string
+  position: number
+  isDefault: boolean
+  permissions: {
+    canMoveMembers: boolean
+    canChangeAvatar: boolean
+    canRenameChannels: boolean
+  }
+  members: Array<{ id: string; username: string; avatarUrl?: string | null }>
 }
 
 export const channelsAPI = {
@@ -553,10 +575,10 @@ export const channelsAPI = {
     return { error: result.error }
   },
 
-  async sendMessage(chatId: string, channelId: string, content: string): Promise<{ message?: ChannelMessage; error?: string }> {
+  async sendMessage(chatId: string, channelId: string, content: string, replyToId?: string | null): Promise<{ message?: ChannelMessage; error?: string }> {
     const result = await fetchAPI<{ message: ChannelMessage }>(`/chats/${chatId}/channels/${channelId}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, ...(replyToId ? { replyToId } : {}) }),
     })
     if (result.data) return { message: result.data.message }
     return { error: result.error }
@@ -583,6 +605,52 @@ export const channelsAPI = {
       body: JSON.stringify({ name }),
     })
     if (result.data) return { channel: result.data.channel }
+    return { error: result.error }
+  },
+}
+
+export const gameRolesAPI = {
+  async getRoles(chatId: string): Promise<{ roles?: GameRoomRole[]; error?: string }> {
+    const result = await fetchAPI<{ roles: GameRoomRole[] }>(`/chats/${chatId}/roles`)
+    if (result.data) return { roles: result.data.roles }
+    return { error: result.error }
+  },
+  async createRole(chatId: string, payload: { name: string; color?: string; permissions?: Partial<GameRoomRole['permissions']> }) {
+    const result = await fetchAPI<{ role: unknown }>(`/chats/${chatId}/roles`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+    if (result.data) return { role: result.data.role }
+    return { error: result.error }
+  },
+  async updateRole(chatId: string, roleId: string, payload: { name?: string; color?: string; permissions?: Partial<GameRoomRole['permissions']> }) {
+    const result = await fetchAPI<{ role: unknown }>(`/chats/${chatId}/roles/${roleId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+    if (result.data) return { role: result.data.role }
+    return { error: result.error }
+  },
+  async deleteRole(chatId: string, roleId: string) {
+    const result = await fetchAPI<{ success: boolean }>(`/chats/${chatId}/roles/${roleId}`, {
+      method: 'DELETE',
+    })
+    if (result.data) return { success: true }
+    return { error: result.error }
+  },
+  async assignMember(chatId: string, roleId: string, userId: string) {
+    const result = await fetchAPI<{ member: { id: string } }>(`/chats/${chatId}/roles/${roleId}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ userId }),
+    })
+    if (result.data) return { member: result.data.member }
+    return { error: result.error }
+  },
+  async unassignMember(chatId: string, roleId: string, userId: string) {
+    const result = await fetchAPI<{ success: boolean }>(`/chats/${chatId}/roles/${roleId}/members?userId=${userId}`, {
+      method: 'DELETE',
+    })
+    if (result.data) return { success: true }
     return { error: result.error }
   },
 }

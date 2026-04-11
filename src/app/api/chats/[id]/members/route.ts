@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { randomUUID } from 'crypto'
+import { assignDefaultRole } from '@/lib/game-room-permissions'
 
 export async function POST(
   request: NextRequest,
@@ -102,6 +103,9 @@ export async function POST(
           id: member.user.id,
           username: member.user.username,
         })
+        if (chat.gameMode) {
+          await assignDefaultRole(chatId, userId)
+        }
       }
     }
 

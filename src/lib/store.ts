@@ -20,9 +20,10 @@ interface MessengerState {
   // Notification preferences (persisted)
   notificationsEnabled: boolean
   mutedChats: Record<string, boolean>
-  cameraEnabled: boolean
-  microphoneEnabled: boolean
   microphoneVolume: number
+  outputVolume: number
+  audioInputDeviceId: string | null
+  audioOutputDeviceId: string | null
   soundEffectsEnabled: boolean
   autoPlayMedia: boolean
 
@@ -58,9 +59,10 @@ interface MessengerState {
 
   setNotificationsEnabled: (enabled: boolean) => void
   toggleMuteChat: (chatId: string) => void
-  setCameraEnabled: (enabled: boolean) => void
-  setMicrophoneEnabled: (enabled: boolean) => void
   setMicrophoneVolume: (volume: number) => void
+  setOutputVolume: (volume: number) => void
+  setAudioInputDeviceId: (deviceId: string | null) => void
+  setAudioOutputDeviceId: (deviceId: string | null) => void
   setSoundEffectsEnabled: (enabled: boolean) => void
   setAutoPlayMedia: (enabled: boolean) => void
 
@@ -88,9 +90,10 @@ export const useMessengerStore = create<MessengerState>()(
 
       notificationsEnabled: true,
       mutedChats: {},
-      cameraEnabled: true,
-      microphoneEnabled: true,
       microphoneVolume: 75,
+      outputVolume: 100,
+      audioInputDeviceId: null,
+      audioOutputDeviceId: null,
       soundEffectsEnabled: true,
       autoPlayMedia: true,
 
@@ -253,9 +256,10 @@ export const useMessengerStore = create<MessengerState>()(
         mutedChats: { ...state.mutedChats, [chatId]: !state.mutedChats[chatId] }
       })),
 
-      setCameraEnabled: (enabled) => set({ cameraEnabled: enabled }),
-      setMicrophoneEnabled: (enabled) => set({ microphoneEnabled: enabled }),
       setMicrophoneVolume: (volume) => set({ microphoneVolume: Math.max(0, Math.min(100, volume)) }),
+      setOutputVolume: (volume) => set({ outputVolume: Math.max(0, Math.min(200, volume)) }),
+      setAudioInputDeviceId: (deviceId) => set({ audioInputDeviceId: deviceId }),
+      setAudioOutputDeviceId: (deviceId) => set({ audioOutputDeviceId: deviceId }),
       setSoundEffectsEnabled: (enabled) => set({ soundEffectsEnabled: enabled }),
       setAutoPlayMedia: (enabled) => set({ autoPlayMedia: enabled }),
 
@@ -276,9 +280,10 @@ export const useMessengerStore = create<MessengerState>()(
         notificationsEnabled: state.notificationsEnabled,
         mutedChats: state.mutedChats,
         darkMode: state.darkMode,
-        cameraEnabled: state.cameraEnabled,
-        microphoneEnabled: state.microphoneEnabled,
         microphoneVolume: state.microphoneVolume,
+        outputVolume: state.outputVolume,
+        audioInputDeviceId: state.audioInputDeviceId,
+        audioOutputDeviceId: state.audioOutputDeviceId,
         soundEffectsEnabled: state.soundEffectsEnabled,
         autoPlayMedia: state.autoPlayMedia
       }),

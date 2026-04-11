@@ -53,6 +53,7 @@ export function CallWindow({
   incomingOffer,
   onClose,
 }: CallWindowProps) {
+  const { outputVolume, audioOutputDeviceId, audioInputDeviceId } = useMessengerStore()
   const [status, setStatus] = useState<'connecting' | 'ringing' | 'active' | 'ended'>(
     role === 'caller' ? 'ringing' : 'connecting'
   )
@@ -102,8 +103,12 @@ export function CallWindow({
     }
     if (status === 'active' && remoteAudioRef.current && remoteStreamRef.current) {
       remoteAudioRef.current.srcObject = remoteStreamRef.current
+      remoteAudioRef.current.volume = Math.max(0, Math.min(2, outputVolume / 100))
+      if (audioOutputDeviceId && (remoteAudioRef.current as any).setSinkId) {
+        ;(remoteAudioRef.current as any).setSinkId(audioOutputDeviceId).catch(() => {})
+      }
     }
-  }, [status, withVideo])
+  }, [audioOutputDeviceId, outputVolume, status, withVideo])
 
   const formatDuration = (s: number) =>
     `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`
@@ -149,7 +154,7 @@ export function CallWindow({
     // Get local media
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
+        audio: audioInputDeviceId ? { deviceId: { exact: audioInputDeviceId } } : true,
         video: withVideo ? { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' } : false,
       })
       localStreamRef.current = stream
@@ -169,7 +174,13 @@ export function CallWindow({
       const [remoteStream] = e.streams
       remoteStreamRef.current = remoteStream
       if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream
-      if (remoteAudioRef.current) remoteAudioRef.current.srcObject = remoteStream
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = remoteStream
+        remoteAudioRef.current.volume = Math.max(0, Math.min(2, outputVolume / 100))
+        if (audioOutputDeviceId && (remoteAudioRef.current as any).setSinkId) {
+          ;(remoteAudioRef.current as any).setSinkId(audioOutputDeviceId).catch(() => {})
+        }
+      }
     }
 
     // Log ICE candidates as they're gathered (still use non-trickle: all embedded in SDP)
@@ -217,7 +228,7 @@ export function CallWindow({
     }, 45_000)
 
     return pc
-  }, [withVideo, remoteUserId, endCall, markCallActive])
+  }, [audioInputDeviceId, audioOutputDeviceId, outputVolume, withVideo, remoteUserId, endCall, markCallActive])
 
   // Wait for ICE gathering to complete (all candidates embedded in SDP)
   // Falls back after timeoutMs so gathering never blocks forever

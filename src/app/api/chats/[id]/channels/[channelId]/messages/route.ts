@@ -37,10 +37,28 @@ export async function GET(
       },
       orderBy: { createdAt: 'desc' },
       take: LIMIT + 1,
+      include: {
+        replyTo: {
+          select: {
+            id: true,
+            senderId: true,
+            senderUsername: true,
+            content: true,
+          },
+        },
+      },
     })
 
     const hasMore = messages.length > LIMIT
-    const result = messages.slice(0, LIMIT).reverse()
+    const result = messages.slice(0, LIMIT).reverse().map(m => ({
+      ...m,
+      replyTo: m.replyTo ? {
+        id: m.replyTo.id,
+        senderId: m.replyTo.senderId,
+        senderUsername: m.replyTo.senderUsername,
+        content: m.replyTo.content,
+      } : null,
+    }))
 
     return NextResponse.json({ messages: result, hasMore })
   } catch (err) {
@@ -71,9 +89,18 @@ export async function POST(
     })
 
     const body = await request.json()
-    const { content } = body
+    const { content, replyToId } = body
     if (!content || typeof content !== 'string' || !content.trim()) {
       return NextResponse.json({ error: 'Необходимо содержимое' }, { status: 400 })
+    }
+    if (replyToId) {
+      const exists = await db.channelMessage.findFirst({
+        where: { id: String(replyToId), channelId },
+        select: { id: true },
+      })
+      if (!exists) {
+        return NextResponse.json({ error: 'replyTo сообщение не найдено' }, { status: 400 })
+      }
     }
 
     const message = await db.channelMessage.create({
@@ -83,6 +110,17 @@ export async function POST(
         senderId: session.userId,
         senderUsername: user?.username ?? 'Unknown',
         content: content.trim(),
+        ...(replyToId ? { replyToId: String(replyToId) } : {}),
+      },
+      include: {
+        replyTo: {
+          select: {
+            id: true,
+            senderId: true,
+            senderUsername: true,
+            content: true,
+          },
+        },
       },
     })
 

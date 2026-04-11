@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { randomUUID } from 'crypto'
+import { assignDefaultRole } from '@/lib/game-room-permissions'
 
 export async function POST(request: NextRequest) {
   try {
@@ -129,6 +130,29 @@ export async function POST(request: NextRequest) {
         }
       }
     })
+
+    if (chat.gameMode) {
+      await Promise.all(allMemberIds.map(userId => assignDefaultRole(chat.id, userId)))
+      await db.gameRoomRole.create({
+        data: {
+          id: randomUUID(),
+          chatId: chat.id,
+          name: 'Модератор',
+          color: '#22c55e',
+          position: 1,
+          isDefault: false,
+          canMoveMembers: true,
+          canChangeAvatar: true,
+          canRenameChannels: true,
+          members: {
+            create: {
+              id: randomUUID(),
+              userId: session.userId,
+            },
+          },
+        },
+      }).catch(() => {})
+    }
 
     // For 1-on-1 chat, set title to other user's name
     const chatTitle = chat.isGroup

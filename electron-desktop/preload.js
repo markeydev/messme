@@ -5,4 +5,5 @@ contextBridge.exposeInMainWorld('messmeDesktop', {
   notify: ({ title, body }) => {
     ipcRenderer.send('messme:notify', { title, body })
   },
+  getDesktopSources: () => ipcRenderer.invoke('messme:get-desktop-sources'),
 })
