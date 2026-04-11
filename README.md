@@ -59,6 +59,16 @@ npm run dev
 npm run build:win
 ```
 
+Отдельные таргеты:
+
+```bash
+# Только portable
+npm run build:win:portable
+
+# Только installer (NSIS)
+npm run build:win:installer
+```
+
 Готовые файлы появляются в `electron-desktop/dist`.
 
 Для релиза в GitHub добавлен workflow `.github/workflows/electron-windows-release.yml`, который собирает Windows клиент и прикладывает артефакты к тегам `v*`.

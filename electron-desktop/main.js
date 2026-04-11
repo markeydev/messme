@@ -1,7 +1,9 @@
-const { app, BrowserWindow, shell } = require('electron')
+const { app, BrowserWindow, shell, ipcMain, Notification, nativeImage } = require('electron')
 const path = require('path')
 
 const DEFAULT_START_URL = 'http://localhost:3000'
+const APP_ICON_PATH = path.join(__dirname, 'build', 'icon.png')
+const APP_ICON = nativeImage.createFromPath(APP_ICON_PATH)
 
 const createWindow = () => {
   const mainWindow = new BrowserWindow({
@@ -11,6 +13,7 @@ const createWindow = () => {
     minHeight: 620,
     autoHideMenuBar: true,
     backgroundColor: '#111112',
+    icon: APP_ICON.isEmpty() ? undefined : APP_ICON_PATH,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -29,7 +32,20 @@ const createWindow = () => {
 }
 
 app.whenReady().then(() => {
+  app.setName('Messme')
   createWindow()
+
+  ipcMain.on('messme:notify', (_event, payload) => {
+    if (!Notification.isSupported()) return
+    const title = payload?.title || 'Messme'
+    const body = payload?.body || 'Новое сообщение'
+    const notification = new Notification({
+      title,
+      body,
+      icon: APP_ICON.isEmpty() ? undefined : APP_ICON,
+    })
+    notification.show()
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

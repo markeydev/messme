@@ -8,7 +8,9 @@
   "license": "MIT",
   "scripts": {
     "dev": "electron .",
-    "build:win": "electron-builder --win nsis portable --publish never"
+    "build:win": "electron-builder --win portable nsis --publish never",
+    "build:win:portable": "electron-builder --win portable --publish never",
+    "build:win:installer": "electron-builder --win nsis --publish never"
   },
   "devDependencies": {
     "electron": "41.2.0",
@@ -24,17 +26,28 @@
     "files": [
       "main.js",
       "preload.js",
-      "package.json"
+      "package.json",
+      "build/**/*"
     ],
     "extraMetadata": {
       "main": "main.js"
     },
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         "nsis",
         "portable"
       ],
       "artifactName": "Messme-Desktop-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Messme",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "installerHeader": "build/installerHeader.bmp"
     }
   }
 }
