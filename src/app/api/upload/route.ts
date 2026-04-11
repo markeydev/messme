@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { uploadToS3 } from '@/lib/s3'
+import { STORY_MAX_VIDEO_DURATION_SECONDS } from '@/lib/stories'
 import { randomUUID } from 'crypto'
 
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/svg+xml']
@@ -68,8 +69,8 @@ export async function POST(request: NextRequest) {
 
       if (STORY_VIDEO_TYPES.includes(file.type)) {
         const parsedDuration = duration ? Number(duration) : NaN
-        if (!Number.isFinite(parsedDuration) || parsedDuration <= 0 || parsedDuration > 30) {
-          return NextResponse.json({ error: 'Видео для сторис должно быть до 30 секунд' }, { status: 400 })
+        if (!Number.isFinite(parsedDuration) || parsedDuration <= 0 || parsedDuration > STORY_MAX_VIDEO_DURATION_SECONDS) {
+          return NextResponse.json({ error: `Видео для сторис должно быть до ${STORY_MAX_VIDEO_DURATION_SECONDS} секунд` }, { status: 400 })
         }
         if (file.size > MAX_STORY_VIDEO)
           return NextResponse.json({ error: 'Видео слишком большое (макс. 50 МБ)' }, { status: 400 })

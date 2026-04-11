@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { chatsAPI, usersAPI, profileAPI, storiesAPI, type Chat, type StoryFeedItem, type User } from '@/lib/api'
 import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
+import { STORY_MAX_VIDEO_DURATION_SECONDS } from '@/lib/stories'
 import { StoryViewer } from '@/components/messenger/StoryViewer'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -120,11 +121,17 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
       v.onloadedmetadata = () => {
         const duration = v.duration
         URL.revokeObjectURL(url)
+        v.removeAttribute('src')
+        v.load()
+        v.remove()
         if (!Number.isFinite(duration) || duration <= 0) reject(new Error('Не удалось определить длительность видео'))
         else resolve(duration)
       }
       v.onerror = () => {
         URL.revokeObjectURL(url)
+        v.removeAttribute('src')
+        v.load()
+        v.remove()
         reject(new Error('Ошибка чтения видео'))
       }
     })
@@ -138,8 +145,8 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
     try {
       const isVideo = file.type.startsWith('video/')
       const duration = isVideo ? await readVideoDuration(file) : null
-      if (isVideo && (duration ?? 0) > 30) {
-        setProfileError('Видео для сторис должно быть до 30 секунд')
+      if (isVideo && (duration ?? 0) > STORY_MAX_VIDEO_DURATION_SECONDS) {
+        setProfileError(`Видео для сторис должно быть до ${STORY_MAX_VIDEO_DURATION_SECONDS} секунд`)
         setIsUploadingStory(false)
         return
       }
@@ -654,7 +661,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                 className="w-full h-10 rounded-xl bg-black/[0.06] dark:bg-white/[0.10] text-black dark:text-white hover:bg-black/[0.10] dark:hover:bg-white/[0.16]"
               >
                 {isUploadingStory ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
-                Добавить сторис (фото/видео до 30с)
+                Добавить сторис (фото/видео до {STORY_MAX_VIDEO_DURATION_SECONDS}с)
               </Button>
               <input
                 ref={storyFileInputRef}

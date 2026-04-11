@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { STORY_MAX_VIDEO_DURATION_SECONDS } from '@/lib/stories'
 
 async function getSession(request: NextRequest) {
   const token = request.headers.get('Authorization')?.replace('Bearer ', '')
@@ -118,8 +119,8 @@ export async function POST(request: NextRequest) {
     if (!mediaType) return NextResponse.json({ error: 'Некорректный mediaType' }, { status: 400 })
 
     if (mediaType === 'VIDEO') {
-      if (!Number.isFinite(videoDuration) || videoDuration <= 0 || videoDuration > 30) {
-        return NextResponse.json({ error: 'Видео для сторис должно быть до 30 секунд' }, { status: 400 })
+      if (!Number.isFinite(videoDuration) || videoDuration <= 0 || videoDuration > STORY_MAX_VIDEO_DURATION_SECONDS) {
+        return NextResponse.json({ error: `Видео для сторис должно быть до ${STORY_MAX_VIDEO_DURATION_SECONDS} секунд` }, { status: 400 })
       }
     }
 

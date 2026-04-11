@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { storiesAPI, type Story } from '@/lib/api'
+import { useMessengerStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { Heart, Eye, X } from 'lucide-react'
 
@@ -15,6 +16,7 @@ interface StoryViewerProps {
 }
 
 export function StoryViewer({ open, onOpenChange, userId }: StoryViewerProps) {
+  const { user } = useMessengerStore()
   const [stories, setStories] = useState<Story[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
@@ -34,17 +36,18 @@ export function StoryViewer({ open, onOpenChange, userId }: StoryViewerProps) {
   }, [open, userId])
 
   const activeStory = stories[activeIndex]
-  const isOwner = !!activeStory && activeStory.user.id === userId
+  const isOwner = !!activeStory && activeStory.user.id === user?.id
 
   useEffect(() => {
     if (!open || !activeStory || isOwner) return
     if (activeStory.seenByMe) return
-    storiesAPI.markViewed(activeStory.id).then(result => {
-      setStories(prev => prev.map(s => s.id === activeStory.id
+    const storyId = activeStory.id
+    storiesAPI.markViewed(storyId).then(result => {
+      setStories(prev => prev.map(s => s.id === storyId
         ? { ...s, seenByMe: true, viewsCount: result.viewsCount ?? s.viewsCount }
         : s))
     })
-  }, [open, activeStory?.id, isOwner])
+  }, [open, activeStory, isOwner])
 
   const handleToggleLike = async () => {
     if (!activeStory || isOwner) return
@@ -66,7 +69,6 @@ export function StoryViewer({ open, onOpenChange, userId }: StoryViewerProps) {
     if (idx !== activeIndex && idx >= 0 && idx < stories.length) setActiveIndex(idx)
   }
 
-  const userLabel = useMemo(() => activeStory?.user.username ?? '', [activeStory?.user.username])
   const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 
   return (
@@ -158,7 +160,6 @@ export function StoryViewer({ open, onOpenChange, userId }: StoryViewerProps) {
               {activeIndex + 1}/{stories.length}
             </div>
           )}
-          {!!userLabel && <div className="sr-only">{userLabel}</div>}
         </div>
       </DialogContent>
     </Dialog>

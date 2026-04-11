@@ -1,0 +1,1 @@
+export const STORY_MAX_VIDEO_DURATION_SECONDS = 30
