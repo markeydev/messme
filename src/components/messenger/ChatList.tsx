@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -10,11 +10,12 @@ import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
 import { STORY_MAX_VIDEO_DURATION_SECONDS } from '@/lib/stories'
 import { StoryViewer } from '@/components/messenger/StoryViewer'
+import { Slider } from '@/components/ui/slider'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { PenSquare, Search, MessageSquare, Users, Check, X, BellOff, UserRound, Camera, Bell, Loader2, LogOut, Sun, Moon, Gamepad2, Trash2, Plus } from 'lucide-react'
+import { PenSquare, Search, MessageSquare, Users, Check, X, BellOff, UserRound, Camera, Bell, Loader2, LogOut, Sun, Moon, Gamepad2, Trash2, Plus, Video, VideoOff, Mic, MicOff, Volume2, VolumeX, Film } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export type Tab = 'chats' | 'search' | 'profile'
@@ -29,7 +30,7 @@ interface ChatListProps {
 }
 
 export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout, activeTab, onTabChange }: ChatListProps) {
-  const { chats, addChat, user, unreadCounts, mutedChats, updateUser, notificationsEnabled, setNotificationsEnabled, darkMode, setDarkMode, removeChat, setActiveChat } = useMessengerStore()
+  const { chats, addChat, user, unreadCounts, mutedChats, updateUser, notificationsEnabled, setNotificationsEnabled, darkMode, setDarkMode, removeChat, setActiveChat, cameraEnabled, microphoneEnabled, microphoneVolume, soundEffectsEnabled, autoPlayMedia, setCameraEnabled, setMicrophoneEnabled, setMicrophoneVolume, setSoundEffectsEnabled, setAutoPlayMedia } = useMessengerStore()
   const [chatSearchQuery, setChatSearchQuery] = useState('')
   const [chatGroupFilter, setChatGroupFilter] = useState<'MESSME' | 'PLAYME'>('MESSME')
   const [storyFeed, setStoryFeed] = useState<StoryFeedItem[]>([])
@@ -37,6 +38,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
   const [activeStoryUserId, setActiveStoryUserId] = useState<string | null>(null)
   const [isUploadingStory, setIsUploadingStory] = useState(false)
   const storyFileInputRef = useRef<HTMLInputElement>(null)
+  const storiesScrollRef = useRef<HTMLDivElement>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isGroupMode, setIsGroupMode] = useState(false)
   const [groupTitle, setGroupTitle] = useState('')
@@ -87,6 +89,18 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
   const [isSaving, setIsSaving] = useState(false)
   const [profileError, setProfileError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    setProfileUsername(user?.username ?? '')
+  }, [user?.username])
+
+  const handleStoriesWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+    const container = storiesScrollRef.current
+    if (!container) return
+    if (Math.abs(e.deltaY) < Math.abs(e.deltaX)) return
+    e.preventDefault()
+    container.scrollBy({ left: e.deltaY, behavior: 'auto' })
+  }, [])
 
   const filteredChats = chats.filter(chat =>
     chat.title.toLowerCase().includes(chatSearchQuery.toLowerCase()) &&
@@ -359,7 +373,11 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
             </div>
           </div>
           <div className="px-3 pb-2 flex-shrink-0">
-            <div className="overflow-x-auto no-scrollbar">
+            <div
+              ref={storiesScrollRef}
+              className="overflow-x-auto no-scrollbar"
+              onWheel={handleStoriesWheel}
+            >
               <div className="flex items-center gap-2 min-w-max pr-1">
                 {isStoriesLoading && storyFeed.length === 0 ? (
                   <span className="text-xs text-black/40 dark:text-white/40 px-1">Загрузка сторис...</span>
@@ -753,6 +771,125 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                 <span className={cn(
                   'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
                   darkMode ? 'translate-x-6' : 'translate-x-1'
+                )} />
+              </button>
+            </div>
+
+            {/* Camera toggle */}
+            <div className="w-full flex items-center justify-between bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 h-14">
+              <div className="flex items-center gap-3">
+                {cameraEnabled
+                  ? <Video className="h-5 w-5 text-black/50 dark:text-white/50" />
+                  : <VideoOff className="h-5 w-5 text-black/30 dark:text-white/30" />
+                }
+                <div>
+                  <p className="text-[15px] font-medium text-black dark:text-white">Камера</p>
+                  <p className="text-xs text-black/40 dark:text-white/40">{cameraEnabled ? 'Включена' : 'Отключена'}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setCameraEnabled(!cameraEnabled)}
+                className={cn(
+                  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none',
+                  cameraEnabled ? 'bg-[#5d6cf5]' : 'bg-black/[0.15] dark:bg-white/[0.15]'
+                )}
+              >
+                <span className={cn(
+                  'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                  cameraEnabled ? 'translate-x-6' : 'translate-x-1'
+                )} />
+              </button>
+            </div>
+
+            {/* Microphone toggle */}
+            <div className="w-full flex items-center justify-between bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 h-14">
+              <div className="flex items-center gap-3">
+                {microphoneEnabled
+                  ? <Mic className="h-5 w-5 text-black/50 dark:text-white/50" />
+                  : <MicOff className="h-5 w-5 text-black/30 dark:text-white/30" />
+                }
+                <div>
+                  <p className="text-[15px] font-medium text-black dark:text-white">Микрофон</p>
+                  <p className="text-xs text-black/40 dark:text-white/40">{microphoneEnabled ? 'Включен' : 'Отключен'}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setMicrophoneEnabled(!microphoneEnabled)}
+                className={cn(
+                  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none',
+                  microphoneEnabled ? 'bg-[#5d6cf5]' : 'bg-black/[0.15] dark:bg-white/[0.15]'
+                )}
+              >
+                <span className={cn(
+                  'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                  microphoneEnabled ? 'translate-x-6' : 'translate-x-1'
+                )} />
+              </button>
+            </div>
+
+            {/* Microphone volume */}
+            <div className="w-full bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 py-3">
+              <div className="flex items-center gap-3 mb-2">
+                {microphoneVolume > 0
+                  ? <Volume2 className="h-5 w-5 text-black/50 dark:text-white/50" />
+                  : <VolumeX className="h-5 w-5 text-black/30 dark:text-white/30" />
+                }
+                <div>
+                  <p className="text-[15px] font-medium text-black dark:text-white">Громкость микрофона</p>
+                  <p className="text-xs text-black/40 dark:text-white/40">{microphoneVolume}%</p>
+                </div>
+              </div>
+              <Slider
+                min={0}
+                max={100}
+                step={1}
+                value={[microphoneVolume]}
+                onValueChange={(value) => setMicrophoneVolume(value[0] ?? 0)}
+                className="w-full"
+              />
+            </div>
+
+            {/* Extra useful settings */}
+            <div className="w-full flex items-center justify-between bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 h-14">
+              <div className="flex items-center gap-3">
+                <Bell className="h-5 w-5 text-black/50 dark:text-white/50" />
+                <div>
+                  <p className="text-[15px] font-medium text-black dark:text-white">Звуки интерфейса</p>
+                  <p className="text-xs text-black/40 dark:text-white/40">{soundEffectsEnabled ? 'Включены' : 'Отключены'}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSoundEffectsEnabled(!soundEffectsEnabled)}
+                className={cn(
+                  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none',
+                  soundEffectsEnabled ? 'bg-[#5d6cf5]' : 'bg-black/[0.15] dark:bg-white/[0.15]'
+                )}
+              >
+                <span className={cn(
+                  'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                  soundEffectsEnabled ? 'translate-x-6' : 'translate-x-1'
+                )} />
+              </button>
+            </div>
+
+            <div className="w-full flex items-center justify-between bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 h-14">
+              <div className="flex items-center gap-3">
+                <Film className="h-5 w-5 text-black/50 dark:text-white/50" />
+                <div>
+                  <p className="text-[15px] font-medium text-black dark:text-white">Автовоспроизведение медиа</p>
+                  <p className="text-xs text-black/40 dark:text-white/40">{autoPlayMedia ? 'Включено' : 'Отключено'}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setAutoPlayMedia(!autoPlayMedia)}
+                className={cn(
+                  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none',
+                  autoPlayMedia ? 'bg-[#5d6cf5]' : 'bg-black/[0.15] dark:bg-white/[0.15]'
+                )}
+              >
+                <span className={cn(
+                  'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                  autoPlayMedia ? 'translate-x-6' : 'translate-x-1'
                 )} />
               </button>
             </div>

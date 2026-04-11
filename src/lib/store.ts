@@ -20,6 +20,11 @@ interface MessengerState {
   // Notification preferences (persisted)
   notificationsEnabled: boolean
   mutedChats: Record<string, boolean>
+  cameraEnabled: boolean
+  microphoneEnabled: boolean
+  microphoneVolume: number
+  soundEffectsEnabled: boolean
+  autoPlayMedia: boolean
 
   // UI state
   isLoading: boolean
@@ -53,6 +58,11 @@ interface MessengerState {
 
   setNotificationsEnabled: (enabled: boolean) => void
   toggleMuteChat: (chatId: string) => void
+  setCameraEnabled: (enabled: boolean) => void
+  setMicrophoneEnabled: (enabled: boolean) => void
+  setMicrophoneVolume: (volume: number) => void
+  setSoundEffectsEnabled: (enabled: boolean) => void
+  setAutoPlayMedia: (enabled: boolean) => void
 
   darkMode: boolean
   setDarkMode: (dark: boolean) => void
@@ -78,6 +88,11 @@ export const useMessengerStore = create<MessengerState>()(
 
       notificationsEnabled: true,
       mutedChats: {},
+      cameraEnabled: true,
+      microphoneEnabled: true,
+      microphoneVolume: 75,
+      soundEffectsEnabled: true,
+      autoPlayMedia: true,
 
       darkMode: false,
 
@@ -238,6 +253,12 @@ export const useMessengerStore = create<MessengerState>()(
         mutedChats: { ...state.mutedChats, [chatId]: !state.mutedChats[chatId] }
       })),
 
+      setCameraEnabled: (enabled) => set({ cameraEnabled: enabled }),
+      setMicrophoneEnabled: (enabled) => set({ microphoneEnabled: enabled }),
+      setMicrophoneVolume: (volume) => set({ microphoneVolume: Math.max(0, Math.min(100, volume)) }),
+      setSoundEffectsEnabled: (enabled) => set({ soundEffectsEnabled: enabled }),
+      setAutoPlayMedia: (enabled) => set({ autoPlayMedia: enabled }),
+
       setDarkMode: (dark) => set({ darkMode: dark }),
 
       setLoading: (isLoading) => set({ isLoading }),
@@ -254,7 +275,12 @@ export const useMessengerStore = create<MessengerState>()(
         chats: state.chats,
         notificationsEnabled: state.notificationsEnabled,
         mutedChats: state.mutedChats,
-        darkMode: state.darkMode
+        darkMode: state.darkMode,
+        cameraEnabled: state.cameraEnabled,
+        microphoneEnabled: state.microphoneEnabled,
+        microphoneVolume: state.microphoneVolume,
+        soundEffectsEnabled: state.soundEffectsEnabled,
+        autoPlayMedia: state.autoPlayMedia
       }),
       // Custom serialization for Map
       storage: {

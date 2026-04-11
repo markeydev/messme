@@ -107,6 +107,14 @@ export default function MessengerPage() {
   useEffect(() => {
     if (!isAuthenticated || !user) return
 
+    const getMessagePreview = (msg: Message) => {
+      if (msg.type === 'AUDIO') return '🎤 Голосовое сообщение'
+      if (msg.type === 'IMAGE') return '🖼️ Фото'
+      if (msg.type === 'FILE') return `📎 ${msg.fileName ?? 'Файл'}`
+      if (msg.type === 'VIDEO_NOTE') return '🎥 Видеосообщение'
+      return msg.content || 'Новое сообщение'
+    }
+
     const handleNewChat = (data: { chat: Chat }) => {
       const chat = { ...data.chat }
       if (!chat.isGroup) {
@@ -119,11 +127,17 @@ export default function MessengerPage() {
     }
 
     const handleNewMessage = (msg: import('@/lib/api').Message) => {
-      const { activeChatId: currentChatId, user: currentUser, notificationsEnabled, mutedChats } = useMessengerStore.getState()
+      const { activeChatId: currentChatId, user: currentUser, notificationsEnabled, mutedChats, chats: allChats } = useMessengerStore.getState()
       addMessage(msg.chatId, msg)
       if (msg.senderId !== currentUser?.id && msg.chatId !== currentChatId) {
         if (notificationsEnabled && !mutedChats[msg.chatId]) {
           incrementUnread(msg.chatId)
+          const chat = allChats.find(c => c.id === msg.chatId)
+          const title = chat ? `Messme · ${chat.title}` : 'Messme'
+          const body = getMessagePreview(msg)
+          if (typeof window !== 'undefined' && window.messmeDesktop?.notify) {
+            window.messmeDesktop.notify({ title, body })
+          }
         }
       }
     }

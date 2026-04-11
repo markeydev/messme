@@ -26,6 +26,7 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
   const [activeIndex, setActiveIndex] = useState(0)
   const [showViewers, setShowViewers] = useState(false)
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
+  const lastWheelTimeRef = useRef(0)
 
   const goNext = useCallback(() => {
     setActiveIndex(prev => {
@@ -125,6 +126,16 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
     else goPrev()
   }
 
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (Math.abs(e.deltaY) < Math.abs(e.deltaX) || Math.abs(e.deltaY) < 20) return
+    e.preventDefault()
+    const now = Date.now()
+    if (now - lastWheelTimeRef.current < 280) return
+    lastWheelTimeRef.current = now
+    if (e.deltaY > 0) goNext()
+    else goPrev()
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent showCloseButton={false} className="max-w-md w-[95vw] h-[90vh] p-0 overflow-hidden bg-black border-black text-white">
@@ -145,14 +156,15 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
               className="h-full relative bg-black flex items-center justify-center"
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
+              onWheel={handleWheel}
             >
               {activeStory.mediaType === 'IMAGE' ? (
-                <img src={activeStory.mediaUrl} alt="Story" className="w-full h-full object-contain" />
+                <img src={activeStory.mediaUrl} alt="Story" className="max-w-full max-h-full w-auto h-auto object-contain" />
               ) : (
                 <video
                   key={activeStory.id}
                   src={activeStory.mediaUrl}
-                  className="w-full h-full object-contain"
+                  className="max-w-full max-h-full w-auto h-auto object-contain"
                   controls
                   autoPlay
                   playsInline

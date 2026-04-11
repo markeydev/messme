@@ -90,6 +90,7 @@ export async function POST(request: NextRequest) {
         id: user.id,
         username: user.username,
         email: user.email,
+        avatarUrl: user.avatarUrl ?? null,
       },
       token
     })
