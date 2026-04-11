@@ -965,120 +965,6 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
         )}
       </div>
 
-      {/* ── Roles / Members right panel ───────────────────────────────────── */}
-      {showRolesPanel && (
-        <div className="hidden lg:flex w-64 border-l border-white/[0.06] bg-[#141522] flex-col min-h-0">
-          <div className="h-14 flex items-center px-3 border-b border-white/[0.06]">
-            <span className="text-sm font-semibold text-white/80">Участники</span>
-          </div>
-          <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-4">
-            {roles.map(role => (
-              <div key={role.id}>
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: role.color }}>
-                    {role.name}
-                  </p>
-                  {isOwner && !role.isDefault && (
-                    <button
-                      className="text-white/30 hover:text-red-400"
-                      onClick={async () => { await gameRolesAPI.deleteRole(chat.id, role.id); await refreshRoles() }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                </div>
-                <div className="space-y-1">
-                  {role.members.map(member => (
-                    <div key={`${role.id}-${member.id}`} className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-white/[0.05]">
-                      <Avatar className="h-6 w-6">
-                        {member.avatarUrl && <AvatarImage src={member.avatarUrl} />}
-                        <AvatarFallback className="bg-white/10 text-white text-[10px]">{getInitials(member.username)}</AvatarFallback>
-                      </Avatar>
-                      <span className="text-xs text-white/75 truncate">{member.username}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-            {isOwner && (
-              <div className="pt-2 border-t border-white/[0.08]">
-                <p className="text-[11px] text-white/40 mb-1">Создать роль</p>
-                <div className="flex gap-1">
-                  <Input
-                    value={newRoleName}
-                    onChange={e => setNewRoleName(e.target.value)}
-                    placeholder="Новая роль"
-                    className="h-8 text-xs bg-white/[0.08] border-white/[0.12] text-white"
-                  />
-                  <button
-                    className="h-8 w-8 rounded bg-[#5d6cf5] hover:bg-[#4a5be0] flex items-center justify-center"
-                    onClick={handleCreateRole}
-                  >
-                    <Plus className="h-3.5 w-3.5 text-white" />
-                  </button>
-                </div>
-                <div className="mt-2 space-y-1">
-                  {chat.members.map(member => (
-                    <div key={`assign-${member.id}`} className="text-[11px] text-white/60">
-                      <span>{member.username}</span>
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {roles.filter(r => !r.isDefault).map(role => {
-                          const checked = role.members.some(m => m.id === member.id)
-                          return (
-                            <button
-                              key={`${member.id}-${role.id}`}
-                              className={cn('px-2 py-0.5 rounded text-[10px] border', checked ? 'border-[#8b97ff] text-[#8b97ff]' : 'border-white/[0.15] text-white/40')}
-                              onClick={() => toggleMemberRole(role.id, member.id, !checked)}
-                            >
-                              {role.name}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {showVoiceRestoredBanner && activeVoiceChannel && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-xl bg-[#5d6cf5] text-white text-sm shadow-lg">
-          Вы в голосовом канале: {activeVoiceChannel.name}
-        </div>
-      )}
-
-      {showDesktopSourcePicker && (
-        <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-3xl bg-[#1a1b26] border border-white/[0.12] rounded-2xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-white font-semibold">Выберите источник экрана</h3>
-              <button className="text-white/40 hover:text-white/80" onClick={() => setShowDesktopSourcePicker(false)}>
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto">
-              {desktopSources.map(source => (
-                <button
-                  key={source.id}
-                  className="text-left rounded-xl border border-white/[0.12] hover:border-[#8b97ff] hover:bg-white/[0.05] overflow-hidden"
-                  onClick={async () => {
-                    setShowDesktopSourcePicker(false)
-                    await startScreenShare(source.id).catch(() => {})
-                  }}
-                >
-                  <div className="aspect-video bg-black/40">
-                    {source.thumbnail ? <img src={source.thumbnail} alt={source.name} className="w-full h-full object-cover" /> : null}
-                  </div>
-                  <div className="px-3 py-2 text-sm text-white/80 truncate">{source.name}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
     )
   }
 
@@ -1718,6 +1604,121 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
           </>
         )}
       </div>
+
+      {/* ── Roles / Members right panel ───────────────────────────────────── */}
+      {showRolesPanel && (
+        <div className="hidden lg:flex w-64 border-l border-white/[0.06] bg-[#141522] flex-col min-h-0">
+          <div className="h-14 flex items-center px-3 border-b border-white/[0.06]">
+            <span className="text-sm font-semibold text-white/80">Участники</span>
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-4">
+            {roles.map(role => (
+              <div key={role.id}>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: role.color }}>
+                    {role.name}
+                  </p>
+                  {isOwner && !role.isDefault && (
+                    <button
+                      className="text-white/30 hover:text-red-400"
+                      onClick={async () => { await gameRolesAPI.deleteRole(chat.id, role.id); await refreshRoles() }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  {role.members.map(member => (
+                    <div key={`${role.id}-${member.id}`} className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-white/[0.05]">
+                      <Avatar className="h-6 w-6">
+                        {member.avatarUrl && <AvatarImage src={member.avatarUrl} />}
+                        <AvatarFallback className="bg-white/10 text-white text-[10px]">{getInitials(member.username)}</AvatarFallback>
+                      </Avatar>
+                      <span className="text-xs text-white/75 truncate">{member.username}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {isOwner && (
+              <div className="pt-2 border-t border-white/[0.08]">
+                <p className="text-[11px] text-white/40 mb-1">Создать роль</p>
+                <div className="flex gap-1">
+                  <Input
+                    value={newRoleName}
+                    onChange={e => setNewRoleName(e.target.value)}
+                    placeholder="Новая роль"
+                    className="h-8 text-xs bg-white/[0.08] border-white/[0.12] text-white"
+                  />
+                  <button
+                    className="h-8 w-8 rounded bg-[#5d6cf5] hover:bg-[#4a5be0] flex items-center justify-center"
+                    onClick={handleCreateRole}
+                  >
+                    <Plus className="h-3.5 w-3.5 text-white" />
+                  </button>
+                </div>
+                <div className="mt-2 space-y-1">
+                  {chat.members.map(member => (
+                    <div key={`assign-${member.id}`} className="text-[11px] text-white/60">
+                      <span>{member.username}</span>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {roles.filter(r => !r.isDefault).map(role => {
+                          const checked = role.members.some(m => m.id === member.id)
+                          return (
+                            <button
+                              key={`${member.id}-${role.id}`}
+                              className={cn('px-2 py-0.5 rounded text-[10px] border', checked ? 'border-[#8b97ff] text-[#8b97ff]' : 'border-white/[0.15] text-white/40')}
+                              onClick={() => toggleMemberRole(role.id, member.id, !checked)}
+                            >
+                              {role.name}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showVoiceRestoredBanner && activeVoiceChannel && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-xl bg-[#5d6cf5] text-white text-sm shadow-lg">
+          Вы в голосовом канале: {activeVoiceChannel.name}
+        </div>
+      )}
+
+      {showDesktopSourcePicker && (
+        <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-3xl bg-[#1a1b26] border border-white/[0.12] rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-white font-semibold">Выберите источник экрана</h3>
+              <button className="text-white/40 hover:text-white/80" onClick={() => setShowDesktopSourcePicker(false)}>
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto">
+              {desktopSources.map(source => (
+                <button
+                  key={source.id}
+                  className="text-left rounded-xl border border-white/[0.12] hover:border-[#8b97ff] hover:bg-white/[0.05] overflow-hidden"
+                  onClick={async () => {
+                    setShowDesktopSourcePicker(false)
+                    await startScreenShare(source.id).catch(() => {})
+                  }}
+                >
+                  <div className="aspect-video bg-black/40">
+                    {source.thumbnail ? <img src={source.thumbnail} alt={source.name} className="w-full h-full object-cover" /> : null}
+                  </div>
+                  <div className="px-3 py-2 text-sm text-white/80 truncate">{source.name}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── User Volume Context Menu ──────────────────────────────────────── */}
       {userVolumeMenu && (
