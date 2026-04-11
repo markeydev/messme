@@ -29,6 +29,7 @@ interface ChatListProps {
 export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout, activeTab, onTabChange }: ChatListProps) {
   const { chats, addChat, user, unreadCounts, mutedChats, updateUser, notificationsEnabled, setNotificationsEnabled, darkMode, setDarkMode, removeChat, setActiveChat } = useMessengerStore()
   const [chatSearchQuery, setChatSearchQuery] = useState('')
+  const [chatGroupFilter, setChatGroupFilter] = useState<'MESSME' | 'PLAYME'>('MESSME')
   const [isLoading, setIsLoading] = useState(false)
   const [isGroupMode, setIsGroupMode] = useState(false)
   const [groupTitle, setGroupTitle] = useState('')
@@ -81,8 +82,11 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const filteredChats = chats.filter(chat =>
-    chat.title.toLowerCase().includes(chatSearchQuery.toLowerCase())
+    chat.title.toLowerCase().includes(chatSearchQuery.toLowerCase()) &&
+    (chatGroupFilter === 'PLAYME' ? !!chat.gameMode : !chat.gameMode)
   )
+  const messmeChatsCount = chats.filter(chat => !chat.gameMode).length
+  const playmeChatsCount = chats.filter(chat => !!chat.gameMode).length
 
   const handleUserSearch = async (query: string) => {
     setUserSearchQuery(query)
@@ -229,6 +233,36 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                 onChange={e => setChatSearchQuery(e.target.value)}
                 className="pl-9 h-9 bg-black/[0.05] dark:bg-white/[0.07] border-0 text-black dark:text-white placeholder:text-black/30 dark:placeholder:text-white/30 focus-visible:ring-1 focus-visible:ring-[#152cff]/30 rounded-xl text-sm"
               />
+            </div>
+          </div>
+          <div className="px-3 pb-2 flex-shrink-0">
+            <div className="flex bg-black/[0.05] dark:bg-white/[0.07] rounded-xl p-1 gap-1">
+              <button
+                onClick={() => setChatGroupFilter('MESSME')}
+                className={cn(
+                  'flex-1 flex items-center justify-center gap-2 h-8 rounded-lg text-xs font-semibold transition-all',
+                  chatGroupFilter === 'MESSME'
+                    ? 'bg-white dark:bg-white/[0.12] text-black dark:text-white shadow-sm'
+                    : 'text-black/45 dark:text-white/45 hover:text-black/65 dark:hover:text-white/65'
+                )}
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+                <span>Messme</span>
+                <span className="text-[10px] opacity-70">{messmeChatsCount}</span>
+              </button>
+              <button
+                onClick={() => setChatGroupFilter('PLAYME')}
+                className={cn(
+                  'flex-1 flex items-center justify-center gap-2 h-8 rounded-lg text-xs font-semibold transition-all',
+                  chatGroupFilter === 'PLAYME'
+                    ? 'bg-white dark:bg-white/[0.12] text-black dark:text-white shadow-sm'
+                    : 'text-black/45 dark:text-white/45 hover:text-black/65 dark:hover:text-white/65'
+                )}
+              >
+                <Gamepad2 className="h-3.5 w-3.5" />
+                <span>Playme</span>
+                <span className="text-[10px] opacity-70">{playmeChatsCount}</span>
+              </button>
             </div>
           </div>
 

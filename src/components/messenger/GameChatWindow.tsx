@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils'
 interface GameChatWindowProps {
   chat: Chat
   onBack?: () => void
+  onSwitchToClassic?: () => void
 }
 
 interface VoicePeer {
@@ -54,7 +55,7 @@ interface PersistedVoice {
 // Module-level: survives component unmounts (user switching between chats)
 let _persistedVoice: PersistedVoice | null = null
 
-export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
+export function GameChatWindow({ chat, onBack, onSwitchToClassic }: GameChatWindowProps) {
   const { user, updateChatMembers, updateChat, removeChat, setActiveChat } = useMessengerStore()
 
   // ── Channels ──────────────────────────────────────────────────────────────
@@ -507,6 +508,12 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     const newMuted = !isMicMuted
     localStreamRef.current.getAudioTracks().forEach(t => { t.enabled = !newMuted })
     setIsMicMuted(newMuted)
+    if (!newMuted && isDeafenedRef.current) {
+      setIsDeafened(false)
+      audioElements.current.forEach((el, uid) => {
+        el.volume = Math.min(2, (userVolumesRef.current[uid] ?? 100) / 100)
+      })
+    }
   }
 
   const toggleDeafen = () => {
@@ -537,7 +544,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     } else {
       try {
         const vStream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 2560 }, height: { ideal: 1440 }, frameRate: { ideal: 30 } },
+          video: { width: { ideal: 960, max: 1280 }, height: { ideal: 540, max: 720 }, frameRate: { ideal: 15, max: 24 } },
           audio: false
         })
         localVideoStreamRef.current = vStream
@@ -811,6 +818,15 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
           <button onClick={onBack} className="h-7 w-7 flex items-center justify-center rounded-full hover:bg-white/[0.08] text-white/50 hover:text-white transition-colors flex-shrink-0">
             <ArrowLeft className="h-4 w-4" />
           </button>
+          {onSwitchToClassic && (
+            <button
+              onClick={onSwitchToClassic}
+              className="h-7 px-2.5 rounded-lg text-[11px] font-semibold bg-white/[0.10] hover:bg-white/[0.16] text-white/85 transition-colors flex-shrink-0"
+              title="Вернуться в обычный интерфейс"
+            >
+              Messme UI
+            </button>
+          )}
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <button
               className="group relative flex-shrink-0"
@@ -1026,10 +1042,23 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                       ...(p.screenStream ? [{ id: `${p.userId}_screen`, userId: p.userId, username: `${p.username} (экран)`, avatarUrl: null as string | null | undefined, videoStream: p.screenStream, isSelf: false, isScreen: true }] : []),
                     ]),
                   ]
-                  const hasVideo = tiles.some(t => !!t.videoStream)
-                  const focused = focusedTile ?? (hasVideo ? tiles.find(t => t.videoStream)?.id ?? null : null)
-                  const focusedTileData = focused ? tiles.find(t => t.id === focused) : null
-                  const thumbs = tiles.filter(t => t.id !== focused)
+                  const MAX_RENDERED_TILES = 9
+                  let visibleTiles = tiles
+                  if (tiles.length > MAX_RENDERED_TILES) {
+                    const first = tiles.slice(0, MAX_RENDERED_TILES)
+                    if (focusedTile && !first.some(t => t.id === focusedTile)) {
+                      const focusedItem = tiles.find(t => t.id === focusedTile)
+                      if (focusedItem) first[MAX_RENDERED_TILES - 1] = focusedItem
+                    }
+                    visibleTiles = first
+                  }
+                  const hiddenTilesCount = Math.max(0, tiles.length - visibleTiles.length)
+                  const hasVideo = visibleTiles.some(t => !!t.videoStream)
+                  const focused = focusedTile && visibleTiles.some(t => t.id === focusedTile)
+                    ? focusedTile
+                    : (hasVideo ? visibleTiles.find(t => t.videoStream)?.id ?? null : null)
+                  const focusedTileData = focused ? visibleTiles.find(t => t.id === focused) : null
+                  const thumbs = visibleTiles.filter(t => t.id !== focused)
 
                   const TileVideo = ({ tile, big }: { tile: typeof tiles[0]; big?: boolean }) => (
                     <div
@@ -1107,12 +1136,12 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                           /* Grid when nothing focused */
                           <div className={cn(
                             'w-full h-full grid gap-2',
-                            tiles.length === 1 ? 'grid-cols-1' :
-                            tiles.length <= 2 ? 'grid-cols-2' :
-                            tiles.length <= 4 ? 'grid-cols-2' :
+                            visibleTiles.length === 1 ? 'grid-cols-1' :
+                            visibleTiles.length <= 2 ? 'grid-cols-2' :
+                            visibleTiles.length <= 4 ? 'grid-cols-2' :
                             'grid-cols-3'
                           )}>
-                            {tiles.map(tile => (
+                            {visibleTiles.map(tile => (
                               <div key={tile.id} className="min-h-0 relative">
                                 {TileVideo({ tile, big: true })}
                               </div>
@@ -1130,6 +1159,11 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                             </div>
 
                           ))}
+                        </div>
+                      )}
+                      {hiddenTilesCount > 0 && (
+                        <div className="text-[11px] text-white/45 px-1">
+                          Показаны {visibleTiles.length} из {tiles.length} плиток для стабильной работы
                         </div>
                       )}
                     </div>
