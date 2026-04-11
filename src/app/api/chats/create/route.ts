@@ -132,7 +132,9 @@ export async function POST(request: NextRequest) {
     })
 
     if (chat.gameMode) {
-      await Promise.all(allMemberIds.map(userId => assignDefaultRole(chat.id, userId)))
+      for (const userId of allMemberIds) {
+        await assignDefaultRole(chat.id, userId)
+      }
       await db.gameRoomRole.create({
         data: {
           id: randomUUID(),
