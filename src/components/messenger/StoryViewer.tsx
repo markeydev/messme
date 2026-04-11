@@ -1,13 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { storiesAPI, type Story } from '@/lib/api'
 import { useMessengerStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
-import { Heart, Eye, X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Heart, Eye, X, ChevronUp, ChevronDown } from 'lucide-react'
 
 const IMAGE_STORY_DURATION_MS = 15_000
 
@@ -25,6 +25,7 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
   const [isLoading, setIsLoading] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
   const [showViewers, setShowViewers] = useState(false)
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null)
 
   const goNext = useCallback(() => {
     setActiveIndex(prev => {
@@ -105,6 +106,25 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
 
   const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    const t = e.touches[0]
+    if (!t) return
+    touchStartRef.current = { x: t.clientX, y: t.clientY }
+  }
+
+  const handleTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    const start = touchStartRef.current
+    touchStartRef.current = null
+    if (!start) return
+    const t = e.changedTouches[0]
+    if (!t) return
+    const deltaX = t.clientX - start.x
+    const deltaY = t.clientY - start.y
+    if (Math.abs(deltaY) < 40 || Math.abs(deltaY) < Math.abs(deltaX)) return
+    if (deltaY < 0) goNext()
+    else goPrev()
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent showCloseButton={false} className="max-w-md w-[95vw] h-[90vh] p-0 overflow-hidden bg-black border-black text-white">
@@ -121,7 +141,11 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
           ) : stories.length === 0 ? (
             <div className="h-full flex items-center justify-center text-white/60">Сторис нет</div>
           ) : (
-            <div className="h-full relative bg-black flex items-center justify-center">
+            <div
+              className="h-full relative bg-black flex items-center justify-center"
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+            >
               {activeStory.mediaType === 'IMAGE' ? (
                 <img src={activeStory.mediaUrl} alt="Story" className="w-full h-full object-contain" />
               ) : (
@@ -161,15 +185,15 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
               <button
                 onClick={goPrev}
                 disabled={activeIndex === 0}
-                className="absolute left-2 top-1/2 -translate-y-1/2 z-10 h-9 w-9 rounded-full bg-black/35 hover:bg-black/50 disabled:opacity-30 flex items-center justify-center"
+                className="absolute top-14 left-1/2 -translate-x-1/2 z-10 h-9 w-9 rounded-full bg-black/35 hover:bg-black/50 disabled:opacity-30 flex items-center justify-center"
               >
-                <ChevronLeft className="h-4 w-4" />
+                <ChevronUp className="h-4 w-4" />
               </button>
               <button
                 onClick={goNext}
-                className="absolute right-2 top-1/2 -translate-y-1/2 z-10 h-9 w-9 rounded-full bg-black/35 hover:bg-black/50 flex items-center justify-center"
+                className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 h-9 w-9 rounded-full bg-black/35 hover:bg-black/50 flex items-center justify-center"
               >
-                <ChevronRight className="h-4 w-4" />
+                <ChevronDown className="h-4 w-4" />
               </button>
 
               <div className="absolute right-3 bottom-6 z-10 flex flex-col items-end gap-2">
@@ -204,12 +228,6 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
                   )}
                 </div>
               )}
-            </div>
-          )}
-
-          {stories.length > 1 && (
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] bg-black/45 rounded-full px-2 py-1 z-20">
-              {activeIndex + 1}/{stories.length}
             </div>
           )}
 
