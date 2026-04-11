@@ -10,6 +10,7 @@ import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
 import { STORY_MAX_VIDEO_DURATION_SECONDS } from '@/lib/stories'
 import { StoryViewer } from '@/components/messenger/StoryViewer'
+import { ClipMeTab } from '@/components/messenger/ClipMeTab'
 import { Slider } from '@/components/ui/slider'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -18,7 +19,7 @@ import {
 import { PenSquare, Search, MessageSquare, Users, Check, X, BellOff, UserRound, Camera, Bell, Loader2, LogOut, Sun, Moon, Gamepad2, Trash2, Plus, Mic, Volume2, VolumeX, Film, Headphones } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-export type Tab = 'chats' | 'search' | 'profile'
+export type Tab = 'chats' | 'search' | 'profile' | 'clipme'
 
 interface ChatListProps {
   onSelectChat?: (chat: Chat) => void
@@ -336,7 +337,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
       {/* Header */}
       <div className="px-4 pt-5 pb-3 flex items-center justify-between flex-shrink-0">
         <h1 className="text-[22px] font-bold text-black dark:text-white tracking-[-0.5px]">
-          {activeTab === 'chats' ? 'Чаты' : activeTab === 'search' ? 'Поиск' : 'Профиль'}
+          {activeTab === 'chats' ? 'Чаты' : activeTab === 'search' ? 'Поиск' : activeTab === 'clipme' ? 'ClipMe' : 'Профиль'}
         </h1>
         {activeTab === 'chats' && (
           <button
@@ -925,6 +926,15 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
 
             {profileError && <p className="text-red-500 text-sm text-center">{profileError}</p>}
 
+            <Button
+              variant="ghost"
+              onClick={() => onTabChange('clipme')}
+              className="w-full h-10 rounded-xl bg-black/[0.05] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12]"
+            >
+              <Film className="h-4 w-4 mr-2" />
+              Открыть мой канал ClipMe
+            </Button>
+
             {/* Save */}
             <Button
               onClick={handleProfileSave}
@@ -944,6 +954,10 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
             </button>
           </div>
         </div>
+      )}
+
+      {activeTab === 'clipme' && (
+        <ClipMeTab />
       )}
 
       {/* Bottom navigation — desktop only; mobile nav is rendered in the parent page */}
@@ -1009,6 +1023,21 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
               )}
             </div>
             <span className="text-[11px] font-bold text-black/60 dark:text-white/60">Профиль</span>
+          </button>
+
+          <button
+            onClick={() => onTabChange('clipme')}
+            className="flex flex-col items-center gap-1 flex-1"
+          >
+            <div className={cn(
+              'w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200',
+              activeTab === 'clipme' ? 'bg-white/80 dark:bg-white/[0.15]' : ''
+            )}
+            style={activeTab === 'clipme' ? { boxShadow: '0px 6px 20px 0px rgba(21,44,255,0.25)' } : undefined}
+            >
+              <Film className={cn('h-5 w-5', activeTab === 'clipme' ? 'text-black dark:text-white' : 'text-black/60 dark:text-white/60')} />
+            </div>
+            <span className={cn('text-[11px] font-bold', activeTab === 'clipme' ? 'text-black dark:text-white' : 'text-black/60 dark:text-white/60')}>ClipMe</span>
           </button>
         </div>
       </div>

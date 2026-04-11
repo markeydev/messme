@@ -16,7 +16,7 @@ import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
 import { chatsAPI, usersAPI, storiesAPI, type Chat, type Message, type StoryFeedItem, type User } from '@/lib/api'
 import { ArrowDown, ArrowLeft, Users, Loader2, UserPlus, Check, X, Reply, Forward, Trash2, Pencil, FileText, Download, ZoomIn, Copy, Bell, BellOff, Phone, Clock, AlertCircle, ShieldCheck } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, openExternalUrl } from '@/lib/utils'
 
 interface ChatWindowProps {
   chat: Chat
@@ -253,6 +253,25 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
 
   const getInitials = (name: string) =>
     name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+  const renderTextWithLinks = (text: string) => {
+    const parts = text.split(/(https?:\/\/[^\s]+)/g)
+    return parts.map((part, idx) => {
+      if (!/^https?:\/\//i.test(part)) return <span key={idx}>{part}</span>
+      return (
+        <a
+          key={idx}
+          href={part}
+          className="underline underline-offset-2 break-all"
+          onClick={e => {
+            e.preventDefault()
+            openExternalUrl(part)
+          }}
+        >
+          {part}
+        </a>
+      )
+    })
+  }
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} Б`
@@ -518,11 +537,13 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                             <a
                               href={(msg as any).fileUrl}
                               download={(msg as any).fileName}
-                              target="_blank"
-                              rel="noopener noreferrer"
                               className={cn(
                                 'flex items-center gap-2.5 py-1 rounded-xl -mx-1 px-1 hover:bg-black/10 transition-colors group',
                               )}
+                              onClick={e => {
+                                e.preventDefault()
+                                openExternalUrl((msg as any).fileUrl)
+                              }}
                             >
                               <div className={cn('h-9 w-9 rounded-lg flex items-center justify-center flex-shrink-0', isOwn ? 'bg-white/20' : 'bg-black/[0.08]')}>
                                 <FileText className="h-4 w-4" />
@@ -537,7 +558,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                             </a>
                           ) : (
                             <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-                              {msg.content}
+                              {renderTextWithLinks(msg.content)}
                             </p>
                           )}
                           <div className={cn(

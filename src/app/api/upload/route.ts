@@ -9,6 +9,7 @@ const STORY_VIDEO_TYPES = ['video/webm', 'video/mp4', 'video/quicktime']
 const MAX_AUDIO  = 10  * 1024 * 1024   //  10 MB
 const MAX_IMAGE  = 20  * 1024 * 1024   //  20 MB
 const MAX_STORY_VIDEO = 50 * 1024 * 1024 // 50 MB
+const MAX_CLIPME_VIDEO = 200 * 1024 * 1024 // 200 MB
 const MAX_FILE   = 100 * 1024 * 1024   // 100 MB
 
 export async function POST(request: NextRequest) {
@@ -81,6 +82,20 @@ export async function POST(request: NextRequest) {
       }
 
       return NextResponse.json({ error: 'Для сторис доступны только фото и видео' }, { status: 400 })
+    }
+
+    // ── ClipMe video ────────────────────────────────────────────────────────
+    if (purpose === 'clipme') {
+      if (!file.type.startsWith('video/')) {
+        return NextResponse.json({ error: 'Для ClipMe доступно только видео' }, { status: 400 })
+      }
+      if (file.size > MAX_CLIPME_VIDEO) {
+        return NextResponse.json({ error: 'Видео слишком большое (макс. 200 МБ)' }, { status: 400 })
+      }
+      const ext = file.type.includes('mp4') ? 'mp4' : file.type.includes('quicktime') ? 'mov' : 'webm'
+      const key = `clipme/${session.userId}/${randomUUID()}.${ext}`
+      const url = await uploadToS3(key, buffer, file.type)
+      return NextResponse.json({ url, mediaType: 'VIDEO', duration: duration ? Math.round(Number(duration)) : null })
     }
 
     // ── Audio ─────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo, type CSSProperties } from 'react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,13 +14,15 @@ import {
   ArrowLeft, Hash, Volume2, Plus, Trash2, Send, Loader2,
   Mic, MicOff, PhoneOff, Gamepad2, X, Pencil, Check,
   Headphones, EarOff, UserPlus, Camera, LogOut, Video, VideoOff,
-  ScreenShare, ScreenShareOff, Monitor, PanelLeft, Reply, AtSign,
+  ScreenShare, ScreenShareOff, Monitor, PanelLeft, Reply, AtSign, MoreVertical, MessageCircle,
 } from 'lucide-react'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
+import { openExternalUrl } from '@/lib/utils'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
 interface GameChatWindowProps {
   chat: Chat
@@ -61,7 +63,7 @@ const MENTION_RENDER_SPLIT_PATTERN = /(@[a-zA-Z0-9_а-яА-ЯёЁ-]{1,32})/g
 
 export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   const {
-    user, updateChatMembers, updateChat, removeChat, setActiveChat,
+    user, updateChatMembers, updateChat, removeChat, setActiveChat, addChat,
     audioInputDeviceId, audioOutputDeviceId, outputVolume,
   } = useMessengerStore()
 
@@ -81,6 +83,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
 
   // context menu
   const [ctxMenu, setCtxMenu] = useState<{ msg: ChannelMessage; x: number; y: number } | null>(null)
+  const [nickMenu, setNickMenu] = useState<{ username: string; x: number; y: number } | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
 
@@ -104,6 +107,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   const [userVolumeMenu, setUserVolumeMenu] = useState<{
     userId: string; username: string; channelId: string; x: number; y: number
   } | null>(null)
+  const [draggingMember, setDraggingMember] = useState<{ userId: string; username: string; fromChannelId: string } | null>(null)
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
   const localVideoStreamRef = useRef<MediaStream | null>(null)
@@ -139,6 +143,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   // ── Members panel ─────────────────────────────────────────────────────────
   const [showMembers, setShowMembers] = useState(false)
   const [showRolesPanel, setShowRolesPanel] = useState(false)
+  const [showRoomSettings, setShowRoomSettings] = useState(false)
   const [memberSearch, setMemberSearch] = useState('')
   const [memberSearchResults, setMemberSearchResults] = useState<User[]>([])
   const [selectedToAdd, setSelectedToAdd] = useState<string[]>([])
@@ -156,6 +161,9 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   const [roles, setRoles] = useState<GameRoomRole[]>([])
   const [permissions, setPermissions] = useState({ canMoveMembers: false, canChangeAvatar: false, canRenameChannels: false })
   const [newRoleName, setNewRoleName] = useState('')
+  const [newRoleColor, setNewRoleColor] = useState('#8b97ff')
+  const [newRolePermissions, setNewRolePermissions] = useState({ canMoveMembers: false, canChangeAvatar: false, canRenameChannels: false })
+  const [quickMessageTarget, setQuickMessageTarget] = useState<{ id: string; username: string } | null>(null)
 
   // ── Ref sync (for stable access in cleanup / callbacks) ───────────────────
   useEffect(() => { activeVoiceChannelRef.current = activeVoiceChannel }, [activeVoiceChannel])
@@ -322,9 +330,11 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   const handleCreateRole = async () => {
     const name = newRoleName.trim()
     if (!name) return
-    const result = await gameRolesAPI.createRole(chat.id, { name })
+    const result = await gameRolesAPI.createRole(chat.id, { name, color: newRoleColor.trim(), permissions: newRolePermissions })
     if (!result.error) {
       setNewRoleName('')
+      setNewRoleColor('#8b97ff')
+      setNewRolePermissions({ canMoveMembers: false, canChangeAvatar: false, canRenameChannels: false })
       await refreshRoles()
     }
   }
@@ -375,6 +385,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   // ── Socket: voice events ──────────────────────────────────────────────────
   useEffect(() => {
     const onJoined = (data: { channelId: string; userId: string; username: string; avatarUrl?: string | null }) => {
+      if (data.userId === user?.id) return
       // Always update occupant list (for sidebar visibility)
       setChannelOccupants(prev => ({
         ...prev,
@@ -471,11 +482,11 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
 
   // ── Close context menus on click outside ─────────────────────────────────
   useEffect(() => {
-    if (!ctxMenu && !userVolumeMenu) return
-    const close = () => { setCtxMenu(null); setUserVolumeMenu(null) }
+    if (!ctxMenu && !userVolumeMenu && !nickMenu) return
+    const close = () => { setCtxMenu(null); setUserVolumeMenu(null); setNickMenu(null) }
     window.addEventListener('click', close)
     return () => window.removeEventListener('click', close)
-  }, [ctxMenu, userVolumeMenu])
+  }, [ctxMenu, userVolumeMenu, nickMenu])
 
   // ── WebRTC ────────────────────────────────────────────────────────────────
   const createPeerConnection = useCallback((remoteUserId: string, channelId: string): RTCPeerConnection => {
@@ -643,13 +654,28 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
           video: { width: { ideal: 960, max: 1280 }, height: { ideal: 540, max: 720 }, frameRate: { ideal: 15, max: 24 } },
           audio: false
         })
+        const vTrack = vStream.getVideoTracks()[0]
+        if (!vTrack) return
+        vTrack.onended = () => {
+          localVideoStreamRef.current = null
+          setLocalVideoStream(null)
+          setIsCameraOn(false)
+        }
+        // remove previous stale camera tracks before replacing
+        localVideoStreamRef.current?.getTracks().forEach(prevTrack => {
+          prevTrack.stop()
+          peerConnections.current.forEach(pc => {
+            pc.getSenders().filter(s => s.track === prevTrack).forEach(s => pc.removeTrack(s))
+          })
+        })
         localVideoStreamRef.current = vStream
         setLocalVideoStream(vStream)
         setIsCameraOn(true)
-        // Add video track to all existing peer connections and renegotiate
-        const vTrack = vStream.getVideoTracks()[0]
+        // Add/replace video track to all existing peer connections and renegotiate
         for (const [peerId, pc] of peerConnections.current) {
-          pc.addTrack(vTrack, vStream)
+          const sender = pc.getSenders().find(s => s.track?.kind === 'video' && s.track !== localScreenStreamRef.current?.getVideoTracks()?.[0])
+          if (sender) await sender.replaceTrack(vTrack)
+          else pc.addTrack(vTrack, vStream)
           const offer = await pc.createOffer()
           await pc.setLocalDescription(offer)
           messengerSocket.sendVcOffer(activeVoiceChannelRef.current?.id ?? '', peerId, offer)
@@ -750,6 +776,17 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     setIsUploadingAvatar(false)
   }
 
+  const handleOpenDirectChat = async (targetUserId: string, username: string) => {
+    const result = await chatsAPI.create([targetUserId], false)
+    if (!result.chat) return
+    addChat(result.chat)
+    if (result.isNew && result.chat.memberIds) {
+      messengerSocket.notifyChatCreated(result.chat, result.chat.memberIds)
+    }
+    setQuickMessageTarget(null)
+    setActiveChat(result.chat)
+  }
+
   // ── Leave group ───────────────────────────────────────────────────────────
   const handleLeaveGroup = async () => {
     setIsLeavingGroup(true)
@@ -814,10 +851,10 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   }
 
   const insertMention = (username: string) => {
-    const replaced = draft.replace(MENTION_INPUT_PATTERN, (full) => {
+    const replaced = draft.match(MENTION_INPUT_PATTERN) ? draft.replace(MENTION_INPUT_PATTERN, (full) => {
       const prefix = full.startsWith(' ') ? ' ' : ''
       return `${prefix}@${username} `
-    })
+    }) : `${draft}${draft && !draft.endsWith(' ') ? ' ' : ''}@${username} `
     setDraft(replaced)
     setMentionsOpen(false)
   }
@@ -900,6 +937,60 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     const q = mentionQuery.toLowerCase()
     return chat.members.filter(m => m.username.toLowerCase().includes(q)).slice(0, 6)
   }, [chat.members, mentionQuery])
+  const memberByUsername = useMemo(
+    () => new Map(chat.members.map(m => [m.username.toLowerCase(), m])),
+    [chat.members]
+  )
+  const getRoleLabelStyle = (color: string): CSSProperties => {
+    if (color.includes('gradient(')) {
+      return {
+        backgroundImage: color,
+        WebkitBackgroundClip: 'text',
+        backgroundClip: 'text',
+        color: 'transparent',
+      }
+    }
+    return { color }
+  }
+  const renderMessageContent = (message: string, msgId: string) => {
+    const urlPattern = /(https?:\/\/[^\s]+)/g
+    const mentionOrUrlPattern = /(@[a-zA-Z0-9_а-яА-ЯёЁ-]{1,32}|https?:\/\/[^\s]+)/g
+    return message.split(mentionOrUrlPattern).map((part, idx) => {
+      if (!part) return null
+      if (urlPattern.test(part)) {
+        urlPattern.lastIndex = 0
+        return (
+          <a
+            key={`${msgId}-url-${idx}`}
+            href={part}
+            className="underline underline-offset-2 break-all"
+            onClick={e => {
+              e.preventDefault()
+              openExternalUrl(part)
+            }}
+          >
+            {part}
+          </a>
+        )
+      }
+      if (part.startsWith('@')) {
+        const username = part.slice(1)
+        const userByMention = memberByUsername.get(username.toLowerCase())
+        return (
+          <button
+            key={`${msgId}-mention-${idx}`}
+            className="text-[#8b97ff] font-medium hover:underline"
+            onClick={() => {
+              if (userByMention) setQuickMessageTarget({ id: userByMention.id, username: userByMention.username })
+            }}
+          >
+            {part}
+          </button>
+        )
+      }
+      return <span key={`${msgId}-text-${idx}`}>{part}</span>
+    })
+  }
 
   const pingColor = ping === null ? '' : ping < 80 ? 'text-green-400' : ping < 180 ? 'text-yellow-400' : 'text-red-400'
   const isSpeakingActive = (userId: string, isSelf = false) =>
@@ -1011,20 +1102,27 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
             </button>
             <span className="font-bold text-sm text-white truncate flex-1">{chat.title}</span>
           </div>
-          <button
-            onClick={() => setShowMembers(true)}
-            className="h-6 w-6 flex items-center justify-center text-white/40 hover:text-white/80 flex-shrink-0 transition-colors"
-            title="Участники"
-          >
-            <UserPlus className="h-4 w-4" />
-          </button>
-          <button
-            onClick={() => setShowRolesPanel(v => !v)}
-            className={cn('h-6 w-6 flex items-center justify-center flex-shrink-0 transition-colors', showRolesPanel ? 'text-[#8b97ff]' : 'text-white/40 hover:text-white/80')}
-            title="Роли"
-          >
-            <AtSign className="h-4 w-4" />
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className={cn('h-7 w-7 rounded-md flex items-center justify-center flex-shrink-0 transition-colors', showRolesPanel ? 'text-[#8b97ff] bg-white/[0.08]' : 'text-white/40 hover:text-white/80 hover:bg-white/[0.08]')}
+                title="Настройки комнаты"
+              >
+                <MoreVertical className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="bg-[#1c1d2e] border-white/[0.12] text-white min-w-56">
+              <DropdownMenuItem onClick={() => setShowMembers(true)} className="focus:bg-white/[0.08] focus:text-white cursor-pointer">
+                <UserPlus className="h-4 w-4 mr-2" /> Участники
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowRolesPanel(v => !v)} className="focus:bg-white/[0.08] focus:text-white cursor-pointer">
+                <MessageCircle className="h-4 w-4 mr-2" /> Показать людей справа
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowRoomSettings(true)} className="focus:bg-white/[0.08] focus:text-white cursor-pointer">
+                <AtSign className="h-4 w-4 mr-2" /> Роли и права
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <button
             onClick={() => setShowLeaveConfirm(true)}
             className="h-6 w-6 flex items-center justify-center text-white/40 hover:text-red-400 flex-shrink-0 transition-colors"
@@ -1071,7 +1169,19 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
             </div>
             {voiceChannels.length === 0 ? <div className="text-white/20 text-xs px-2">Нет каналов</div>
               : voiceChannels.map(ch => (
-                <div key={ch.id}>
+                <div
+                  key={ch.id}
+                  onDragOver={e => {
+                    if (!canMoveMembers || !draggingMember || draggingMember.fromChannelId === ch.id) return
+                    e.preventDefault()
+                  }}
+                  onDrop={e => {
+                    if (!canMoveMembers || !draggingMember || draggingMember.fromChannelId === ch.id) return
+                    e.preventDefault()
+                    messengerSocket.requestVcMoveMember(chat.id, ch.id, draggingMember.userId)
+                    setDraggingMember(null)
+                  }}
+                >
                   <ChannelRow
                     ch={ch}
                     isActive={activeChannel?.id === ch.id || activeVoiceChannel?.id === ch.id}
@@ -1105,6 +1215,13 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                             key={p.userId}
                             className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] text-white/50 cursor-context-menu"
                             onContextMenu={isConnected ? e => { e.preventDefault(); setUserVolumeMenu({ userId: p.userId, username: p.username, channelId: ch.id, x: e.clientX, y: e.clientY }) } : undefined}
+                            draggable={canMoveMembers}
+                            onDragStart={e => {
+                              if (!canMoveMembers) return
+                              e.dataTransfer.effectAllowed = 'move'
+                              setDraggingMember({ userId: p.userId, username: p.username, fromChannelId: ch.id })
+                            }}
+                            onDragEnd={() => setDraggingMember(null)}
                           >
                             <Avatar className={cn('h-5 w-5 ring-1 ring-offset-1 ring-offset-[#13141f] transition-all',
                               isSpeakingActive(p.userId) ? 'ring-green-400' : 'ring-transparent')}>
@@ -1443,9 +1560,19 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                     id={`channel-msg-${msg.id}`}
                     className={cn('flex gap-3 group relative', showHeader ? 'mt-4' : 'mt-0.5')}
                     onContextMenu={e => {
-                      if (!isMine) return
                       e.preventDefault()
                       setCtxMenu({ msg, x: e.clientX, y: e.clientY })
+                    }}
+                    onTouchStart={e => {
+                      const touch = e.touches[0]
+                      const tx = touch.clientX
+                      const ty = touch.clientY
+                      const timer = window.setTimeout(() => setCtxMenu({ msg, x: tx, y: ty }), 450)
+                      ;(e.currentTarget as any).__holdTimer = timer
+                    }}
+                    onTouchEnd={e => {
+                      const timer = (e.currentTarget as any).__holdTimer
+                      if (timer) window.clearTimeout(timer)
                     }}
                   >
                     {showHeader ? (
@@ -1459,7 +1586,26 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                     <div className="flex-1 min-w-0">
                       {showHeader && (
                         <div className="flex items-baseline gap-2 mb-0.5">
-                          <span className="text-sm font-semibold text-white/90">{msg.senderUsername}</span>
+                          <span
+                            className="text-sm font-semibold text-white/90 cursor-context-menu"
+                            onContextMenu={e => {
+                              e.preventDefault()
+                              setNickMenu({ username: msg.senderUsername, x: e.clientX, y: e.clientY })
+                            }}
+                            onTouchStart={e => {
+                              const touch = e.touches[0]
+                              const tx = touch.clientX
+                              const ty = touch.clientY
+                              const timer = window.setTimeout(() => setNickMenu({ username: msg.senderUsername, x: tx, y: ty }), 450)
+                              ;(e.currentTarget as any).__holdTimer = timer
+                            }}
+                            onTouchEnd={e => {
+                              const timer = (e.currentTarget as any).__holdTimer
+                              if (timer) window.clearTimeout(timer)
+                            }}
+                          >
+                            {msg.senderUsername}
+                          </span>
                           <span className="text-[11px] text-white/30">{formatTime(msg.createdAt)}</span>
                         </div>
                       )}
@@ -1489,13 +1635,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                               <p className="text-[11px] text-white/45 truncate">{msg.replyTo.content}</p>
                             </button>
                           )}
-                          <p>
-                            {msg.content.split(MENTION_RENDER_SPLIT_PATTERN).map((part, idx) => (
-                              <span key={`${msg.id}-${idx}`} className={part.startsWith('@') ? 'text-[#8b97ff] font-medium' : undefined}>
-                                {part}
-                              </span>
-                            ))}
-                          </p>
+                          <p>{renderMessageContent(msg.content, msg.id)}</p>
                         </div>
                       )}
                     </div>
@@ -1545,15 +1685,54 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
               >
                 <button
                   className="w-full flex items-center gap-2 px-3 py-2 text-sm text-white/70 hover:bg-white/[0.08] hover:text-white transition-colors"
-                  onClick={() => { setEditingId(ctxMenu.msg.id); setEditDraft(ctxMenu.msg.content); setCtxMenu(null) }}
+                  onClick={() => { setReplyToMessage(ctxMenu.msg); setCtxMenu(null) }}
+                >
+                  <Reply className="h-3.5 w-3.5" /> Ответить
+                </button>
+                <button
+                  className={cn(
+                    'w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors',
+                    ctxMenu.msg.senderId === user?.id ? 'text-white/70 hover:bg-white/[0.08] hover:text-white' : 'text-white/25 cursor-not-allowed'
+                  )}
+                  onClick={() => {
+                    if (ctxMenu.msg.senderId !== user?.id) return
+                    setEditingId(ctxMenu.msg.id)
+                    setEditDraft(ctxMenu.msg.content)
+                    setCtxMenu(null)
+                  }}
                 >
                   <Pencil className="h-3.5 w-3.5" /> Редактировать
                 </button>
                 <button
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
-                  onClick={() => { handleDeleteMessage(ctxMenu.msg); setCtxMenu(null) }}
+                  className={cn(
+                    'w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors',
+                    ctxMenu.msg.senderId === user?.id ? 'text-red-400 hover:bg-red-500/10' : 'text-white/25 cursor-not-allowed'
+                  )}
+                  onClick={() => {
+                    if (ctxMenu.msg.senderId !== user?.id) return
+                    handleDeleteMessage(ctxMenu.msg)
+                    setCtxMenu(null)
+                  }}
                 >
                   <Trash2 className="h-3.5 w-3.5" /> Удалить
+                </button>
+              </div>
+            )}
+
+            {nickMenu && (
+              <div
+                className="fixed z-50 bg-[#1c1d2e] border border-white/[0.10] rounded-xl shadow-2xl py-1 min-w-44"
+                style={{ left: nickMenu.x, top: nickMenu.y }}
+                onClick={e => e.stopPropagation()}
+              >
+                <button
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-white/70 hover:bg-white/[0.08] hover:text-white transition-colors"
+                  onClick={() => {
+                    insertMention(nickMenu.username)
+                    setNickMenu(null)
+                  }}
+                >
+                  <AtSign className="h-3.5 w-3.5" /> Упомянуть
                 </button>
               </div>
             )}
@@ -1610,77 +1789,35 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       {showRolesPanel && (
         <div className="hidden lg:flex w-64 border-l border-white/[0.06] bg-[#141522] flex-col min-h-0">
           <div className="h-14 flex items-center px-3 border-b border-white/[0.06]">
-            <span className="text-sm font-semibold text-white/80">Участники</span>
+            <span className="text-sm font-semibold text-white/80">Люди</span>
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-4">
-            {roles.map(role => (
-              <div key={role.id}>
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: role.color }}>
-                    {role.name}
-                  </p>
-                  {isOwner && !role.isDefault && (
-                    <button
-                      className="text-white/30 hover:text-red-400"
-                      onClick={async () => { await gameRolesAPI.deleteRole(chat.id, role.id); await refreshRoles() }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                </div>
-                <div className="space-y-1">
-                  {role.members.map(member => (
-                    <div key={`${role.id}-${member.id}`} className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-white/[0.05]">
-                      <Avatar className="h-6 w-6">
-                        {member.avatarUrl && <AvatarImage src={member.avatarUrl} />}
-                        <AvatarFallback className="bg-white/10 text-white text-[10px]">{getInitials(member.username)}</AvatarFallback>
-                      </Avatar>
-                      <span className="text-xs text-white/75 truncate">{member.username}</span>
+            {chat.members.map(member => {
+              const memberRoles = roles.filter(role => role.members.some(rm => rm.id === member.id))
+              return (
+                <button
+                  key={member.id}
+                  className="w-full flex items-start gap-2 px-2 py-2 rounded-lg hover:bg-white/[0.06] text-left"
+                  onClick={() => setQuickMessageTarget({ id: member.id, username: member.username })}
+                >
+                  <Avatar className="h-7 w-7 mt-0.5">
+                    {member.avatarUrl && <AvatarImage src={member.avatarUrl} />}
+                    <AvatarFallback className="bg-white/10 text-white text-[10px]">{getInitials(member.username)}</AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-white/80 truncate">{member.username}</p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {memberRoles.slice(0, 2).map(role => (
+                        <span key={`${member.id}-${role.id}`} className="text-[10px] font-semibold" style={getRoleLabelStyle(role.color)}>
+                          {role.name}
+                        </span>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-            {isOwner && (
-              <div className="pt-2 border-t border-white/[0.08]">
-                <p className="text-[11px] text-white/40 mb-1">Создать роль</p>
-                <div className="flex gap-1">
-                  <Input
-                    value={newRoleName}
-                    onChange={e => setNewRoleName(e.target.value)}
-                    placeholder="Новая роль"
-                    className="h-8 text-xs bg-white/[0.08] border-white/[0.12] text-white"
-                  />
-                  <button
-                    className="h-8 w-8 rounded bg-[#5d6cf5] hover:bg-[#4a5be0] flex items-center justify-center"
-                    onClick={handleCreateRole}
-                  >
-                    <Plus className="h-3.5 w-3.5 text-white" />
-                  </button>
-                </div>
-                <div className="mt-2 space-y-1">
-                  {chat.members.map(member => (
-                    <div key={`assign-${member.id}`} className="text-[11px] text-white/60">
-                      <span>{member.username}</span>
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {roles.filter(r => !r.isDefault).map(role => {
-                          const checked = role.members.some(m => m.id === member.id)
-                          return (
-                            <button
-                              key={`${member.id}-${role.id}`}
-                              className={cn('px-2 py-0.5 rounded text-[10px] border', checked ? 'border-[#8b97ff] text-[#8b97ff]' : 'border-white/[0.15] text-white/40')}
-                              onClick={() => toggleMemberRole(role.id, member.id, !checked)}
-                            >
-                              {role.name}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+                  </div>
+                  <span className="text-[10px] text-[#8b97ff] flex-shrink-0">Messme</span>
+                </button>
+              )
+            })}
           </div>
         </div>
       )}
@@ -1839,6 +1976,121 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
         </div>
       )}
 
+      {showRoomSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowRoomSettings(false)}>
+          <div className="bg-[#1c1d2e] border border-white/[0.10] rounded-2xl w-[92vw] max-w-2xl p-5 shadow-2xl max-h-[86vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-white text-base">Настройки GameRoom</h3>
+              <button onClick={() => setShowRoomSettings(false)} className="text-white/40 hover:text-white/80"><X className="h-5 w-5" /></button>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs uppercase tracking-wide text-white/40">Роли и права</p>
+              {roles.map(role => (
+                <div key={role.id} className="rounded-xl border border-white/[0.08] p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold" style={getRoleLabelStyle(role.color)}>{role.name}</p>
+                    {isOwner && !role.isDefault && (
+                      <button
+                        className="text-white/30 hover:text-red-400"
+                        onClick={async () => { await gameRolesAPI.deleteRole(chat.id, role.id); await refreshRoles() }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  {!role.isDefault && isOwner && (
+                    <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2">
+                      <label className="text-[11px] text-white/60 flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={role.permissions.canMoveMembers}
+                          onChange={e => gameRolesAPI.updateRole(chat.id, role.id, { permissions: { ...role.permissions, canMoveMembers: e.target.checked } }).then(refreshRoles)}
+                        />
+                        Перемещение
+                      </label>
+                      <label className="text-[11px] text-white/60 flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={role.permissions.canChangeAvatar}
+                          onChange={e => gameRolesAPI.updateRole(chat.id, role.id, { permissions: { ...role.permissions, canChangeAvatar: e.target.checked } }).then(refreshRoles)}
+                        />
+                        Аватар
+                      </label>
+                      <label className="text-[11px] text-white/60 flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={role.permissions.canRenameChannels}
+                          onChange={e => gameRolesAPI.updateRole(chat.id, role.id, { permissions: { ...role.permissions, canRenameChannels: e.target.checked } }).then(refreshRoles)}
+                        />
+                        Каналы
+                      </label>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {isOwner && (
+              <div className="mt-5 pt-4 border-t border-white/[0.08] space-y-2">
+                <p className="text-xs uppercase tracking-wide text-white/40">Создать роль</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <Input
+                    value={newRoleName}
+                    onChange={e => setNewRoleName(e.target.value)}
+                    placeholder="Название роли"
+                    className="h-9 text-sm bg-white/[0.08] border-white/[0.12] text-white"
+                  />
+                  <Input
+                    value={newRoleColor}
+                    onChange={e => setNewRoleColor(e.target.value)}
+                    placeholder="#8b97ff или linear-gradient(...)"
+                    className="h-9 text-sm bg-white/[0.08] border-white/[0.12] text-white"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <label className="text-xs text-white/60 flex items-center gap-1">
+                    <input type="checkbox" checked={newRolePermissions.canMoveMembers} onChange={e => setNewRolePermissions(prev => ({ ...prev, canMoveMembers: e.target.checked }))} />
+                    Перемещать
+                  </label>
+                  <label className="text-xs text-white/60 flex items-center gap-1">
+                    <input type="checkbox" checked={newRolePermissions.canChangeAvatar} onChange={e => setNewRolePermissions(prev => ({ ...prev, canChangeAvatar: e.target.checked }))} />
+                    Менять аватар
+                  </label>
+                  <label className="text-xs text-white/60 flex items-center gap-1">
+                    <input type="checkbox" checked={newRolePermissions.canRenameChannels} onChange={e => setNewRolePermissions(prev => ({ ...prev, canRenameChannels: e.target.checked }))} />
+                    Каналы
+                  </label>
+                </div>
+                <Button onClick={handleCreateRole} className="bg-[#5d6cf5] hover:bg-[#4a5be0] text-white">Создать роль</Button>
+
+                <div className="mt-3 space-y-2">
+                  {chat.members.map(member => (
+                    <div key={`assign-${member.id}`} className="text-[11px] text-white/60">
+                      <span>{member.username}</span>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {roles.filter(r => !r.isDefault).map(role => {
+                          const checked = role.members.some(m => m.id === member.id)
+                          return (
+                            <button
+                              key={`${member.id}-${role.id}`}
+                              className={cn('px-2 py-0.5 rounded text-[10px] border', checked ? 'border-[#8b97ff] text-[#8b97ff]' : 'border-white/[0.15] text-white/40')}
+                              onClick={() => toggleMemberRole(role.id, member.id, !checked)}
+                            >
+                              {role.name}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── Create Channel Modal ───────────────────────────────────────────── */}      {showCreateChannel && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowCreateChannel(false)}>
           <div className="bg-[#1c1d2e] border border-white/[0.10] rounded-2xl w-80 p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
@@ -1880,6 +2132,22 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                 {isCreatingChannel ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Создать'}
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Leave Group AlertDialog ───────────────────────────────────────── */}
+      {quickMessageTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-sm" onClick={() => setQuickMessageTarget(null)}>
+          <div className="bg-[#1c1d2e] border border-white/[0.10] rounded-2xl w-72 p-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <p className="text-sm text-white/70">Пользователь</p>
+            <p className="text-base font-semibold text-white truncate">@{quickMessageTarget.username}</p>
+            <Button
+              className="mt-3 w-full bg-[#5d6cf5] hover:bg-[#4a5be0]"
+              onClick={() => handleOpenDirectChat(quickMessageTarget.id, quickMessageTarget.username)}
+            >
+              Написать в Messme
+            </Button>
           </div>
         </div>
       )}

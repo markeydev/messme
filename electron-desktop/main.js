@@ -62,6 +62,17 @@ app.whenReady().then(() => {
     }))
   })
 
+  ipcMain.handle('messme:open-external', async (_event, rawUrl) => {
+    try {
+      const url = String(rawUrl ?? '')
+      if (!/^https?:\/\//i.test(url)) return false
+      await shell.openExternal(url)
+      return true
+    } catch {
+      return false
+    }
+  })
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

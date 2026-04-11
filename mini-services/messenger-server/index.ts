@@ -404,7 +404,7 @@ io.on('connection', (socket) => {
       members.delete(userId)
       const existingChatId = channelChatMap.get(existingChannelId)
       if (existingChatId) {
-        broadcastToChat(existingChatId, 'voice-channel-left', { channelId: existingChannelId, userId }, socket.id)
+        broadcastToChat(existingChatId, 'voice-channel-left', { channelId: existingChannelId, userId })
       }
       if (members.size === 0) {
         voiceChannelMembers.delete(existingChannelId)
@@ -443,7 +443,7 @@ io.on('connection', (socket) => {
     // Notify ALL chat members so they can update sidebar occupant lists
     const chatId = channelChatMap.get(channelId)
     if (chatId) {
-      broadcastToChat(chatId, 'voice-channel-left', { channelId, userId }, socket.id)
+      broadcastToChat(chatId, 'voice-channel-left', { channelId, userId })
     } else {
       // Fallback: notify remaining voice members
       const room = voiceChannelMembers.get(channelId)
