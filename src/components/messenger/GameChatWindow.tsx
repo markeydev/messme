@@ -5,8 +5,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
-  channelsAPI, chatsAPI, usersAPI, profileAPI,
-  type Channel, type ChannelMessage, type Chat, type User,
+  channelsAPI, chatsAPI, usersAPI, profileAPI, gameRolesAPI,
+  type Channel, type ChannelMessage, type Chat, type User, type GameRoomRole,
 } from '@/lib/api'
 import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
@@ -14,7 +14,7 @@ import {
   ArrowLeft, Hash, Volume2, Plus, Trash2, Send, Loader2,
   Mic, MicOff, PhoneOff, Gamepad2, X, Pencil, Check,
   Headphones, EarOff, UserPlus, Camera, LogOut, Video, VideoOff,
-  ScreenShare, ScreenShareOff, Monitor, PanelLeft,
+  ScreenShare, ScreenShareOff, Monitor, PanelLeft, Reply, AtSign,
 } from 'lucide-react'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -56,9 +56,14 @@ let _persistedVoice: PersistedVoice | null = null
 const MAX_AUDIO_VOLUME = 2
 // Limit simultaneously rendered video tiles to reduce UI jank with many active cameras.
 const MAX_VISIBLE_VIDEO_TILES = 9
+const MENTION_INPUT_PATTERN = /(?:^|\s)@([a-zA-Z0-9_а-яА-ЯёЁ-]{1,32})$/
+const MENTION_RENDER_SPLIT_PATTERN = /(@[a-zA-Z0-9_а-яА-ЯёЁ-]{1,32})/g
 
 export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
-  const { user, updateChatMembers, updateChat, removeChat, setActiveChat } = useMessengerStore()
+  const {
+    user, updateChatMembers, updateChat, removeChat, setActiveChat,
+    audioInputDeviceId, audioOutputDeviceId, outputVolume,
+  } = useMessengerStore()
 
   // ── Channels ──────────────────────────────────────────────────────────────
   const [channels, setChannels] = useState<Channel[]>([])
@@ -68,6 +73,9 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   // ── Text messages ─────────────────────────────────────────────────────────
   const [messages, setMessages] = useState<ChannelMessage[]>([])
   const [draft, setDraft] = useState('')
+  const [replyToMessage, setReplyToMessage] = useState<ChannelMessage | null>(null)
+  const [mentionsOpen, setMentionsOpen] = useState(false)
+  const [mentionQuery, setMentionQuery] = useState('')
   const [isSending, setIsSending] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -94,7 +102,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   const [speakingUsers, setSpeakingUsers] = useState<Set<string>>(new Set())
   const [userVolumes, setUserVolumes] = useState<Record<string, number>>({})
   const [userVolumeMenu, setUserVolumeMenu] = useState<{
-    userId: string; username: string; x: number; y: number
+    userId: string; username: string; channelId: string; x: number; y: number
   } | null>(null)
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
@@ -130,6 +138,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
 
   // ── Members panel ─────────────────────────────────────────────────────────
   const [showMembers, setShowMembers] = useState(false)
+  const [showRolesPanel, setShowRolesPanel] = useState(false)
   const [memberSearch, setMemberSearch] = useState('')
   const [memberSearchResults, setMemberSearchResults] = useState<User[]>([])
   const [selectedToAdd, setSelectedToAdd] = useState<string[]>([])
@@ -141,6 +150,12 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
   const avatarFileInputRef = useRef<HTMLInputElement>(null)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+  const [showVoiceRestoredBanner, setShowVoiceRestoredBanner] = useState(false)
+  const [desktopSources, setDesktopSources] = useState<Array<{ id: string; name: string; thumbnail?: string; appIcon?: string | null }>>([])
+  const [showDesktopSourcePicker, setShowDesktopSourcePicker] = useState(false)
+  const [roles, setRoles] = useState<GameRoomRole[]>([])
+  const [permissions, setPermissions] = useState({ canMoveMembers: false, canChangeAvatar: false, canRenameChannels: false })
+  const [newRoleName, setNewRoleName] = useState('')
 
   // ── Ref sync (for stable access in cleanup / callbacks) ───────────────────
   useEffect(() => { activeVoiceChannelRef.current = activeVoiceChannel }, [activeVoiceChannel])
@@ -148,6 +163,20 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   useEffect(() => { isMicMutedRef.current = isMicMuted }, [isMicMuted])
   useEffect(() => { isDeafenedRef.current = isDeafened }, [isDeafened])
   useEffect(() => { userVolumesRef.current = userVolumes }, [userVolumes])
+  useEffect(() => {
+    audioElements.current.forEach((el, uid) => {
+      el.volume = isDeafened ? 0 : getOutputAdjustedVolume(uid)
+      if (audioOutputDeviceId && (el as any).setSinkId) {
+        ;(el as any).setSinkId(audioOutputDeviceId).catch(() => {})
+      }
+    })
+  }, [audioOutputDeviceId, getOutputAdjustedVolume, isDeafened])
+
+  const getOutputAdjustedVolume = useCallback((uid: string, perUserVolume?: number) => {
+    const userVol = perUserVolume ?? (userVolumesRef.current[uid] ?? 100)
+    const out = Math.max(0, Math.min(200, outputVolume))
+    return Math.min(MAX_AUDIO_VOLUME, (userVol / 100) * (out / 100))
+  }, [outputVolume])
 
   // ── Voice Activity Detection ──────────────────────────────────────────────
   const setupAnalyser = useCallback((userId: string, stream: MediaStream) => {
@@ -194,7 +223,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       for (const peer of v.peers) {
         if (peer.stream) setupAnalyser(peer.userId, peer.stream)
       }
-      v.audioEls.forEach(el => { el.volume = v.isDeafened ? 0 : 1 })
+      v.audioEls.forEach((el, uid) => { el.volume = v.isDeafened ? 0 : getOutputAdjustedVolume(uid, v.isDeafened ? 0 : undefined) })
       setActiveVoiceChannel(v.channel)
       setVoicePeers([...v.peers])
       setIsMicMuted(v.isMuted)
@@ -203,6 +232,8 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       setLocalVideoStream(v.localVideoStream)
       setIsScreenSharing(v.isScreenSharing)
       setLocalScreenStream(v.localScreenStream)
+      setShowVoiceRestoredBanner(true)
+      setTimeout(() => setShowVoiceRestoredBanner(false), 3500)
       pingIntervalRef.current = setInterval(async () => {
         const ms = await messengerSocket.measurePing()
         setPing(ms)
@@ -262,6 +293,48 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       setIsLoadingChannels(false)
     })
   }, [chat.id])
+
+  useEffect(() => {
+    let cancelled = false
+    gameRolesAPI.getRoles(chat.id).then(r => {
+      if (cancelled || !r.roles) return
+      setRoles(r.roles)
+      const can = chat.ownerId === user?.id
+        ? { canMoveMembers: true, canChangeAvatar: true, canRenameChannels: true }
+        : r.roles.reduce((acc, role) => {
+            if (!role.members.some(m => m.id === user?.id)) return acc
+            return {
+              canMoveMembers: acc.canMoveMembers || role.permissions.canMoveMembers,
+              canChangeAvatar: acc.canChangeAvatar || role.permissions.canChangeAvatar,
+              canRenameChannels: acc.canRenameChannels || role.permissions.canRenameChannels,
+            }
+          }, { canMoveMembers: false, canChangeAvatar: false, canRenameChannels: false })
+      setPermissions(can)
+    })
+    return () => { cancelled = true }
+  }, [chat.id, chat.ownerId, user?.id])
+
+  const refreshRoles = useCallback(async () => {
+    const r = await gameRolesAPI.getRoles(chat.id)
+    if (!r.roles) return
+    setRoles(r.roles)
+  }, [chat.id])
+
+  const handleCreateRole = async () => {
+    const name = newRoleName.trim()
+    if (!name) return
+    const result = await gameRolesAPI.createRole(chat.id, { name })
+    if (!result.error) {
+      setNewRoleName('')
+      await refreshRoles()
+    }
+  }
+
+  const toggleMemberRole = async (roleId: string, userId: string, checked: boolean) => {
+    if (checked) await gameRolesAPI.assignMember(chat.id, roleId, userId)
+    else await gameRolesAPI.unassignMember(chat.id, roleId, userId)
+    await refreshRoles()
+  }
 
   // ── Load messages when channel changes ────────────────────────────────────
   useEffect(() => {
@@ -331,12 +404,18 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     }
     const onMembers = (data: { channelId: string; members: Array<{ userId: string; username: string; avatarUrl?: string | null }> }) => {
       // Update occupants for this channel (pre-existing members when we joined)
-      setChannelOccupants(prev => ({ ...prev, [data.channelId]: data.members }))
+      setChannelOccupants(prev => ({
+        ...prev,
+        [data.channelId]: data.members.filter(m => m.userId !== user?.id),
+      }))
       if (data.channelId !== activeVoiceChannelRef.current?.id) return
       setVoicePeers(data.members.filter(m => m.userId !== user?.id))
     }
     const onVcOccupants = (data: Record<string, Array<{ userId: string; username: string; avatarUrl?: string | null }>>) => {
-      setChannelOccupants(prev => ({ ...prev, ...data }))
+      const filtered = Object.fromEntries(
+        Object.entries(data).map(([key, members]) => [key, members.filter(m => m.userId !== user?.id)])
+      )
+      setChannelOccupants(prev => ({ ...prev, ...filtered }))
     }
     const onScreenStart = (data: { channelId: string; userId: string }) => {
       if (data.channelId !== activeVoiceChannelRef.current?.id) return
@@ -359,6 +438,13 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       const pc = peerConnections.current.get(data.fromUserId)
       if (pc) { try { await pc.addIceCandidate(new RTCIceCandidate(data.candidate)) } catch {} }
     }
+    const onForceMove = async (data: { channelId: string; chatId: string }) => {
+      if (data.chatId !== chat.id) return
+      const target = channels.find(c => c.id === data.channelId && c.type === 'VOICE')
+      if (!target) return
+      if (activeVoiceChannelRef.current?.id === target.id) return
+      await joinVoiceChannel(target)
+    }
 
     messengerSocket.on('voice-channel-joined', onJoined)
     messengerSocket.on('voice-channel-left', onLeft)
@@ -369,6 +455,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     messengerSocket.on('vc-offer', onOffer)
     messengerSocket.on('vc-answer', onAnswer)
     messengerSocket.on('vc-ice', onIce)
+    messengerSocket.on('vc-force-move', onForceMove)
     return () => {
       messengerSocket.off('voice-channel-joined', onJoined)
       messengerSocket.off('voice-channel-left', onLeft)
@@ -379,8 +466,9 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       messengerSocket.off('vc-offer', onOffer)
       messengerSocket.off('vc-answer', onAnswer)
       messengerSocket.off('vc-ice', onIce)
+      messengerSocket.off('vc-force-move', onForceMove)
     }
-  }, [user?.id]) // uses activeVoiceChannelRef (ref) — no state dep needed
+  }, [chat.id, channels, user?.id]) // uses activeVoiceChannelRef (ref) — no state dep needed
 
   // ── Close context menus on click outside ─────────────────────────────────
   useEffect(() => {
@@ -409,7 +497,10 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
         let el = audioElements.current.get(remoteUserId)
         if (!el) { el = new Audio(); el.autoplay = true; audioElements.current.set(remoteUserId, el) }
         el.srcObject = stream
-        el.volume = isDeafenedRef.current ? 0 : Math.min(MAX_AUDIO_VOLUME, (userVolumesRef.current[remoteUserId] ?? 100) / 100)
+        el.volume = isDeafenedRef.current ? 0 : getOutputAdjustedVolume(remoteUserId)
+        if (audioOutputDeviceId && (el as any).setSinkId) {
+          ;(el as any).setSinkId(audioOutputDeviceId).catch(() => {})
+        }
         setupAnalyser(remoteUserId, stream)
       } else if (e.track.kind === 'video') {
         if (expectingScreenTrack.current.has(remoteUserId)) {
@@ -422,7 +513,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     }
     peerConnections.current.set(remoteUserId, pc)
     return pc
-  }, [])
+  }, [audioOutputDeviceId, getOutputAdjustedVolume, setupAnalyser])
 
   const createOffer = useCallback(async (remoteUserId: string, channelId: string) => {
     const pc = createPeerConnection(remoteUserId, channelId)
@@ -458,7 +549,10 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     if (activeVoiceChannel) await leaveVoiceChannel()
     setIsJoiningVoice(true)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: audioInputDeviceId ? { deviceId: { exact: audioInputDeviceId } } : true,
+        video: false,
+      })
       localStreamRef.current = stream
       setupAnalyser(user.id, stream)
       setActiveVoiceChannel(channel)
@@ -514,7 +608,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     if (!newMuted && isDeafenedRef.current) {
       setIsDeafened(false)
       audioElements.current.forEach((el, uid) => {
-        el.volume = Math.min(MAX_AUDIO_VOLUME, (userVolumesRef.current[uid] ?? 100) / 100)
+        el.volume = getOutputAdjustedVolume(uid)
       })
     }
   }
@@ -526,7 +620,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       setIsMicMuted(true)
     }
     audioElements.current.forEach((el, uid) => {
-      el.volume = newDeafened ? 0 : Math.min(MAX_AUDIO_VOLUME, (userVolumesRef.current[uid] ?? 100) / 100)
+      el.volume = newDeafened ? 0 : getOutputAdjustedVolume(uid)
     })
     setIsDeafened(newDeafened)
   }
@@ -566,6 +660,40 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   }
 
   // ── Screen share ──────────────────────────────────────────────────────────
+  const startScreenShare = async (sourceId?: string) => {
+    let sStream: MediaStream
+    if (sourceId && window.messmeDesktop?.platform) {
+      sStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          // Electron desktopCapturer source selection constraints
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sourceId },
+        } as any,
+      })
+    } else {
+      sStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
+    }
+    const sTrack = sStream.getVideoTracks()[0]
+    // Signal peers BEFORE adding the track (WebRTC is slower than socket)
+    if (activeVoiceChannelRef.current) messengerSocket.sendVcScreenStart(activeVoiceChannelRef.current.id)
+    sTrack.onended = () => {
+      localScreenStreamRef.current = null
+      setLocalScreenStream(null)
+      setIsScreenSharing(false)
+      if (activeVoiceChannelRef.current) messengerSocket.sendVcScreenStop(activeVoiceChannelRef.current.id)
+    }
+    for (const [peerId, pc] of peerConnections.current) {
+      pc.addTrack(sTrack, sStream)
+      const offer = await pc.createOffer()
+      await pc.setLocalDescription(offer)
+      messengerSocket.sendVcOffer(activeVoiceChannelRef.current?.id ?? '', peerId, offer)
+    }
+    localScreenStreamRef.current = sStream
+    setLocalScreenStream(sStream)
+    setIsScreenSharing(true)
+  }
+
   const toggleScreen = async () => {
     if (isScreenSharing) {
       localScreenStreamRef.current?.getTracks().forEach(t => {
@@ -580,27 +708,15 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       if (activeVoiceChannelRef.current) messengerSocket.sendVcScreenStop(activeVoiceChannelRef.current.id)
     } else {
       try {
-        const sStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
-        const sTrack = sStream.getVideoTracks()[0]
-        // Signal peers BEFORE adding the track (WebRTC is slower than socket)
-        if (activeVoiceChannelRef.current) messengerSocket.sendVcScreenStart(activeVoiceChannelRef.current.id)
-        sTrack.onended = () => {
-          // User pressed browser's native "Stop sharing" button
-          localScreenStreamRef.current = null
-          setLocalScreenStream(null)
-          setIsScreenSharing(false)
-          if (activeVoiceChannelRef.current) messengerSocket.sendVcScreenStop(activeVoiceChannelRef.current.id)
+        if (window.messmeDesktop?.getDesktopSources) {
+          const sources = await window.messmeDesktop.getDesktopSources()
+          if (sources?.length) {
+            setDesktopSources(sources)
+            setShowDesktopSourcePicker(true)
+            return
+          }
         }
-        // Add screen track and renegotiate with each peer
-        for (const [peerId, pc] of peerConnections.current) {
-          pc.addTrack(sTrack, sStream)
-          const offer = await pc.createOffer()
-          await pc.setLocalDescription(offer)
-          messengerSocket.sendVcOffer(activeVoiceChannelRef.current?.id ?? '', peerId, offer)
-        }
-        localScreenStreamRef.current = sStream
-        setLocalScreenStream(sStream)
-        setIsScreenSharing(true)
+        await startScreenShare()
       } catch { /* user cancelled or denied */ }
     }
   }
@@ -622,6 +738,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
 
   // ── Avatar upload ─────────────────────────────────────────────────────────────
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!canChangeAvatar) return
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
@@ -651,6 +768,8 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     if (!draft.trim() || !activeChannel || activeChannel.type !== 'TEXT' || !user) return
     const content = draft.trim()
     setDraft('')
+    setReplyToMessage(null)
+    setMentionsOpen(false)
     const tmpId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2)}`
     const optimistic: ChannelMessage = {
       id: tmpId,
@@ -658,12 +777,19 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       senderId: user.id,
       senderUsername: user.username,
       content,
+      replyToId: replyToMessage?.id ?? null,
+      replyTo: replyToMessage ? {
+        id: replyToMessage.id,
+        senderId: replyToMessage.senderId,
+        senderUsername: replyToMessage.senderUsername,
+        content: replyToMessage.content,
+      } : null,
       createdAt: new Date().toISOString(),
     }
     setMessages(prev => [...prev, optimistic])
     setIsSending(true)
     try {
-      const r = await channelsAPI.sendMessage(chat.id, activeChannel.id, content)
+      const r = await channelsAPI.sendMessage(chat.id, activeChannel.id, content, replyToMessage?.id)
       if (r.message) {
         setMessages(prev => prev.map(m => m.id === tmpId ? r.message! : m))
         messengerSocket.broadcastChannelMessage(activeChannel.id, r.message)
@@ -675,6 +801,26 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     } finally {
       setIsSending(false)
     }
+  }
+
+  const handleDraftChange = (value: string) => {
+    setDraft(value)
+    const m = value.match(MENTION_INPUT_PATTERN)
+    if (m?.[1]) {
+      setMentionQuery(m[1])
+      setMentionsOpen(true)
+    } else {
+      setMentionsOpen(false)
+    }
+  }
+
+  const insertMention = (username: string) => {
+    const replaced = draft.replace(MENTION_INPUT_PATTERN, (full) => {
+      const prefix = full.startsWith(' ') ? ' ' : ''
+      return `${prefix}@${username} `
+    })
+    setDraft(replaced)
+    setMentionsOpen(false)
   }
 
   // ── Delete message ────────────────────────────────────────────────────────
@@ -727,6 +873,9 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   const textChannels = channels.filter(c => c.type === 'TEXT')
   const voiceChannels = channels.filter(c => c.type === 'VOICE')
   const isOwner = chat.ownerId === user?.id
+  const canRenameChannels = isOwner || permissions.canRenameChannels
+  const canChangeAvatar = isOwner || permissions.canChangeAvatar
+  const canMoveMembers = isOwner || permissions.canMoveMembers
 
   const formatTime = (d: string) => {
     try { return new Date(d).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) }
@@ -747,6 +896,11 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   const memberMap = useMemo(() => new Map(chat.members.map(m => [m.id, m])), [chat.members])
   const getMemberAvatar = (userId: string, fallback?: string | null) =>
     memberMap.get(userId)?.avatarUrl ?? fallback ?? null
+  const mentionCandidates = useMemo(() => {
+    if (!mentionQuery.trim()) return []
+    const q = mentionQuery.toLowerCase()
+    return chat.members.filter(m => m.username.toLowerCase().includes(q)).slice(0, 6)
+  }, [chat.members, mentionQuery])
 
   const pingColor = ping === null ? '' : ping < 80 ? 'text-green-400' : ping < 180 ? 'text-yellow-400' : 'text-red-400'
   const isSpeakingActive = (userId: string, isSelf = false) =>
@@ -791,7 +945,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
               {ch.type === 'TEXT' ? <Hash className="h-4 w-4 flex-shrink-0" /> : <Volume2 className="h-4 w-4 flex-shrink-0" />}
               <span className="truncate flex-1">{ch.name}</span>
             </button>
-            {isOwner && (
+            {canRenameChannels && (
               <>
                 <button
                   onClick={() => { setRenamingChannelId(ch.id); setRenameDraft(ch.name) }}
@@ -812,6 +966,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
           </>
         )}
       </div>
+
     )
   }
 
@@ -842,8 +997,8 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <button
               className="group relative flex-shrink-0"
-              onClick={() => avatarFileInputRef.current?.click()}
-              title="Изменить аватар группы"
+              onClick={() => { if (canChangeAvatar) avatarFileInputRef.current?.click() }}
+              title={canChangeAvatar ? 'Изменить аватар группы' : 'Нет прав на смену аватара'}
             >
               <Avatar className="h-7 w-7">
                 {chat.avatarUrl && <AvatarImage src={chat.avatarUrl} alt={chat.title} />}
@@ -865,6 +1020,13 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
             <UserPlus className="h-4 w-4" />
           </button>
           <button
+            onClick={() => setShowRolesPanel(v => !v)}
+            className={cn('h-6 w-6 flex items-center justify-center flex-shrink-0 transition-colors', showRolesPanel ? 'text-[#8b97ff]' : 'text-white/40 hover:text-white/80')}
+            title="Роли"
+          >
+            <AtSign className="h-4 w-4" />
+          </button>
+          <button
             onClick={() => setShowLeaveConfirm(true)}
             className="h-6 w-6 flex items-center justify-center text-white/40 hover:text-red-400 flex-shrink-0 transition-colors"
             title="Покинуть группу"
@@ -882,9 +1044,9 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
             <div className="flex items-center justify-between px-1 mb-1">
               <span className="text-[11px] font-bold uppercase tracking-wider text-white/40">Текстовые</span>
               <button
-                onClick={() => { setNewChannelType('TEXT'); setShowCreateChannel(true) }}
-                className="h-4 w-4 text-white/40 hover:text-white/80 transition-colors"
-                title="Добавить канал"
+                onClick={() => { if (canRenameChannels) { setNewChannelType('TEXT'); setShowCreateChannel(true) } }}
+                className={cn('h-4 w-4 transition-colors', canRenameChannels ? 'text-white/40 hover:text-white/80' : 'text-white/20 cursor-not-allowed')}
+                title={canRenameChannels ? 'Добавить канал' : 'Нет прав'}
               >
                 <Plus className="h-4 w-4" />
               </button>
@@ -901,9 +1063,9 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
             <div className="flex items-center justify-between px-1 mb-1">
               <span className="text-[11px] font-bold uppercase tracking-wider text-white/40">Голосовые</span>
               <button
-                onClick={() => { setNewChannelType('VOICE'); setShowCreateChannel(true) }}
-                className="h-4 w-4 text-white/40 hover:text-white/80 transition-colors"
-                title="Добавить канал"
+                onClick={() => { if (canRenameChannels) { setNewChannelType('VOICE'); setShowCreateChannel(true) } }}
+                className={cn('h-4 w-4 transition-colors', canRenameChannels ? 'text-white/40 hover:text-white/80' : 'text-white/20 cursor-not-allowed')}
+                title={canRenameChannels ? 'Добавить канал' : 'Нет прав'}
               >
                 <Plus className="h-4 w-4" />
               </button>
@@ -943,7 +1105,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                           <div
                             key={p.userId}
                             className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] text-white/50 cursor-context-menu"
-                            onContextMenu={isConnected ? e => { e.preventDefault(); setUserVolumeMenu({ userId: p.userId, username: p.username, x: e.clientX, y: e.clientY }) } : undefined}
+                            onContextMenu={isConnected ? e => { e.preventDefault(); setUserVolumeMenu({ userId: p.userId, username: p.username, channelId: ch.id, x: e.clientX, y: e.clientY }) } : undefined}
                           >
                             <Avatar className={cn('h-5 w-5 ring-1 ring-offset-1 ring-offset-[#13141f] transition-all',
                               isSpeakingActive(p.userId) ? 'ring-green-400' : 'ring-transparent')}>
@@ -1133,7 +1295,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                               const vol = parseInt(e.target.value)
                               setUserVolumes(prev => ({ ...prev, [tile.userId]: vol }))
                               const el = audioElements.current.get(tile.userId)
-                              if (el) el.volume = Math.min(MAX_AUDIO_VOLUME, vol / 100)
+                              if (el) el.volume = isDeafened ? 0 : getOutputAdjustedVolume(tile.userId, vol)
                             }}
                             className="h-16 cursor-pointer accent-[#5d6cf5]"
                             style={{ writingMode: 'vertical-lr', direction: 'rtl' } as React.CSSProperties}
@@ -1279,6 +1441,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                 return (
                   <div
                     key={msg.id}
+                    id={`channel-msg-${msg.id}`}
                     className={cn('flex gap-3 group relative', showHeader ? 'mt-4' : 'mt-0.5')}
                     onContextMenu={e => {
                       if (!isMine) return
@@ -1314,15 +1477,42 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                           <button type="button" onClick={() => setEditingId(null)} className="h-8 px-3 rounded-lg bg-white/[0.08] text-white/60 text-xs">Отмена</button>
                         </form>
                       ) : (
-                        <p className={cn('text-sm text-white/80 leading-relaxed break-words', msg.id.startsWith('tmp_') && 'opacity-50')}>
-                          {msg.content}
-                        </p>
+                        <div className={cn('text-sm text-white/80 leading-relaxed break-words', msg.id.startsWith('tmp_') && 'opacity-50')}>
+                          {msg.replyTo && (
+                            <button
+                              className="mb-1 w-full text-left px-2 py-1 rounded bg-white/[0.05] hover:bg-white/[0.08] transition-colors"
+                              onClick={() => {
+                                const anchor = document.getElementById(`channel-msg-${msg.replyTo!.id}`)
+                                anchor?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                              }}
+                            >
+                              <p className="text-[11px] text-[#8b97ff] font-medium truncate">{msg.replyTo.senderUsername}</p>
+                              <p className="text-[11px] text-white/45 truncate">{msg.replyTo.content}</p>
+                            </button>
+                          )}
+                          <p>
+                            {msg.content.split(MENTION_RENDER_SPLIT_PATTERN).map((part, idx) => (
+                              <span key={`${msg.id}-${idx}`} className={part.startsWith('@') ? 'text-[#8b97ff] font-medium' : undefined}>
+                                {part}
+                              </span>
+                            ))}
+                          </p>
+                        </div>
                       )}
                     </div>
 
-                    {/* Hover actions (own messages only) */}
-                    {isMine && editingId !== msg.id && !msg.id.startsWith('tmp_') && (
+                    {/* Hover actions */}
+                    {editingId !== msg.id && !msg.id.startsWith('tmp_') && (
                       <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 absolute right-0 top-0 transition-opacity">
+                        <button
+                          onClick={() => setReplyToMessage(msg)}
+                          className="h-6 w-6 flex items-center justify-center rounded bg-[#1a1b26] hover:bg-white/10 text-white/40 hover:text-white/80 transition-colors"
+                          title="Ответить"
+                        >
+                          <Reply className="h-3 w-3" />
+                        </button>
+                        {isMine && (
+                          <>
                         <button
                           onClick={() => { setEditingId(msg.id); setEditDraft(msg.content) }}
                           className="h-6 w-6 flex items-center justify-center rounded bg-[#1a1b26] hover:bg-white/10 text-white/40 hover:text-white/80 transition-colors"
@@ -1337,6 +1527,8 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                         >
                           <Trash2 className="h-3 w-3" />
                         </button>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1369,10 +1561,21 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
 
             {/* Input */}
             <div className="flex-shrink-0 px-4 pb-4 pt-2">
+              {replyToMessage && (
+                <div className="mb-2 flex items-center justify-between gap-2 bg-white/[0.06] border border-white/[0.1] rounded-xl px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="text-[11px] text-[#8b97ff] truncate">Ответ: {replyToMessage.senderUsername}</p>
+                    <p className="text-[11px] text-white/50 truncate">{replyToMessage.content}</p>
+                  </div>
+                  <button className="text-white/40 hover:text-white/80" onClick={() => setReplyToMessage(null)}>
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
               <div className="flex items-center gap-2 bg-white/[0.07] rounded-xl px-3 h-12 border border-white/[0.08]">
                 <Input
                   value={draft}
-                  onChange={e => setDraft(e.target.value)}
+                  onChange={e => handleDraftChange(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
                   placeholder={`Сообщение в #${activeChannel.name}`}
                   disabled={isSending}
@@ -1386,10 +1589,138 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                   {isSending ? <Loader2 className="h-4 w-4 animate-spin text-white" /> : <Send className="h-4 w-4 text-white" />}
                 </button>
               </div>
+              {mentionsOpen && mentionCandidates.length > 0 && (
+                <div className="mt-2 bg-[#161725] border border-white/[0.1] rounded-xl p-1 max-h-40 overflow-y-auto">
+                  {mentionCandidates.map(m => (
+                    <button
+                      key={m.id}
+                      className="w-full text-left px-2 py-1.5 rounded-lg text-sm hover:bg-white/[0.08] text-white/80"
+                      onClick={() => insertMention(m.username)}
+                    >
+                      @{m.username}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </>
         )}
       </div>
+
+      {/* ── Roles / Members right panel ───────────────────────────────────── */}
+      {showRolesPanel && (
+        <div className="hidden lg:flex w-64 border-l border-white/[0.06] bg-[#141522] flex-col min-h-0">
+          <div className="h-14 flex items-center px-3 border-b border-white/[0.06]">
+            <span className="text-sm font-semibold text-white/80">Участники</span>
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-4">
+            {roles.map(role => (
+              <div key={role.id}>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: role.color }}>
+                    {role.name}
+                  </p>
+                  {isOwner && !role.isDefault && (
+                    <button
+                      className="text-white/30 hover:text-red-400"
+                      onClick={async () => { await gameRolesAPI.deleteRole(chat.id, role.id); await refreshRoles() }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  {role.members.map(member => (
+                    <div key={`${role.id}-${member.id}`} className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-white/[0.05]">
+                      <Avatar className="h-6 w-6">
+                        {member.avatarUrl && <AvatarImage src={member.avatarUrl} />}
+                        <AvatarFallback className="bg-white/10 text-white text-[10px]">{getInitials(member.username)}</AvatarFallback>
+                      </Avatar>
+                      <span className="text-xs text-white/75 truncate">{member.username}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {isOwner && (
+              <div className="pt-2 border-t border-white/[0.08]">
+                <p className="text-[11px] text-white/40 mb-1">Создать роль</p>
+                <div className="flex gap-1">
+                  <Input
+                    value={newRoleName}
+                    onChange={e => setNewRoleName(e.target.value)}
+                    placeholder="Новая роль"
+                    className="h-8 text-xs bg-white/[0.08] border-white/[0.12] text-white"
+                  />
+                  <button
+                    className="h-8 w-8 rounded bg-[#5d6cf5] hover:bg-[#4a5be0] flex items-center justify-center"
+                    onClick={handleCreateRole}
+                  >
+                    <Plus className="h-3.5 w-3.5 text-white" />
+                  </button>
+                </div>
+                <div className="mt-2 space-y-1">
+                  {chat.members.map(member => (
+                    <div key={`assign-${member.id}`} className="text-[11px] text-white/60">
+                      <span>{member.username}</span>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {roles.filter(r => !r.isDefault).map(role => {
+                          const checked = role.members.some(m => m.id === member.id)
+                          return (
+                            <button
+                              key={`${member.id}-${role.id}`}
+                              className={cn('px-2 py-0.5 rounded text-[10px] border', checked ? 'border-[#8b97ff] text-[#8b97ff]' : 'border-white/[0.15] text-white/40')}
+                              onClick={() => toggleMemberRole(role.id, member.id, !checked)}
+                            >
+                              {role.name}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showVoiceRestoredBanner && activeVoiceChannel && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-xl bg-[#5d6cf5] text-white text-sm shadow-lg">
+          Вы в голосовом канале: {activeVoiceChannel.name}
+        </div>
+      )}
+
+      {showDesktopSourcePicker && (
+        <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-3xl bg-[#1a1b26] border border-white/[0.12] rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-white font-semibold">Выберите источник экрана</h3>
+              <button className="text-white/40 hover:text-white/80" onClick={() => setShowDesktopSourcePicker(false)}>
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto">
+              {desktopSources.map(source => (
+                <button
+                  key={source.id}
+                  className="text-left rounded-xl border border-white/[0.12] hover:border-[#8b97ff] hover:bg-white/[0.05] overflow-hidden"
+                  onClick={async () => {
+                    setShowDesktopSourcePicker(false)
+                    await startScreenShare(source.id).catch(() => {})
+                  }}
+                >
+                  <div className="aspect-video bg-black/40">
+                    {source.thumbnail ? <img src={source.thumbnail} alt={source.name} className="w-full h-full object-cover" /> : null}
+                  </div>
+                  <div className="px-3 py-2 text-sm text-white/80 truncate">{source.name}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── User Volume Context Menu ──────────────────────────────────────── */}
       {userVolumeMenu && (
@@ -1408,7 +1739,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                 const v = Number(e.target.value)
                 setUserVolumes(prev => ({ ...prev, [userVolumeMenu.userId]: v }))
                 const el = audioElements.current.get(userVolumeMenu.userId)
-                if (el) el.volume = isDeafened ? 0 : Math.min(MAX_AUDIO_VOLUME, v / 100)
+                if (el) el.volume = isDeafened ? 0 : getOutputAdjustedVolume(userVolumeMenu.userId, v)
               }}
               className="flex-1 accent-[#5d6cf5]"
             />
@@ -1416,6 +1747,27 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
               {userVolumes[userVolumeMenu.userId] ?? 100}%
             </span>
           </div>
+          {canMoveMembers && (
+            <div className="mt-3 pt-2 border-t border-white/[0.08] space-y-1">
+              <p className="text-[10px] uppercase tracking-wide text-white/40">Переместить в канал</p>
+              {voiceChannels.map(ch => (
+                <button
+                  key={ch.id}
+                  className={cn(
+                    'w-full text-left px-2 py-1 rounded text-xs transition-colors',
+                    ch.id === userVolumeMenu.channelId ? 'text-white/30 cursor-not-allowed' : 'text-white/70 hover:bg-white/[0.08] hover:text-white'
+                  )}
+                  disabled={ch.id === userVolumeMenu.channelId}
+                  onClick={() => {
+                    messengerSocket.requestVcMoveMember(chat.id, ch.id, userVolumeMenu.userId)
+                    setUserVolumeMenu(null)
+                  }}
+                >
+                  {ch.name}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

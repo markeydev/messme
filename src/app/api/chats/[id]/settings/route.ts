@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getGameRoomPermissions } from '@/lib/game-room-permissions'
 
 export async function PATCH(
   request: NextRequest,
@@ -19,8 +20,12 @@ export async function PATCH(
     if (!chat) return NextResponse.json({ error: 'Чат не найден' }, { status: 404 })
     if (!chat.isGroup) return NextResponse.json({ error: 'Не групповой чат' }, { status: 400 })
 
-    // Only group owner can edit settings
-    if (chat.ownerId !== session.userId) {
+    if (chat.gameMode) {
+      const perms = await getGameRoomPermissions(chatId, session.userId)
+      if (chat.ownerId !== session.userId && !perms.canChangeAvatar) {
+        return NextResponse.json({ error: 'Недостаточно прав для изменения аватара/названия' }, { status: 403 })
+      }
+    } else if (chat.ownerId !== session.userId) {
       return NextResponse.json({ error: 'Только владелец может изменять настройки группы' }, { status: 403 })
     }
 

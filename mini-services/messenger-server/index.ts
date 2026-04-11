@@ -397,6 +397,21 @@ io.on('connection', (socket) => {
     const { channelId, chatId, userId, username, avatarUrl } = data
     console.log(`[WS] User ${username} joining voice channel ${channelId}`)
 
+    // Remove user from any previous voice channels to prevent duplicate presence after reconnect/restore.
+    voiceChannelMembers.forEach((members, existingChannelId) => {
+      if (!members.has(userId)) return
+      if (existingChannelId === channelId) return
+      members.delete(userId)
+      const existingChatId = channelChatMap.get(existingChannelId)
+      if (existingChatId) {
+        broadcastToChat(existingChatId, 'voice-channel-left', { channelId: existingChannelId, userId }, socket.id)
+      }
+      if (members.size === 0) {
+        voiceChannelMembers.delete(existingChannelId)
+        channelChatMap.delete(existingChannelId)
+      }
+    })
+
     channelChatMap.set(channelId, chatId)
 
     if (!voiceChannelMembers.has(channelId)) {
@@ -493,6 +508,15 @@ io.on('connection', (socket) => {
 
   socket.on('vc-ping', (_data: unknown, ack: (() => void) | undefined) => {
     if (typeof ack === 'function') ack()
+  })
+
+  socket.on('vc-move-member', (data: { chatId: string; channelId: string; targetUserId: string }) => {
+    const movedByUserId = socketUsers.get(socket.id)?.userId
+    if (!movedByUserId) return
+    const targetSockets = getUserSockets(data.targetUserId)
+    targetSockets.forEach(s => {
+      s.emit('vc-force-move', { chatId: data.chatId, channelId: data.channelId, movedByUserId })
+    })
   })
 
   // ── Disconnect ────────────────────────────────────────────────────────────

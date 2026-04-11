@@ -22,6 +22,7 @@ model User {
   sessions        Session[]
   pushSubscriptions PushSubscription[]
   channelMessages  ChannelMessage[]
+  gameRoomRoleMemberships GameRoomRoleMember[]
   stories          Story[]
   storyViews       StoryView[]
   storyLikes       StoryLike[]
@@ -54,6 +55,7 @@ model Chat {
   owner     User?        @relation(fields: [ownerId], references: [id])
   messages  Message[]
   channels  Channel[]
+  roles     GameRoomRole[]
 
   @@map("chats")
 }
@@ -149,17 +151,53 @@ model ChannelMessage {
   senderId       String
   senderUsername String
   content        String
+  replyToId      String?
   createdAt      DateTime @default(now())
   channel        Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
   sender         User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  replyTo        ChannelMessage?  @relation("ChannelMessageReplies", fields: [replyToId], references: [id])
+  replies        ChannelMessage[] @relation("ChannelMessageReplies")
 
   @@index([channelId])
+  @@index([replyToId])
   @@map("channel_messages")
 }
 
 enum ChannelType {
   TEXT
   VOICE
+}
+
+model GameRoomRole {
+  id                String               @id @default(cuid())
+  chatId            String
+  name              String
+  color             String               @default("#8b97ff")
+  position          Int                  @default(0)
+  isDefault         Boolean              @default(false)
+  canMoveMembers    Boolean              @default(false)
+  canChangeAvatar   Boolean              @default(false)
+  canRenameChannels Boolean              @default(false)
+  createdAt         DateTime             @default(now())
+  chat              Chat                 @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  members           GameRoomRoleMember[]
+
+  @@unique([chatId, name])
+  @@index([chatId, position])
+  @@map("game_room_roles")
+}
+
+model GameRoomRoleMember {
+  id        String       @id @default(cuid())
+  roleId    String
+  userId    String
+  createdAt DateTime     @default(now())
+  role      GameRoomRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, userId])
+  @@index([userId])
+  @@map("game_room_role_members")
 }
 
 model Story {

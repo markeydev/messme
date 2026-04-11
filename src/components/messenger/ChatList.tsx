@@ -15,7 +15,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { PenSquare, Search, MessageSquare, Users, Check, X, BellOff, UserRound, Camera, Bell, Loader2, LogOut, Sun, Moon, Gamepad2, Trash2, Plus, Video, VideoOff, Mic, MicOff, Volume2, VolumeX, Film } from 'lucide-react'
+import { PenSquare, Search, MessageSquare, Users, Check, X, BellOff, UserRound, Camera, Bell, Loader2, LogOut, Sun, Moon, Gamepad2, Trash2, Plus, Mic, Volume2, VolumeX, Film, Headphones } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export type Tab = 'chats' | 'search' | 'profile'
@@ -30,7 +30,14 @@ interface ChatListProps {
 }
 
 export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout, activeTab, onTabChange }: ChatListProps) {
-  const { chats, addChat, user, unreadCounts, mutedChats, updateUser, notificationsEnabled, setNotificationsEnabled, darkMode, setDarkMode, removeChat, setActiveChat, cameraEnabled, microphoneEnabled, microphoneVolume, soundEffectsEnabled, autoPlayMedia, setCameraEnabled, setMicrophoneEnabled, setMicrophoneVolume, setSoundEffectsEnabled, setAutoPlayMedia } = useMessengerStore()
+  const {
+    chats, addChat, user, unreadCounts, mutedChats, updateUser, notificationsEnabled, setNotificationsEnabled,
+    darkMode, setDarkMode, removeChat, setActiveChat, microphoneVolume, outputVolume,
+    audioInputDeviceId, audioOutputDeviceId, soundEffectsEnabled, autoPlayMedia,
+    setMicrophoneVolume, setOutputVolume, setAudioInputDeviceId, setAudioOutputDeviceId, setSoundEffectsEnabled, setAutoPlayMedia
+  } = useMessengerStore()
+  const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([])
+  const [audioOutputs, setAudioOutputs] = useState<MediaDeviceInfo[]>([])
   const [chatSearchQuery, setChatSearchQuery] = useState('')
   const [chatGroupFilter, setChatGroupFilter] = useState<'MESSME' | 'PLAYME'>('MESSME')
   const [storyFeed, setStoryFeed] = useState<StoryFeedItem[]>([])
@@ -93,6 +100,20 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
   useEffect(() => {
     setProfileUsername(user?.username ?? '')
   }, [user?.username])
+
+  useEffect(() => {
+    const loadDevices = async () => {
+      if (!navigator?.mediaDevices?.enumerateDevices) return
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices()
+        setAudioInputs(devices.filter(d => d.kind === 'audioinput'))
+        setAudioOutputs(devices.filter(d => d.kind === 'audiooutput'))
+      } catch {}
+    }
+    loadDevices()
+    navigator.mediaDevices?.addEventListener?.('devicechange', loadDevices)
+    return () => navigator.mediaDevices?.removeEventListener?.('devicechange', loadDevices)
+  }, [])
 
   const handleStoriesWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
     const container = storiesScrollRef.current
@@ -775,56 +796,42 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
               </button>
             </div>
 
-            {/* Camera toggle */}
-            <div className="w-full flex items-center justify-between bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 h-14">
-              <div className="flex items-center gap-3">
-                {cameraEnabled
-                  ? <Video className="h-5 w-5 text-black/50 dark:text-white/50" />
-                  : <VideoOff className="h-5 w-5 text-black/30 dark:text-white/30" />
-                }
+            {/* Audio input device */}
+            <div className="w-full bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 py-3">
+              <div className="flex items-center gap-3 mb-2">
+                <Mic className="h-5 w-5 text-black/50 dark:text-white/50" />
                 <div>
-                  <p className="text-[15px] font-medium text-black dark:text-white">Камера</p>
-                  <p className="text-xs text-black/40 dark:text-white/40">{cameraEnabled ? 'Включена' : 'Отключена'}</p>
+                  <p className="text-[15px] font-medium text-black dark:text-white">Устройство ввода</p>
+                  <p className="text-xs text-black/40 dark:text-white/40">Микрофон</p>
                 </div>
               </div>
-              <button
-                onClick={() => setCameraEnabled(!cameraEnabled)}
-                className={cn(
-                  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none',
-                  cameraEnabled ? 'bg-[#5d6cf5]' : 'bg-black/[0.15] dark:bg-white/[0.15]'
-                )}
+              <select
+                value={audioInputDeviceId ?? ''}
+                onChange={e => setAudioInputDeviceId(e.target.value || null)}
+                className="w-full h-10 bg-white dark:bg-black/[0.25] border border-black/[0.1] dark:border-white/[0.12] rounded-lg px-2 text-sm text-black dark:text-white"
               >
-                <span className={cn(
-                  'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
-                  cameraEnabled ? 'translate-x-6' : 'translate-x-1'
-                )} />
-              </button>
+                <option value="">Системный по умолчанию</option>
+                {audioInputs.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || `Микрофон ${d.deviceId.slice(0, 6)}`}</option>)}
+              </select>
             </div>
 
-            {/* Microphone toggle */}
-            <div className="w-full flex items-center justify-between bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 h-14">
-              <div className="flex items-center gap-3">
-                {microphoneEnabled
-                  ? <Mic className="h-5 w-5 text-black/50 dark:text-white/50" />
-                  : <MicOff className="h-5 w-5 text-black/30 dark:text-white/30" />
-                }
+            {/* Audio output device */}
+            <div className="w-full bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 py-3">
+              <div className="flex items-center gap-3 mb-2">
+                <Headphones className="h-5 w-5 text-black/50 dark:text-white/50" />
                 <div>
-                  <p className="text-[15px] font-medium text-black dark:text-white">Микрофон</p>
-                  <p className="text-xs text-black/40 dark:text-white/40">{microphoneEnabled ? 'Включен' : 'Отключен'}</p>
+                  <p className="text-[15px] font-medium text-black dark:text-white">Устройство вывода</p>
+                  <p className="text-xs text-black/40 dark:text-white/40">Наушники / динамики</p>
                 </div>
               </div>
-              <button
-                onClick={() => setMicrophoneEnabled(!microphoneEnabled)}
-                className={cn(
-                  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none',
-                  microphoneEnabled ? 'bg-[#5d6cf5]' : 'bg-black/[0.15] dark:bg-white/[0.15]'
-                )}
+              <select
+                value={audioOutputDeviceId ?? ''}
+                onChange={e => setAudioOutputDeviceId(e.target.value || null)}
+                className="w-full h-10 bg-white dark:bg-black/[0.25] border border-black/[0.1] dark:border-white/[0.12] rounded-lg px-2 text-sm text-black dark:text-white"
               >
-                <span className={cn(
-                  'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
-                  microphoneEnabled ? 'translate-x-6' : 'translate-x-1'
-                )} />
-              </button>
+                <option value="">Системный по умолчанию</option>
+                {audioOutputs.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || `Output ${d.deviceId.slice(0, 6)}`}</option>)}
+              </select>
             </div>
 
             {/* Microphone volume */}
@@ -845,6 +852,28 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                 step={1}
                 value={[microphoneVolume]}
                 onValueChange={(value) => setMicrophoneVolume(value[0] ?? 0)}
+                className="w-full"
+              />
+            </div>
+
+            {/* Output volume */}
+            <div className="w-full bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 py-3">
+              <div className="flex items-center gap-3 mb-2">
+                {outputVolume > 0
+                  ? <Headphones className="h-5 w-5 text-black/50 dark:text-white/50" />
+                  : <VolumeX className="h-5 w-5 text-black/30 dark:text-white/30" />
+                }
+                <div>
+                  <p className="text-[15px] font-medium text-black dark:text-white">Громкость выхода</p>
+                  <p className="text-xs text-black/40 dark:text-white/40">{outputVolume}%</p>
+                </div>
+              </div>
+              <Slider
+                min={0}
+                max={200}
+                step={1}
+                value={[outputVolume]}
+                onValueChange={(value) => setOutputVolume(value[0] ?? 0)}
                 className="w-full"
               />
             </div>

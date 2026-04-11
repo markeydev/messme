@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, ipcMain, Notification, nativeImage } = require('electron')
+const { app, BrowserWindow, shell, ipcMain, Notification, nativeImage, desktopCapturer } = require('electron')
 const path = require('path')
 
 const DEFAULT_START_URL = 'http://localhost:3000'
@@ -45,6 +45,21 @@ app.whenReady().then(() => {
       icon: APP_ICON.isEmpty() ? undefined : APP_ICON,
     })
     notification.show()
+  })
+
+  ipcMain.handle('messme:get-desktop-sources', async () => {
+    const sources = await desktopCapturer.getSources({
+      types: ['window', 'screen'],
+      thumbnailSize: { width: 320, height: 180 },
+      fetchWindowIcons: true,
+    })
+    return sources.map(source => ({
+      id: source.id,
+      name: source.name,
+      displayId: source.display_id,
+      thumbnail: source.thumbnail.toDataURL(),
+      appIcon: source.appIcon ? source.appIcon.toDataURL() : null,
+    }))
   })
 
   app.on('activate', () => {

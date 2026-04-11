@@ -5,6 +5,13 @@ declare global {
     messmeDesktop?: {
       platform: string
       notify: (payload: { title: string; body: string }) => void
+      getDesktopSources?: () => Promise<Array<{
+        id: string
+        name: string
+        displayId?: string
+        thumbnail?: string
+        appIcon?: string | null
+      }>>
     }
   }
 }
