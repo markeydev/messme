@@ -28,6 +28,8 @@ interface ClipMeTabProps {
   onClose?: () => void
 }
 
+const formatReplyComment = (username: string, content: string) => `@${username} ${content}`
+
 export function ClipMeTab({ onClose }: ClipMeTabProps) {
   const { user, chats } = useMessengerStore()
   const [videos, setVideos] = useState<ClipMeVideo[]>([])
@@ -56,23 +58,27 @@ export function ClipMeTab({ onClose }: ClipMeTabProps) {
   const messmeChats = useMemo(() => chats.filter(c => !c.gameMode), [chats])
 
   const hydrateAuthorMeta = async (feedVideos: ClipMeVideo[]) => {
-    const ids = Array.from(new Set(feedVideos.map(v => v.user.id))).filter(id => id !== user?.id)
-    if (ids.length === 0) return
-    const channels = await Promise.all(ids.map(id => clipMeAPI.getUserChannel(id)))
-    setSubscribedByAuthor(prev => {
-      const next = { ...prev }
-      channels.forEach((result, idx) => {
-        if (typeof result.subscribedByMe === 'boolean') next[ids[idx]!] = result.subscribedByMe
+    try {
+      const ids = Array.from(new Set(feedVideos.map(v => v.user.id))).filter(id => id !== user?.id)
+      if (ids.length === 0) return
+      const channels = await Promise.all(ids.map(id => clipMeAPI.getUserChannel(id)))
+      setSubscribedByAuthor(prev => {
+        const next = { ...prev }
+        channels.forEach((result, idx) => {
+          if (typeof result.subscribedByMe === 'boolean') next[ids[idx]!] = result.subscribedByMe
+        })
+        return next
       })
-      return next
-    })
-    setFollowersByAuthor(prev => {
-      const next = { ...prev }
-      channels.forEach((result, idx) => {
-        if (typeof result.followersCount === 'number') next[ids[idx]!] = result.followersCount
+      setFollowersByAuthor(prev => {
+        const next = { ...prev }
+        channels.forEach((result, idx) => {
+          if (typeof result.followersCount === 'number') next[ids[idx]!] = result.followersCount
+        })
+        return next
       })
-      return next
-    })
+    } catch (error) {
+      console.error('ClipMe author metadata hydrate error:', error)
+    }
   }
 
   const refreshFeed = async () => {
@@ -127,7 +133,7 @@ export function ClipMeTab({ onClose }: ClipMeTabProps) {
     const text = (commentDrafts[videoId] ?? '').trim()
     if (!text) return
     const replyTarget = replyTargetByVideo[videoId]
-    const finalContent = replyTarget ? `@${replyTarget.user.username} ${text}` : text
+    const finalContent = replyTarget ? formatReplyComment(replyTarget.user.username, text) : text
     const result = await clipMeAPI.addComment(videoId, finalContent)
     if (!result.comment) return
     setComments(prev => ({ ...prev, [videoId]: [result.comment!, ...(prev[videoId] ?? [])] }))

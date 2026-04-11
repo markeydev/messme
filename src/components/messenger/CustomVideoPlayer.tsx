@@ -14,6 +14,8 @@ interface CustomVideoPlayerProps {
   onEnded?: () => void
 }
 
+const MIN_DURATION_FALLBACK = 0.001
+
 const formatTime = (value: number) => {
   if (!Number.isFinite(value) || value < 0) return '0:00'
   const total = Math.floor(value)
@@ -115,7 +117,7 @@ export function CustomVideoPlayer({
         <input
           type="range"
           min={0}
-          max={Math.max(duration, 0.001)}
+          max={Math.max(duration, MIN_DURATION_FALLBACK)}
           step={0.1}
           value={Math.min(currentTime, duration)}
           onChange={e => {
