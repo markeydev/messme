@@ -87,6 +87,29 @@ export interface StoryFeedItem {
   latestStoryAt: string
 }
 
+export type ClipMePrivacy = 'PUBLIC' | 'FOLLOWERS' | 'PRIVATE'
+
+export interface ClipMeVideo {
+  id: string
+  user: Pick<User, 'id' | 'username' | 'avatarUrl'>
+  videoUrl: string
+  description: string
+  privacy: ClipMePrivacy
+  createdAt: string
+  likesCount: number
+  repostsCount: number
+  commentsCount: number
+  likedByMe: boolean
+  repostedByMe: boolean
+}
+
+export interface ClipMeComment {
+  id: string
+  content: string
+  createdAt: string
+  user: Pick<User, 'id' | 'username' | 'avatarUrl'>
+}
+
 // Token management
 let authToken: string | null = null
 
@@ -651,6 +674,103 @@ export const gameRolesAPI = {
       method: 'DELETE',
     })
     if (result.data) return { success: true }
+    return { error: result.error }
+  },
+}
+
+export const clipMeAPI = {
+  async getFeed(limit = 20): Promise<{ videos?: ClipMeVideo[]; error?: string }> {
+    const result = await fetchAPI<{ videos: ClipMeVideo[] }>(`/clipme/feed?limit=${Math.max(1, Math.min(50, limit))}`)
+    if (result.data) return { videos: result.data.videos }
+    return { error: result.error }
+  },
+  async uploadClipVideo(file: File, videoDuration?: number | null): Promise<{ url?: string; duration?: number | null; error?: string }> {
+    const token = getAuthToken()
+    const form = new FormData()
+    form.append('file', file, file.name)
+    form.append('purpose', 'clipme')
+    if (videoDuration !== undefined && videoDuration !== null) form.append('duration', String(videoDuration))
+    try {
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      })
+      const data = await response.json()
+      if (!response.ok) return { error: data.error }
+      return { url: data.url, duration: data.duration }
+    } catch {
+      return { error: 'Ошибка загрузки видео' }
+    }
+  },
+  async createVideo(videoUrl: string, description: string, privacy: ClipMePrivacy): Promise<{ video?: ClipMeVideo; error?: string }> {
+    const result = await fetchAPI<{ video: ClipMeVideo }>('/clipme/videos', {
+      method: 'POST',
+      body: JSON.stringify({ videoUrl, description, privacy }),
+    })
+    if (result.data) return { video: result.data.video }
+    return { error: result.error }
+  },
+  async toggleLike(videoId: string): Promise<{ liked?: boolean; likesCount?: number; error?: string }> {
+    const result = await fetchAPI<{ liked: boolean; likesCount: number }>(`/clipme/videos/${encodeURIComponent(videoId)}/like`, { method: 'POST' })
+    if (result.data) return { liked: result.data.liked, likesCount: result.data.likesCount }
+    return { error: result.error }
+  },
+  async toggleRepost(videoId: string): Promise<{ reposted?: boolean; repostsCount?: number; error?: string }> {
+    const result = await fetchAPI<{ reposted: boolean; repostsCount: number }>(`/clipme/videos/${encodeURIComponent(videoId)}/repost`, { method: 'POST' })
+    if (result.data) return { reposted: result.data.reposted, repostsCount: result.data.repostsCount }
+    return { error: result.error }
+  },
+  async getComments(videoId: string): Promise<{ comments?: ClipMeComment[]; error?: string }> {
+    const result = await fetchAPI<{ comments: ClipMeComment[] }>(`/clipme/videos/${encodeURIComponent(videoId)}/comments`)
+    if (result.data) return { comments: result.data.comments }
+    return { error: result.error }
+  },
+  async addComment(videoId: string, content: string): Promise<{ comment?: ClipMeComment; commentsCount?: number; error?: string }> {
+    const result = await fetchAPI<{ comment: ClipMeComment; commentsCount: number }>(`/clipme/videos/${encodeURIComponent(videoId)}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    })
+    if (result.data) return { comment: result.data.comment, commentsCount: result.data.commentsCount }
+    return { error: result.error }
+  },
+  async updatePrivacy(videoId: string, privacy: ClipMePrivacy): Promise<{ privacy?: ClipMePrivacy; error?: string }> {
+    const result = await fetchAPI<{ video: { id: string; privacy: ClipMePrivacy } }>(`/clipme/videos/${encodeURIComponent(videoId)}/privacy`, {
+      method: 'PATCH',
+      body: JSON.stringify({ privacy }),
+    })
+    if (result.data) return { privacy: result.data.video.privacy }
+    return { error: result.error }
+  },
+  async getUserChannel(userId: string): Promise<{
+    user?: Pick<User, 'id' | 'username' | 'avatarUrl'>
+    videos?: ClipMeVideo[]
+    followersCount?: number
+    followingCount?: number
+    subscribedByMe?: boolean
+    error?: string
+  }> {
+    const result = await fetchAPI<{
+      user: Pick<User, 'id' | 'username' | 'avatarUrl'>
+      videos: ClipMeVideo[]
+      followersCount: number
+      followingCount: number
+      subscribedByMe: boolean
+    }>(`/clipme/users/${encodeURIComponent(userId)}`)
+    if (result.data) {
+      return {
+        user: result.data.user,
+        videos: result.data.videos,
+        followersCount: result.data.followersCount,
+        followingCount: result.data.followingCount,
+        subscribedByMe: result.data.subscribedByMe,
+      }
+    }
+    return { error: result.error }
+  },
+  async toggleSubscribe(userId: string): Promise<{ subscribed?: boolean; followersCount?: number; error?: string }> {
+    const result = await fetchAPI<{ subscribed: boolean; followersCount: number }>(`/clipme/users/${encodeURIComponent(userId)}/subscribe`, { method: 'POST' })
+    if (result.data) return { subscribed: result.data.subscribed, followersCount: result.data.followersCount }
     return { error: result.error }
   },
 }

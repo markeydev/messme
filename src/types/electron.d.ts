@@ -12,6 +12,7 @@ declare global {
         thumbnail?: string
         appIcon?: string | null
       }>>
+      openExternal?: (url: string) => Promise<boolean>
     }
   }
 }

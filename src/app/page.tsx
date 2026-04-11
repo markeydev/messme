@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { AuthForm } from '@/components/messenger/AuthForm'
 import { ChatList, type Tab } from '@/components/messenger/ChatList'
 import { ChatWindow } from '@/components/messenger/ChatWindow'
@@ -13,7 +13,7 @@ import { authAPI, chatsAPI, getAuthToken, setAuthToken, type Chat, type Message 
 import { usePushNotifications } from '@/hooks/usePushNotifications'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
-import { LogOut, MessageCircle, Wifi, WifiOff, MessageSquare, Search, UserRound } from 'lucide-react'
+import { LogOut, MessageCircle, Wifi, WifiOff, MessageSquare, Search, UserRound, Film, Gamepad2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export default function MessengerPage() {
@@ -28,6 +28,9 @@ export default function MessengerPage() {
   const [isInitializing, setIsInitializing] = useState(true)
   const [chatListTab, setChatListTab] = useState<Tab>('chats')
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const [lastPlaymeChat, setLastPlaymeChat] = useState<Chat | null>(null)
+  const [playmeOverlayPos, setPlaymeOverlayPos] = useState({ x: 12, y: 12 })
+  const dragOffsetRef = useRef<{ dx: number; dy: number } | null>(null)
   // Incoming call state
   const [incomingCall, setIncomingCall] = useState<{
     chatId: string; callerId: string; callerName: string
@@ -163,6 +166,7 @@ export default function MessengerPage() {
   }, [isAuthenticated, user, addChat, addMessage, deleteMessage, updateMessage, incrementUnread])
 
   const handleSelectChat = useCallback(async (chat: Chat) => {
+    if (chat.gameMode) setLastPlaymeChat(chat)
     setActiveChat(chat)
     clearUnread(chat.id)
     const result = await chatsAPI.getById(chat.id)
@@ -373,10 +377,48 @@ export default function MessengerPage() {
                 </div>
                 <span className={cn('text-[11px] font-bold', chatListTab === 'profile' ? 'text-black dark:text-white' : 'text-black/60 dark:text-white/60')}>Профиль</span>
               </button>
+              {/* ClipMe */}
+              <button onClick={() => handleMobileTabChange('clipme')} className="flex flex-col items-center gap-1 flex-1">
+                <div className={cn('w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200',
+                  chatListTab === 'clipme' ? 'bg-white/80 dark:bg-white/[0.15]' : '')}
+                  style={chatListTab === 'clipme' ? { boxShadow: '0px 6px 20px 0px rgba(21,44,255,0.25)' } : undefined}
+                >
+                  <Film className={cn('h-5 w-5', chatListTab === 'clipme' ? 'text-black dark:text-white' : 'text-black/60 dark:text-white/60')} />
+                </div>
+                <span className={cn('text-[11px] font-bold', chatListTab === 'clipme' ? 'text-black dark:text-white' : 'text-black/60 dark:text-white/60')}>ClipMe</span>
+              </button>
             </div>
           </div>
         )
       })()}
+
+      {lastPlaymeChat && activeChat && !activeChat.gameMode && (
+        <button
+          className="fixed z-30 rounded-xl bg-[#5d6cf5] hover:bg-[#4a5be0] text-white px-3 py-2 shadow-xl flex items-center gap-2 select-none"
+          style={{ left: playmeOverlayPos.x, bottom: playmeOverlayPos.y }}
+          onClick={() => setActiveChat(lastPlaymeChat)}
+          onMouseDown={e => {
+            dragOffsetRef.current = { dx: e.clientX - playmeOverlayPos.x, dy: e.clientY - (window.innerHeight - playmeOverlayPos.y) }
+            const move = (ev: MouseEvent) => {
+              if (!dragOffsetRef.current) return
+              const nextX = Math.max(8, Math.min(window.innerWidth - 180, ev.clientX - dragOffsetRef.current.dx))
+              const bottomY = Math.max(8, Math.min(window.innerHeight - 56, window.innerHeight - (ev.clientY - dragOffsetRef.current.dy)))
+              setPlaymeOverlayPos({ x: nextX, y: bottomY })
+            }
+            const up = () => {
+              dragOffsetRef.current = null
+              window.removeEventListener('mousemove', move)
+              window.removeEventListener('mouseup', up)
+            }
+            window.addEventListener('mousemove', move)
+            window.addEventListener('mouseup', up)
+          }}
+          title="Вернуться в Playme"
+        >
+          <Gamepad2 className="h-4 w-4" />
+          <span className="text-xs font-semibold">Вернуться в Playme</span>
+        </button>
+      )}
 
       {/* Logout confirmation */}
       <AlertDialog open={showLogoutConfirm} onOpenChange={setShowLogoutConfirm}>
