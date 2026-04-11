@@ -11,9 +11,10 @@ import { VoiceMessage } from './VoiceMessage'
 import { VideoNote } from './VideoNote'
 import { GroupSettingsDialog } from './GroupSettingsDialog'
 import { CallWindow } from './CallWindow'
+import { StoryViewer } from './StoryViewer'
 import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
-import { chatsAPI, usersAPI, type Chat, type Message, type User } from '@/lib/api'
+import { chatsAPI, usersAPI, storiesAPI, type Chat, type Message, type StoryFeedItem, type User } from '@/lib/api'
 import { ArrowDown, ArrowLeft, Users, Loader2, UserPlus, Check, X, Reply, Forward, Trash2, Pencil, FileText, Download, ZoomIn, Copy, Bell, BellOff, Phone, Clock, AlertCircle, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -57,6 +58,8 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
     withVideo: boolean
     incomingOffer?: RTCSessionDescriptionInit
   } | null>(null)
+  const [activeStoryUserId, setActiveStoryUserId] = useState<string | null>(null)
+  const [storyInfo, setStoryInfo] = useState<StoryFeedItem | null>(null)
 
   const { user, addMessage, deleteMessage, chats, mutedChats, toggleMuteChat, removeChat, setActiveChat, prependMessages, updateChatMembers } = useMessengerStore()
 
@@ -97,6 +100,21 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
 
   // Reflect store updates for group title/avatar/members
   const currentChat = chats.find(c => c.id === chat.id) ?? chat
+  const peerUserId = !chat.isGroup ? currentChat.members.find(m => m.id !== user?.id)?.id ?? null : null
+
+  useEffect(() => {
+    if (chat.isGroup || !peerUserId) {
+      setStoryInfo(null)
+      return
+    }
+    let cancelled = false
+    storiesAPI.getFeed().then(result => {
+      if (cancelled) return
+      const entry = (result.users ?? []).find(item => item.user.id === peerUserId) ?? null
+      setStoryInfo(entry)
+    })
+    return () => { cancelled = true }
+  }, [chat.isGroup, peerUserId, chat.id])
 
   // Keep chatMembers in sync with store (avatar / profile changes propagate here)
   useEffect(() => {
@@ -276,16 +294,28 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
           </button>
         ) : (
           <button
-            onClick={() => setIsUserProfileOpen(true)}
+            onClick={() => {
+              if (peerUserId && storyInfo) setActiveStoryUserId(peerUserId)
+              else setIsUserProfileOpen(true)
+            }}
             className="rounded-full hover:ring-2 hover:ring-[#5D6CF5]/50 transition-all flex-shrink-0"
-            title="Профиль собеседника"
+            title={storyInfo ? 'Открыть сторис' : 'Профиль собеседника'}
           >
-            <Avatar className="h-9 w-9">
-              {currentChat.avatarUrl && <AvatarImage src={currentChat.avatarUrl} alt={currentChat.title} />}
-              <AvatarFallback className={cn('text-white font-medium text-sm', 'bg-[#5D6CF5]')}>
-                {getInitials(chat.title)}
-              </AvatarFallback>
-            </Avatar>
+            <span className={cn(
+              'inline-flex rounded-full p-[2px]',
+              storyInfo
+                ? storyInfo.hasUnseen
+                  ? 'bg-gradient-to-br from-[#ff4d67] via-[#f7b142] to-[#5d6cf5]'
+                  : 'bg-black/15 dark:bg-white/15'
+                : ''
+            )}>
+              <Avatar className="h-9 w-9">
+                {currentChat.avatarUrl && <AvatarImage src={currentChat.avatarUrl} alt={currentChat.title} />}
+                <AvatarFallback className={cn('text-white font-medium text-sm', 'bg-[#5D6CF5]')}>
+                  {getInitials(chat.title)}
+                </AvatarFallback>
+              </Avatar>
+            </span>
           </button>
         )}
         <div className="flex-1 min-w-0">
@@ -848,6 +878,21 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
           onClose={() => setActiveCall(null)}
         />
       )}
+      <StoryViewer
+        open={!!activeStoryUserId}
+        userId={activeStoryUserId}
+        onOpenChange={open => {
+          if (!open) {
+            setActiveStoryUserId(null)
+            if (peerUserId) {
+              storiesAPI.getFeed().then(result => {
+                const entry = (result.users ?? []).find(item => item.user.id === peerUserId) ?? null
+                setStoryInfo(entry)
+              })
+            }
+          }
+        }}
+      />
     </div>
   )
 }

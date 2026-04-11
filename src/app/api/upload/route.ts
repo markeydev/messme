@@ -4,8 +4,10 @@ import { uploadToS3 } from '@/lib/s3'
 import { randomUUID } from 'crypto'
 
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/svg+xml']
+const STORY_VIDEO_TYPES = ['video/webm', 'video/mp4', 'video/quicktime']
 const MAX_AUDIO  = 10  * 1024 * 1024   //  10 MB
 const MAX_IMAGE  = 20  * 1024 * 1024   //  20 MB
+const MAX_STORY_VIDEO = 50 * 1024 * 1024 // 50 MB
 const MAX_FILE   = 100 * 1024 * 1024   // 100 MB
 
 export async function POST(request: NextRequest) {
@@ -50,6 +52,34 @@ export async function POST(request: NextRequest) {
       const key = `videonotes/${session.userId}/${randomUUID()}.${ext}`
       const url = await uploadToS3(key, buffer, file.type)
       return NextResponse.json({ url, duration: duration ? Math.round(Number(duration)) : null })
+    }
+
+    // ── Story media ───────────────────────────────────────────────────────
+    if (purpose === 'story') {
+      if (IMAGE_TYPES.includes(file.type)) {
+        if (file.size > MAX_IMAGE)
+          return NextResponse.json({ error: 'Изображение слишком большое (макс. 20 МБ)' }, { status: 400 })
+        const rawExt = file.type.split('/')[1] ?? 'jpg'
+        const ext = rawExt === 'jpeg' ? 'jpg' : rawExt === 'svg+xml' ? 'svg' : rawExt
+        const key = `stories/${session.userId}/${randomUUID()}.${ext}`
+        const url = await uploadToS3(key, buffer, file.type)
+        return NextResponse.json({ url, mediaType: 'IMAGE', duration: null })
+      }
+
+      if (STORY_VIDEO_TYPES.includes(file.type)) {
+        const parsedDuration = duration ? Number(duration) : NaN
+        if (!Number.isFinite(parsedDuration) || parsedDuration <= 0 || parsedDuration > 30) {
+          return NextResponse.json({ error: 'Видео для сторис должно быть до 30 секунд' }, { status: 400 })
+        }
+        if (file.size > MAX_STORY_VIDEO)
+          return NextResponse.json({ error: 'Видео слишком большое (макс. 50 МБ)' }, { status: 400 })
+        const ext = file.type.includes('mp4') ? 'mp4' : file.type.includes('quicktime') ? 'mov' : 'webm'
+        const key = `stories/${session.userId}/${randomUUID()}.${ext}`
+        const url = await uploadToS3(key, buffer, file.type)
+        return NextResponse.json({ url, mediaType: 'VIDEO', duration: Math.round(parsedDuration) })
+      }
+
+      return NextResponse.json({ error: 'Для сторис доступны только фото и видео' }, { status: 400 })
     }
 
     // ── Audio ─────────────────────────────────────────────────────────────
