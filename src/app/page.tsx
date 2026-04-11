@@ -27,7 +27,6 @@ export default function MessengerPage() {
   const [isConnected, setIsConnected] = useState(false)
   const [isInitializing, setIsInitializing] = useState(true)
   const [chatListTab, setChatListTab] = useState<Tab>('chats')
-  const [gameChatViewModeByChat, setGameChatViewModeByChat] = useState<Record<string, 'PLAYME' | 'MESSME'>>({})
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   // Incoming call state
   const [incomingCall, setIncomingCall] = useState<{
@@ -161,14 +160,14 @@ export default function MessengerPage() {
   }, [user, setActiveChat, setMessages, clearUnread, updateChat])
 
   const handleBack = useCallback(() => {
-    if (activeChatId && user) messengerSocket.leaveChat(activeChatId, user.id)
+    if (activeChatId && user && !activeChat?.gameMode) messengerSocket.leaveChat(activeChatId, user.id)
     setActiveChat(null)
-  }, [activeChatId, user, setActiveChat])
+  }, [activeChatId, activeChat?.gameMode, user, setActiveChat])
 
   const handleMobileTabChange = useCallback((tab: Tab) => {
     setChatListTab(tab)
     if (activeChat) {
-      if (activeChatId && user) messengerSocket.leaveChat(activeChatId, user.id)
+      if (activeChatId && user && !activeChat.gameMode) messengerSocket.leaveChat(activeChatId, user.id)
       setActiveChat(null)
     }
   }, [activeChat, activeChatId, user, setActiveChat])
@@ -183,15 +182,6 @@ export default function MessengerPage() {
     setAuthenticated(true)
     const result = await chatsAPI.getAll()
     if (result.chats) setChats(result.chats)
-  }
-
-  const gameChatViewMode = activeChat?.gameMode
-    ? (gameChatViewModeByChat[activeChat.id] ?? 'PLAYME')
-    : 'MESSME'
-
-  const setGameChatViewMode = (mode: 'PLAYME' | 'MESSME') => {
-    if (!activeChat?.gameMode) return
-    setGameChatViewModeByChat(prev => ({ ...prev, [activeChat.id]: mode }))
   }
 
   if (isInitializing) {
@@ -219,6 +209,7 @@ export default function MessengerPage() {
       <div className={cn(
         'flex-shrink-0 flex flex-col w-full md:w-80 lg:w-[340px]',
         'bg-white dark:bg-[#111112] border-r border-black/[0.06] dark:border-white/[0.08]',
+        activeChat?.gameMode && 'hidden',
         activeChat ? 'hidden md:flex' : 'flex'
       )}>
         {/* Sidebar header */}
@@ -258,38 +249,11 @@ export default function MessengerPage() {
       )}>
         {activeChat ? (
           <>
-            {activeChat.gameMode && (
-              <div className="h-12 px-4 border-b border-black/[0.06] dark:border-white/[0.08] flex items-center gap-2 bg-white dark:bg-[#111112]">
-                <button
-                  onClick={() => setGameChatViewMode('MESSME')}
-                  className={cn(
-                    'h-8 px-3 rounded-lg text-xs font-semibold transition-colors',
-                    gameChatViewMode === 'MESSME'
-                      ? 'bg-[#152cff]/10 text-[#152cff] dark:bg-[#5d6cf5]/20 dark:text-[#8b97ff]'
-                      : 'text-black/45 dark:text-white/45 hover:text-black/75 dark:hover:text-white/75'
-                  )}
-                >
-                  Messme
-                </button>
-                <button
-                  onClick={() => setGameChatViewMode('PLAYME')}
-                  className={cn(
-                    'h-8 px-3 rounded-lg text-xs font-semibold transition-colors',
-                    gameChatViewMode === 'PLAYME'
-                      ? 'bg-[#152cff]/10 text-[#152cff] dark:bg-[#5d6cf5]/20 dark:text-[#8b97ff]'
-                      : 'text-black/45 dark:text-white/45 hover:text-black/75 dark:hover:text-white/75'
-                  )}
-                >
-                  Playme
-                </button>
-              </div>
-            )}
-            {activeChat.gameMode && gameChatViewMode === 'PLAYME' ? (
+            {activeChat.gameMode ? (
               <GameChatWindow
                 key={activeChat.id}
                 chat={activeChat}
                 onBack={handleBack}
-                onSwitchToClassic={() => setGameChatViewMode('MESSME')}
               />
             ) : (
               <ChatWindow
