@@ -27,7 +27,7 @@ export default function MessengerPage() {
   const [isConnected, setIsConnected] = useState(false)
   const [isInitializing, setIsInitializing] = useState(true)
   const [chatListTab, setChatListTab] = useState<Tab>('chats')
-  const [gameChatViewMode, setGameChatViewMode] = useState<'PLAYME' | 'MESSME'>('PLAYME')
+  const [gameChatViewModeByChat, setGameChatViewModeByChat] = useState<Record<string, 'PLAYME' | 'MESSME'>>({})
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   // Incoming call state
   const [incomingCall, setIncomingCall] = useState<{
@@ -185,13 +185,14 @@ export default function MessengerPage() {
     if (result.chats) setChats(result.chats)
   }
 
-  useEffect(() => {
-    if (activeChat?.gameMode) {
-      setGameChatViewMode('PLAYME')
-    } else {
-      setGameChatViewMode('MESSME')
-    }
-  }, [activeChat?.id, activeChat?.gameMode])
+  const gameChatViewMode = activeChat?.gameMode
+    ? (gameChatViewModeByChat[activeChat.id] ?? 'PLAYME')
+    : 'MESSME'
+
+  const setGameChatViewMode = (mode: 'PLAYME' | 'MESSME') => {
+    if (!activeChat?.gameMode) return
+    setGameChatViewModeByChat(prev => ({ ...prev, [activeChat.id]: mode }))
+  }
 
   if (isInitializing) {
     return (

@@ -54,6 +54,9 @@ interface PersistedVoice {
 
 // Module-level: survives component unmounts (user switching between chats)
 let _persistedVoice: PersistedVoice | null = null
+const MAX_AUDIO_VOLUME = 2
+// Limit simultaneously rendered video tiles to reduce UI jank with many active cameras.
+const MAX_VISIBLE_VIDEO_TILES = 9
 
 export function GameChatWindow({ chat, onBack, onSwitchToClassic }: GameChatWindowProps) {
   const { user, updateChatMembers, updateChat, removeChat, setActiveChat } = useMessengerStore()
@@ -406,7 +409,7 @@ export function GameChatWindow({ chat, onBack, onSwitchToClassic }: GameChatWind
         let el = audioElements.current.get(remoteUserId)
         if (!el) { el = new Audio(); el.autoplay = true; audioElements.current.set(remoteUserId, el) }
         el.srcObject = stream
-        el.volume = isDeafenedRef.current ? 0 : Math.min(2, (userVolumesRef.current[remoteUserId] ?? 100) / 100)
+        el.volume = isDeafenedRef.current ? 0 : Math.min(MAX_AUDIO_VOLUME, (userVolumesRef.current[remoteUserId] ?? 100) / 100)
         setupAnalyser(remoteUserId, stream)
       } else if (e.track.kind === 'video') {
         if (expectingScreenTrack.current.has(remoteUserId)) {
@@ -511,7 +514,7 @@ export function GameChatWindow({ chat, onBack, onSwitchToClassic }: GameChatWind
     if (!newMuted && isDeafenedRef.current) {
       setIsDeafened(false)
       audioElements.current.forEach((el, uid) => {
-        el.volume = Math.min(2, (userVolumesRef.current[uid] ?? 100) / 100)
+        el.volume = Math.min(MAX_AUDIO_VOLUME, (userVolumesRef.current[uid] ?? 100) / 100)
       })
     }
   }
@@ -523,7 +526,7 @@ export function GameChatWindow({ chat, onBack, onSwitchToClassic }: GameChatWind
       setIsMicMuted(true)
     }
     audioElements.current.forEach((el, uid) => {
-      el.volume = newDeafened ? 0 : Math.min(2, (userVolumesRef.current[uid] ?? 100) / 100)
+      el.volume = newDeafened ? 0 : Math.min(MAX_AUDIO_VOLUME, (userVolumesRef.current[uid] ?? 100) / 100)
     })
     setIsDeafened(newDeafened)
   }
@@ -1042,13 +1045,12 @@ export function GameChatWindow({ chat, onBack, onSwitchToClassic }: GameChatWind
                       ...(p.screenStream ? [{ id: `${p.userId}_screen`, userId: p.userId, username: `${p.username} (экран)`, avatarUrl: null as string | null | undefined, videoStream: p.screenStream, isSelf: false, isScreen: true }] : []),
                     ]),
                   ]
-                  const MAX_RENDERED_TILES = 9
                   let visibleTiles = tiles
-                  if (tiles.length > MAX_RENDERED_TILES) {
-                    const first = tiles.slice(0, MAX_RENDERED_TILES)
+                  if (tiles.length > MAX_VISIBLE_VIDEO_TILES) {
+                    const first = tiles.slice(0, MAX_VISIBLE_VIDEO_TILES)
                     if (focusedTile && !first.some(t => t.id === focusedTile)) {
                       const focusedItem = tiles.find(t => t.id === focusedTile)
-                      if (focusedItem) first[MAX_RENDERED_TILES - 1] = focusedItem
+                      if (focusedItem) first[MAX_VISIBLE_VIDEO_TILES - 1] = focusedItem
                     }
                     visibleTiles = first
                   }
@@ -1115,7 +1117,7 @@ export function GameChatWindow({ chat, onBack, onSwitchToClassic }: GameChatWind
                               const vol = parseInt(e.target.value)
                               setUserVolumes(prev => ({ ...prev, [tile.userId]: vol }))
                               const el = audioElements.current.get(tile.userId)
-                              if (el) el.volume = Math.min(2, vol / 100)
+                              if (el) el.volume = Math.min(MAX_AUDIO_VOLUME, vol / 100)
                             }}
                             className="h-16 cursor-pointer accent-[#5d6cf5]"
                             style={{ writingMode: 'vertical-lr', direction: 'rtl' } as React.CSSProperties}
@@ -1163,7 +1165,7 @@ export function GameChatWindow({ chat, onBack, onSwitchToClassic }: GameChatWind
                       )}
                       {hiddenTilesCount > 0 && (
                         <div className="text-[11px] text-white/45 px-1">
-                          Показаны {visibleTiles.length} из {tiles.length} плиток для стабильной работы
+                          Показаны {visibleTiles.length} из {tiles.length} участников для стабильной работы
                         </div>
                       )}
                     </div>
@@ -1390,7 +1392,7 @@ export function GameChatWindow({ chat, onBack, onSwitchToClassic }: GameChatWind
                 const v = Number(e.target.value)
                 setUserVolumes(prev => ({ ...prev, [userVolumeMenu.userId]: v }))
                 const el = audioElements.current.get(userVolumeMenu.userId)
-                if (el) el.volume = isDeafened ? 0 : Math.min(2, v / 100)
+                if (el) el.volume = isDeafened ? 0 : Math.min(MAX_AUDIO_VOLUME, v / 100)
               }}
               className="flex-1 accent-[#5d6cf5]"
             />
