@@ -56,6 +56,8 @@ let _persistedVoice: PersistedVoice | null = null
 const MAX_AUDIO_VOLUME = 2
 // Limit simultaneously rendered video tiles to reduce UI jank with many active cameras.
 const MAX_VISIBLE_VIDEO_TILES = 9
+const MENTION_INPUT_PATTERN = /(?:^|\s)@([a-zA-Z0-9_а-яА-ЯёЁ-]{1,32})$/
+const MENTION_RENDER_SPLIT_PATTERN = /(@[a-zA-Z0-9_а-яА-ЯёЁ-]{1,32})/g
 
 export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   const {
@@ -188,7 +190,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       audioCtxRef.current.createMediaStreamSource(stream).connect(analyser)
       analyserNodes.current.set(userId, analyser)
     } catch {}
-  }, [audioOutputDeviceId, getOutputAdjustedVolume, setupAnalyser])
+  }, [])
 
   useEffect(() => {
     if (!activeVoiceChannel) { setSpeakingUsers(new Set()); return }
@@ -511,7 +513,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     }
     peerConnections.current.set(remoteUserId, pc)
     return pc
-  }, [])
+  }, [audioOutputDeviceId, getOutputAdjustedVolume, setupAnalyser])
 
   const createOffer = useCallback(async (remoteUserId: string, channelId: string) => {
     const pc = createPeerConnection(remoteUserId, channelId)
@@ -803,7 +805,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
 
   const handleDraftChange = (value: string) => {
     setDraft(value)
-    const m = value.match(/(?:^|\s)@([a-zA-Z0-9_а-яА-ЯёЁ-]{1,32})$/)
+    const m = value.match(MENTION_INPUT_PATTERN)
     if (m?.[1]) {
       setMentionQuery(m[1])
       setMentionsOpen(true)
@@ -813,7 +815,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   }
 
   const insertMention = (username: string) => {
-    const replaced = draft.replace(/(?:^|\s)@([a-zA-Z0-9_а-яА-ЯёЁ-]{1,32})$/, (full) => {
+    const replaced = draft.replace(MENTION_INPUT_PATTERN, (full) => {
       const prefix = full.startsWith(' ') ? ' ' : ''
       return `${prefix}@${username} `
     })
@@ -1489,7 +1491,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                             </button>
                           )}
                           <p>
-                            {msg.content.split(/(@[a-zA-Z0-9_а-яА-ЯёЁ-]+)/g).map((part, idx) => (
+                            {msg.content.split(MENTION_RENDER_SPLIT_PATTERN).map((part, idx) => (
                               <span key={`${msg.id}-${idx}`} className={part.startsWith('@') ? 'text-[#8b97ff] font-medium' : undefined}>
                                 {part}
                               </span>
