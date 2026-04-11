@@ -163,6 +163,11 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   useEffect(() => { isMicMutedRef.current = isMicMuted }, [isMicMuted])
   useEffect(() => { isDeafenedRef.current = isDeafened }, [isDeafened])
   useEffect(() => { userVolumesRef.current = userVolumes }, [userVolumes])
+  const getOutputAdjustedVolume = useCallback((uid: string, perUserVolume?: number) => {
+    const userVol = perUserVolume ?? (userVolumesRef.current[uid] ?? 100)
+    const out = Math.max(0, Math.min(200, outputVolume))
+    return Math.min(MAX_AUDIO_VOLUME, (userVol / 100) * (out / 100))
+  }, [outputVolume])
   useEffect(() => {
     audioElements.current.forEach((el, uid) => {
       el.volume = isDeafened ? 0 : getOutputAdjustedVolume(uid)
@@ -171,12 +176,6 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       }
     })
   }, [audioOutputDeviceId, getOutputAdjustedVolume, isDeafened])
-
-  const getOutputAdjustedVolume = useCallback((uid: string, perUserVolume?: number) => {
-    const userVol = perUserVolume ?? (userVolumesRef.current[uid] ?? 100)
-    const out = Math.max(0, Math.min(200, outputVolume))
-    return Math.min(MAX_AUDIO_VOLUME, (userVol / 100) * (out / 100))
-  }, [outputVolume])
 
   // ── Voice Activity Detection ──────────────────────────────────────────────
   const setupAnalyser = useCallback((userId: string, stream: MediaStream) => {
