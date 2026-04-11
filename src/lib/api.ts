@@ -86,7 +86,8 @@ export function getAuthToken(): string | null {
 // Generic fetch wrapper
 async function fetchAPI<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  timeoutMs = 12000
 ): Promise<{ data?: T; error?: string; status?: number }> {
   const token = getAuthToken()
 
@@ -96,10 +97,14 @@ async function fetchAPI<T>(
     ...options.headers
   }
 
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+
   try {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       ...options,
-      headers
+      headers,
+      signal: controller.signal,
     })
 
     const data = await response.json()
@@ -110,8 +115,13 @@ async function fetchAPI<T>(
 
     return { data, status: response.status }
   } catch (error) {
+    if ((error as Error)?.name === 'AbortError') {
+      return { error: 'Превышено время ожидания', status: 0 }
+    }
     console.error('API Error:', error)
     return { error: 'Ошибка соединения', status: 0 }
+  } finally {
+    clearTimeout(timer)
   }
 }
 

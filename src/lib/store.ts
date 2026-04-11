@@ -259,13 +259,23 @@ export const useMessengerStore = create<MessengerState>()(
       // Custom serialization for Map
       storage: {
         getItem: (name) => {
-          const str = localStorage.getItem(name)
-          return str ? JSON.parse(str) : null
+          try {
+            const str = localStorage.getItem(name)
+            return str ? JSON.parse(str) : null
+          } catch {
+            return null
+          }
         },
         setItem: (name, value) => {
-          localStorage.setItem(name, JSON.stringify(value))
+          try {
+            localStorage.setItem(name, JSON.stringify(value))
+          } catch {
+            // localStorage unavailable (Private Mode, quota exceeded) — ignore
+          }
         },
-        removeItem: (name) => localStorage.removeItem(name)
+        removeItem: (name) => {
+          try { localStorage.removeItem(name) } catch {}
+        },
       }
     }
   )

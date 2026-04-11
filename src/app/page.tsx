@@ -42,23 +42,26 @@ export default function MessengerPage() {
 
   useEffect(() => {
     const initApp = async () => {
-      const storedToken = getAuthToken()
-      if (storedToken) {
-        setToken(storedToken)
-        const result = await authAPI.me()
-        if (result.user) {
-          setUser(result.user)
-          setAuthenticated(true)
-          // Load chats
-          const chatsResult = await chatsAPI.getAll()
-          if (chatsResult.chats) setChats(chatsResult.chats)
-        } else if (result.status === 401) {
-          // Only clear session on explicit auth failure, not on server/network errors
-          logout()
-          setAuthToken(null)
+      try {
+        const storedToken = getAuthToken()
+        if (storedToken) {
+          setToken(storedToken)
+          const result = await authAPI.me()
+          if (result.user) {
+            setUser(result.user)
+            setAuthenticated(true)
+            // Load chats in parallel — don't block on it
+            chatsAPI.getAll().then(r => { if (r.chats) setChats(r.chats) })
+          } else if (result.status === 401) {
+            // Only clear session on explicit auth failure, not on server/network errors
+            logout()
+            setAuthToken(null)
+          }
         }
+      } finally {
+        // Always unblock the UI — even on network errors
+        setIsInitializing(false)
       }
-      setIsInitializing(false)
     }
     initApp()
   }, [setUser, setToken, setAuthenticated, setChats])
