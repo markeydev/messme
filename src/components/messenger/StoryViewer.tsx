@@ -8,6 +8,7 @@ import { storiesAPI, type Story } from '@/lib/api'
 import { useMessengerStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { Heart, Eye, X, ChevronUp, ChevronDown } from 'lucide-react'
+import { CustomVideoPlayer } from '@/components/messenger/CustomVideoPlayer'
 
 const IMAGE_STORY_DURATION_MS = 15_000
 
@@ -161,13 +162,10 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
               {activeStory.mediaType === 'IMAGE' ? (
                 <img src={activeStory.mediaUrl} alt="Story" className="max-w-full max-h-full w-auto h-auto object-contain" />
               ) : (
-                <video
-                  key={activeStory.id}
+                <CustomVideoPlayer
                   src={activeStory.mediaUrl}
                   className="max-w-full max-h-full w-auto h-auto object-contain"
-                  controls
                   autoPlay
-                  playsInline
                   onEnded={goNext}
                 />
               )}

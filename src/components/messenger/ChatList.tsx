@@ -957,7 +957,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
       )}
 
       {activeTab === 'clipme' && (
-        <ClipMeTab />
+        <ClipMeTab onClose={() => onTabChange('chats')} />
       )}
 
       {/* Bottom navigation — desktop only; mobile nav is rendered in the parent page */}
