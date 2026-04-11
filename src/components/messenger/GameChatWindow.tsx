@@ -828,8 +828,8 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
 
       {/* ── Left Sidebar ──────────────────────────────────────────────────── */}
       <div className={cn(
-        'w-60 md:w-60 flex-shrink-0 flex flex-col bg-[#13141f] border-r border-white/[0.06] min-h-0',
-        'absolute md:relative z-30 inset-y-0 left-0 w-[85vw] max-w-72 md:max-w-none',
+        'w-[85vw] md:w-60 flex-shrink-0 flex flex-col bg-[#13141f] border-r border-white/[0.06] min-h-0',
+        'absolute md:relative z-30 inset-y-0 left-0 max-w-72 md:max-w-none',
         'transition-transform duration-200',
         mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
       )}>

@@ -45,7 +45,7 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
     let cancelled = false
     setIsLoading(true)
     const load = async () => {
-      const uniqueUserIds = Array.from(new Set([userId, ...(storyUserIds ?? [])].filter(Boolean)))
+      const uniqueUserIds = Array.from(new Set([userId, ...(storyUserIds ?? [])].filter((id): id is string => !!id)))
       const loaded = await Promise.all(uniqueUserIds.map(async uid => {
         const result = await storiesAPI.getUserStories(uid)
         return result.stories ?? []
