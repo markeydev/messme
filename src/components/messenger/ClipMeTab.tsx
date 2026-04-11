@@ -65,14 +65,16 @@ export function ClipMeTab({ onClose }: ClipMeTabProps) {
       setSubscribedByAuthor(prev => {
         const next = { ...prev }
         channels.forEach((result, idx) => {
-          if (typeof result.subscribedByMe === 'boolean') next[ids[idx]!] = result.subscribedByMe
+          const id = ids[idx]
+          if (id && typeof result.subscribedByMe === 'boolean') next[id] = result.subscribedByMe
         })
         return next
       })
       setFollowersByAuthor(prev => {
         const next = { ...prev }
         channels.forEach((result, idx) => {
-          if (typeof result.followersCount === 'number') next[ids[idx]!] = result.followersCount
+          const id = ids[idx]
+          if (id && typeof result.followersCount === 'number') next[id] = result.followersCount
         })
         return next
       })
@@ -283,7 +285,7 @@ export function ClipMeTab({ onClose }: ClipMeTabProps) {
                     <div className="mt-3 border-t border-black/[0.06] dark:border-white/[0.08] pt-3 space-y-2">
                       {replyTargetByVideo[video.id] && (
                         <div className="flex items-center justify-between rounded-lg bg-[#5d6cf5]/10 text-xs px-2.5 py-1.5">
-                          <span>Ответ для @{replyTargetByVideo[video.id]!.user.username}</span>
+                          <span>Ответ для @{replyTargetByVideo[video.id]?.user.username}</span>
                           <button onClick={() => setReplyTargetByVideo(prev => ({ ...prev, [video.id]: null }))}>
                             <X className="h-3.5 w-3.5" />
                           </button>
