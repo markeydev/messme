@@ -22,6 +22,9 @@ model User {
   sessions        Session[]
   pushSubscriptions PushSubscription[]
   channelMessages  ChannelMessage[]
+  stories          Story[]
+  storyViews       StoryView[]
+  storyLikes       StoryLike[]
 
   @@map("users")
 }
@@ -157,4 +160,52 @@ model ChannelMessage {
 enum ChannelType {
   TEXT
   VOICE
+}
+
+model Story {
+  id            String      @id @default(cuid())
+  userId        String
+  mediaUrl      String
+  mediaType     StoryMediaType
+  videoDuration Int?
+  createdAt     DateTime    @default(now())
+  expiresAt     DateTime
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  views         StoryView[]
+  likes         StoryLike[]
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@map("stories")
+}
+
+model StoryView {
+  id        String   @id @default(cuid())
+  storyId   String
+  viewerId  String
+  createdAt DateTime @default(now())
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  viewer    User     @relation(fields: [viewerId], references: [id], onDelete: Cascade)
+
+  @@unique([storyId, viewerId])
+  @@index([viewerId])
+  @@map("story_views")
+}
+
+model StoryLike {
+  id        String   @id @default(cuid())
+  storyId   String
+  userId    String
+  createdAt DateTime @default(now())
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([storyId, userId])
+  @@index([userId])
+  @@map("story_likes")
+}
+
+enum StoryMediaType {
+  IMAGE
+  VIDEO
 }

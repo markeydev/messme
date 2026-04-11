@@ -64,6 +64,29 @@ export interface Message {
   pendingStatus?: 'sending' | 'failed'
 }
 
+export interface Story {
+  id: string
+  user: Pick<User, 'id' | 'username' | 'avatarUrl'>
+  mediaUrl: string
+  mediaType: 'IMAGE' | 'VIDEO'
+  videoDuration?: number | null
+  createdAt: string
+  expiresAt: string
+  viewsCount: number
+  likesCount: number
+  likedByMe: boolean
+  seenByMe: boolean
+  viewers?: Array<Pick<User, 'id' | 'username' | 'avatarUrl'>>
+  likes?: Array<Pick<User, 'id' | 'username' | 'avatarUrl'>>
+}
+
+export interface StoryFeedItem {
+  user: Pick<User, 'id' | 'username' | 'avatarUrl'>
+  hasUnseen: boolean
+  storiesCount: number
+  latestStoryAt: string
+}
+
 // Token management
 let authToken: string | null = null
 
@@ -415,6 +438,69 @@ export const profileAPI = {  async updateProfile(username: string, avatarUrl?: s
       return { error: 'Ошибка загрузки' }
     }
   }
+}
+
+export const storiesAPI = {
+  async getFeed(): Promise<{ users?: StoryFeedItem[]; error?: string }> {
+    const result = await fetchAPI<{ users: StoryFeedItem[] }>('/stories')
+    if (result.data) return { users: result.data.users }
+    return { error: result.error }
+  },
+
+  async getUserStories(userId: string): Promise<{ stories?: Story[]; error?: string }> {
+    const result = await fetchAPI<{ stories: Story[] }>(`/stories/user/${encodeURIComponent(userId)}`)
+    if (result.data) return { stories: result.data.stories }
+    return { error: result.error }
+  },
+
+  async createStory(
+    mediaUrl: string,
+    mediaType: 'IMAGE' | 'VIDEO',
+    videoDuration?: number | null
+  ): Promise<{ story?: Story; error?: string }> {
+    const result = await fetchAPI<{ story: Story }>('/stories', {
+      method: 'POST',
+      body: JSON.stringify({ mediaUrl, mediaType, videoDuration: videoDuration ?? null }),
+    })
+    if (result.data) return { story: result.data.story }
+    return { error: result.error }
+  },
+
+  async markViewed(storyId: string): Promise<{ viewsCount?: number; error?: string }> {
+    const result = await fetchAPI<{ success: boolean; viewsCount: number }>(`/stories/${encodeURIComponent(storyId)}/view`, {
+      method: 'POST',
+    })
+    if (result.data) return { viewsCount: result.data.viewsCount }
+    return { error: result.error }
+  },
+
+  async toggleLike(storyId: string): Promise<{ liked?: boolean; likesCount?: number; error?: string }> {
+    const result = await fetchAPI<{ liked: boolean; likesCount: number }>(`/stories/${encodeURIComponent(storyId)}/like`, {
+      method: 'POST',
+    })
+    if (result.data) return { liked: result.data.liked, likesCount: result.data.likesCount }
+    return { error: result.error }
+  },
+
+  async uploadStoryMedia(file: File, videoDuration?: number | null): Promise<{ url?: string; mediaType?: 'IMAGE' | 'VIDEO'; duration?: number | null; error?: string }> {
+    const token = getAuthToken()
+    const form = new FormData()
+    form.append('file', file, file.name)
+    form.append('purpose', 'story')
+    if (videoDuration !== undefined && videoDuration !== null) form.append('duration', String(videoDuration))
+    try {
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      })
+      const data = await response.json()
+      if (!response.ok) return { error: data.error }
+      return { url: data.url, mediaType: data.mediaType, duration: data.duration }
+    } catch {
+      return { error: 'Ошибка загрузки' }
+    }
+  },
 }
 
 // ─── Game Mode / Channels ────────────────────────────────────────────────────

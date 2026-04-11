@@ -5,14 +5,16 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
-import { chatsAPI, usersAPI, profileAPI, type Chat, type User } from '@/lib/api'
+import { chatsAPI, usersAPI, profileAPI, storiesAPI, type Chat, type StoryFeedItem, type User } from '@/lib/api'
 import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
+import { STORY_MAX_VIDEO_DURATION_SECONDS } from '@/lib/stories'
+import { StoryViewer } from '@/components/messenger/StoryViewer'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { PenSquare, Search, MessageSquare, Users, Check, X, BellOff, UserRound, Camera, Bell, Loader2, LogOut, Sun, Moon, Gamepad2, Trash2 } from 'lucide-react'
+import { PenSquare, Search, MessageSquare, Users, Check, X, BellOff, UserRound, Camera, Bell, Loader2, LogOut, Sun, Moon, Gamepad2, Trash2, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export type Tab = 'chats' | 'search' | 'profile'
@@ -29,6 +31,12 @@ interface ChatListProps {
 export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout, activeTab, onTabChange }: ChatListProps) {
   const { chats, addChat, user, unreadCounts, mutedChats, updateUser, notificationsEnabled, setNotificationsEnabled, darkMode, setDarkMode, removeChat, setActiveChat } = useMessengerStore()
   const [chatSearchQuery, setChatSearchQuery] = useState('')
+  const [chatGroupFilter, setChatGroupFilter] = useState<'MESSME' | 'PLAYME'>('MESSME')
+  const [storyFeed, setStoryFeed] = useState<StoryFeedItem[]>([])
+  const [isStoriesLoading, setIsStoriesLoading] = useState(false)
+  const [activeStoryUserId, setActiveStoryUserId] = useState<string | null>(null)
+  const [isUploadingStory, setIsUploadingStory] = useState(false)
+  const storyFileInputRef = useRef<HTMLInputElement>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isGroupMode, setIsGroupMode] = useState(false)
   const [groupTitle, setGroupTitle] = useState('')
@@ -81,8 +89,86 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const filteredChats = chats.filter(chat =>
-    chat.title.toLowerCase().includes(chatSearchQuery.toLowerCase())
+    chat.title.toLowerCase().includes(chatSearchQuery.toLowerCase()) &&
+    (chatGroupFilter === 'PLAYME' ? !!chat.gameMode : !chat.gameMode)
   )
+  const messmeChatsCount = chats.filter(chat => !chat.gameMode).length
+  const playmeChatsCount = chats.filter(chat => !!chat.gameMode).length
+  const storiesByUser = new Map(storyFeed.map(item => [item.user.id, item]))
+
+  const refreshStories = async () => {
+    setIsStoriesLoading(true)
+    const result = await storiesAPI.getFeed()
+    setStoryFeed(result.users ?? [])
+    setIsStoriesLoading(false)
+  }
+
+  useEffect(() => {
+    if (activeTab !== 'chats') return
+    refreshStories()
+  }, [activeTab, chats.length])
+
+  const openStory = (storyUserId: string) => {
+    setActiveStoryUserId(storyUserId)
+  }
+
+  const readVideoDuration = (file: File): Promise<number> =>
+    new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file)
+      const v = document.createElement('video')
+      v.preload = 'metadata'
+      v.src = url
+      v.onloadedmetadata = () => {
+        const duration = v.duration
+        URL.revokeObjectURL(url)
+        v.removeAttribute('src')
+        v.load()
+        v.remove()
+        if (!Number.isFinite(duration) || duration <= 0) reject(new Error('Не удалось определить длительность видео'))
+        else resolve(duration)
+      }
+      v.onerror = () => {
+        URL.revokeObjectURL(url)
+        v.removeAttribute('src')
+        v.load()
+        v.remove()
+        reject(new Error('Ошибка чтения видео'))
+      }
+    })
+
+  const handleStoryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setProfileError(null)
+    setIsUploadingStory(true)
+    try {
+      const isVideo = file.type.startsWith('video/')
+      const duration = isVideo ? await readVideoDuration(file) : null
+      if (isVideo && (duration ?? 0) > STORY_MAX_VIDEO_DURATION_SECONDS) {
+        setProfileError(`Видео для сторис должно быть до ${STORY_MAX_VIDEO_DURATION_SECONDS} секунд`)
+        setIsUploadingStory(false)
+        return
+      }
+      const uploaded = await storiesAPI.uploadStoryMedia(file, duration)
+      if (uploaded.error || !uploaded.url || !uploaded.mediaType) {
+        setProfileError(uploaded.error ?? 'Ошибка загрузки сторис')
+        setIsUploadingStory(false)
+        return
+      }
+      const created = await storiesAPI.createStory(uploaded.url, uploaded.mediaType, uploaded.duration)
+      if (created.error) {
+        setProfileError(created.error)
+      } else if (created.story && user?.id) {
+        setActiveStoryUserId(user.id)
+      }
+      await refreshStories()
+    } catch {
+      setProfileError('Ошибка загрузки сторис')
+    } finally {
+      setIsUploadingStory(false)
+    }
+  }
 
   const handleUserSearch = async (query: string) => {
     setUserSearchQuery(query)
@@ -231,6 +317,71 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
               />
             </div>
           </div>
+          <div className="px-3 pb-2 flex-shrink-0">
+            <div className="flex bg-black/[0.05] dark:bg-white/[0.07] rounded-xl p-1 gap-1">
+              <button
+                onClick={() => setChatGroupFilter('MESSME')}
+                className={cn(
+                  'flex-1 flex items-center justify-center gap-2 h-8 rounded-lg text-xs font-semibold transition-all',
+                  chatGroupFilter === 'MESSME'
+                    ? 'bg-white dark:bg-white/[0.12] text-black dark:text-white shadow-sm'
+                    : 'text-black/45 dark:text-white/45 hover:text-black/65 dark:hover:text-white/65'
+                )}
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+                <span>Messme</span>
+                <span className="text-[10px] opacity-70">{messmeChatsCount}</span>
+              </button>
+              <button
+                onClick={() => setChatGroupFilter('PLAYME')}
+                className={cn(
+                  'flex-1 flex items-center justify-center gap-2 h-8 rounded-lg text-xs font-semibold transition-all',
+                  chatGroupFilter === 'PLAYME'
+                    ? 'bg-white dark:bg-white/[0.12] text-black dark:text-white shadow-sm'
+                    : 'text-black/45 dark:text-white/45 hover:text-black/65 dark:hover:text-white/65'
+                )}
+              >
+                <Gamepad2 className="h-3.5 w-3.5" />
+                <span>Playme</span>
+                <span className="text-[10px] opacity-70">{playmeChatsCount}</span>
+              </button>
+            </div>
+          </div>
+          <div className="px-3 pb-2 flex-shrink-0">
+            <div className="overflow-x-auto no-scrollbar">
+              <div className="flex items-center gap-2 min-w-max pr-1">
+                {isStoriesLoading && storyFeed.length === 0 ? (
+                  <span className="text-xs text-black/40 dark:text-white/40 px-1">Загрузка сторис...</span>
+                ) : storyFeed.length === 0 ? (
+                  <span className="text-xs text-black/35 dark:text-white/35 px-1">Нет активных сторис</span>
+                ) : (
+                  storyFeed.map(item => (
+                    <button
+                      key={item.user.id}
+                      onClick={() => openStory(item.user.id)}
+                      className="flex flex-col items-center gap-1.5 w-[62px] flex-shrink-0"
+                      title={`Сторис: ${item.user.username}`}
+                    >
+                      <span className={cn(
+                        'p-[2px] rounded-full',
+                        item.hasUnseen ? 'bg-gradient-to-br from-[#ff4d67] via-[#f7b142] to-[#5d6cf5]' : 'bg-black/15 dark:bg-white/15'
+                      )}>
+                        <Avatar className="h-12 w-12 border-2 border-white dark:border-[#111112]">
+                          {item.user.avatarUrl && <AvatarImage src={item.user.avatarUrl} alt={item.user.username} />}
+                          <AvatarFallback className="bg-[#5d6cf5] text-white text-xs font-semibold">
+                            {getInitials(item.user.username)}
+                          </AvatarFallback>
+                        </Avatar>
+                      </span>
+                      <span className="text-[10px] text-black/55 dark:text-white/55 truncate max-w-full">
+                        {item.user.id === user?.id ? 'Вы' : item.user.username}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto">
             {filteredChats.length === 0 ? (
@@ -261,7 +412,11 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
               </div>
             ) : (
               <div className="px-2 pb-[128px] md:pb-2">
-                {filteredChats.map(chat => (
+                {filteredChats.map(chat => {
+                  const peerUserId = !chat.isGroup ? chat.members.find(m => m.id !== user?.id)?.id ?? null : null
+                  const chatStory = peerUserId ? storiesByUser.get(peerUserId) : null
+                  const hasStory = !!chatStory
+                  return (
                   <button
                     key={chat.id}
                     onClick={() => onSelectChat?.(chat)}
@@ -272,15 +427,45 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                         ? 'bg-[#152cff]/[0.08] dark:bg-[#5d6cf5]/[0.15]'
                         : 'hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
                     )}>
-                    <Avatar className="h-12 w-12 flex-shrink-0">
-                      {chat.avatarUrl && <AvatarImage src={chat.avatarUrl} alt={chat.title} />}
-                      <AvatarFallback className={cn(
-                        'font-semibold text-white text-sm',
-                        chat.isGroup ? 'bg-violet-500' : 'bg-[#152cff]'
+                    <span
+                      role={hasStory ? 'button' : undefined}
+                      tabIndex={hasStory ? 0 : -1}
+                      onClick={e => {
+                        if (!hasStory || !peerUserId) return
+                        e.preventDefault()
+                        e.stopPropagation()
+                        openStory(peerUserId)
+                      }}
+                      onKeyDown={e => {
+                        if (!hasStory || !peerUserId) return
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          openStory(peerUserId)
+                        }
+                      }}
+                      className={cn('flex-shrink-0 rounded-full', hasStory && 'cursor-pointer')}
+                      title={hasStory ? 'Открыть сторис' : undefined}
+                    >
+                      <span className={cn(
+                        'inline-flex rounded-full p-[2px]',
+                        hasStory
+                          ? chatStory?.hasUnseen
+                            ? 'bg-gradient-to-br from-[#ff4d67] via-[#f7b142] to-[#5d6cf5]'
+                            : 'bg-black/15 dark:bg-white/15'
+                          : ''
                       )}>
-                        {chat.isGroup ? <Users className="h-5 w-5" /> : getInitials(chat.title)}
-                      </AvatarFallback>
-                    </Avatar>
+                        <Avatar className="h-12 w-12">
+                          {chat.avatarUrl && <AvatarImage src={chat.avatarUrl} alt={chat.title} />}
+                          <AvatarFallback className={cn(
+                            'font-semibold text-white text-sm',
+                            chat.isGroup ? 'bg-violet-500' : 'bg-[#152cff]'
+                          )}>
+                            {chat.isGroup ? <Users className="h-5 w-5" /> : getInitials(chat.title)}
+                          </AvatarFallback>
+                        </Avatar>
+                      </span>
+                    </span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-semibold truncate text-[14px] text-black dark:text-white">
@@ -317,7 +502,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                       </div>
                     </div>
                   </button>
-                ))}
+                )})}
               </div>
             )}
           </div>
@@ -468,6 +653,23 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                 </button>
               )}
               <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+            </div>
+            <div className="w-full">
+              <Button
+                onClick={() => storyFileInputRef.current?.click()}
+                disabled={isUploadingStory}
+                className="w-full h-10 rounded-xl bg-black/[0.06] dark:bg-white/[0.10] text-black dark:text-white hover:bg-black/[0.10] dark:hover:bg-white/[0.16]"
+              >
+                {isUploadingStory ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
+                Добавить сторис (фото/видео до {STORY_MAX_VIDEO_DURATION_SECONDS}с)
+              </Button>
+              <input
+                ref={storyFileInputRef}
+                type="file"
+                accept="image/*,video/*"
+                className="hidden"
+                onChange={handleStoryUpload}
+              />
             </div>
 
             {/* Username */}
@@ -685,6 +887,17 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <StoryViewer
+        open={!!activeStoryUserId}
+        userId={activeStoryUserId}
+        onOpenChange={open => {
+          if (!open) {
+            setActiveStoryUserId(null)
+            refreshStories()
+          }
+        }}
+      />
     </div>
   )
 }

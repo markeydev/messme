@@ -27,6 +27,7 @@ export default function MessengerPage() {
   const [isConnected, setIsConnected] = useState(false)
   const [isInitializing, setIsInitializing] = useState(true)
   const [chatListTab, setChatListTab] = useState<Tab>('chats')
+  const [gameChatViewModeByChat, setGameChatViewModeByChat] = useState<Record<string, 'PLAYME' | 'MESSME'>>({})
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   // Incoming call state
   const [incomingCall, setIncomingCall] = useState<{
@@ -184,6 +185,15 @@ export default function MessengerPage() {
     if (result.chats) setChats(result.chats)
   }
 
+  const gameChatViewMode = activeChat?.gameMode
+    ? (gameChatViewModeByChat[activeChat.id] ?? 'PLAYME')
+    : 'MESSME'
+
+  const setGameChatViewMode = (mode: 'PLAYME' | 'MESSME') => {
+    if (!activeChat?.gameMode) return
+    setGameChatViewModeByChat(prev => ({ ...prev, [activeChat.id]: mode }))
+  }
+
   if (isInitializing) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white dark:bg-[#111112]">
@@ -247,21 +257,50 @@ export default function MessengerPage() {
         activeChat ? 'flex' : 'hidden md:flex'
       )}>
         {activeChat ? (
-          activeChat.gameMode ? (
-            <GameChatWindow
-              key={activeChat.id}
-              chat={activeChat}
-              onBack={handleBack}
-            />
-          ) : (
-            <ChatWindow
-              key={activeChat.id}
-              chat={activeChat}
-              messages={currentMessages}
-              onBack={handleBack}
-              isMobile={true}
-            />
-          )
+          <>
+            {activeChat.gameMode && (
+              <div className="h-12 px-4 border-b border-black/[0.06] dark:border-white/[0.08] flex items-center gap-2 bg-white dark:bg-[#111112]">
+                <button
+                  onClick={() => setGameChatViewMode('MESSME')}
+                  className={cn(
+                    'h-8 px-3 rounded-lg text-xs font-semibold transition-colors',
+                    gameChatViewMode === 'MESSME'
+                      ? 'bg-[#152cff]/10 text-[#152cff] dark:bg-[#5d6cf5]/20 dark:text-[#8b97ff]'
+                      : 'text-black/45 dark:text-white/45 hover:text-black/75 dark:hover:text-white/75'
+                  )}
+                >
+                  Messme
+                </button>
+                <button
+                  onClick={() => setGameChatViewMode('PLAYME')}
+                  className={cn(
+                    'h-8 px-3 rounded-lg text-xs font-semibold transition-colors',
+                    gameChatViewMode === 'PLAYME'
+                      ? 'bg-[#152cff]/10 text-[#152cff] dark:bg-[#5d6cf5]/20 dark:text-[#8b97ff]'
+                      : 'text-black/45 dark:text-white/45 hover:text-black/75 dark:hover:text-white/75'
+                  )}
+                >
+                  Playme
+                </button>
+              </div>
+            )}
+            {activeChat.gameMode && gameChatViewMode === 'PLAYME' ? (
+              <GameChatWindow
+                key={activeChat.id}
+                chat={activeChat}
+                onBack={handleBack}
+                onSwitchToClassic={() => setGameChatViewMode('MESSME')}
+              />
+            ) : (
+              <ChatWindow
+                key={activeChat.id}
+                chat={activeChat}
+                messages={currentMessages}
+                onBack={handleBack}
+                isMobile={true}
+              />
+            )}
+          </>
         ) : (
           <div className="flex-1 hidden md:flex" />
         )}
