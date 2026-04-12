@@ -376,7 +376,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
 
   const sendToMessme = async (targetChatId: string) => {
     if (!shareVideo) return
-    const clipUrl = new URL('/', window.location.origin)
+    const clipUrl = new URL(window.location.href)
     clipUrl.searchParams.set('tab', 'clipme')
     clipUrl.searchParams.set('clip', shareVideo.id)
     const sent = await chatsAPI.sendMessage(targetChatId, `ClipMe: ${clipUrl}`)
@@ -586,7 +586,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
           <div className="px-3 py-1.5 rounded-full bg-black/55 text-xs font-semibold">ClipMe</div>
         </div>
 
-        <div ref={feedRef} className="flex-1 min-h-0 overflow-y-auto no-scrollbar snap-y snap-mandatory scroll-smooth">
+        <div ref={feedRef} className="flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory scroll-smooth">
           {isLoading && <div className="h-full flex items-center justify-center text-sm text-white/70">Загрузка ленты...</div>}
           {!isLoading && videos.length === 0 && <div className="h-full flex items-center justify-center text-sm text-white/70">Пока нет видео.</div>}
 
@@ -725,7 +725,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
                 </div>
               )}
 
-              <div className="space-y-2 flex-1 min-h-0 overflow-y-auto no-scrollbar pb-2">
+              <div className="space-y-2 flex-1 min-h-0 overflow-y-auto pb-2">
                 {activeCommentTree.map(comment => renderCommentNode(commentsOpenFor, comment))}
               </div>
 
@@ -784,7 +784,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
             ) : !channelData?.user ? (
               <div className="flex-1 flex items-center justify-center text-sm text-white/60">Канал недоступен</div>
             ) : (
-              <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar p-4 space-y-4">
+              <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
                 <div className="rounded-2xl bg-white/10 p-3.5 space-y-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">

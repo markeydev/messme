@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { canAccessClipVideo, getSession } from '@/lib/clipme'
 
+const MEANINGFUL_VIEW_THRESHOLD_MS = 1200
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ videoId: string }> }
@@ -25,7 +27,7 @@ export async function POST(
     const watchedMsRaw = Number(body?.watchedMs ?? 0)
     const watchedMs = Number.isFinite(watchedMsRaw) ? watchedMsRaw : 0
     const completed = body?.completed === true
-    const meaningfulView = completed || watchedMs >= 1200
+    const meaningfulView = completed || watchedMs >= MEANINGFUL_VIEW_THRESHOLD_MS
     if (!meaningfulView) {
       const viewsCount = await db.clipMeView.count({ where: { videoId } })
       return NextResponse.json({ viewed: false, viewsCount })

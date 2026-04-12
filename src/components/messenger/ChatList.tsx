@@ -457,7 +457,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
           <div className="px-3 pb-2 flex-shrink-0">
             <div
               ref={storiesScrollRef}
-              className="overflow-x-auto no-scrollbar"
+              className="overflow-x-auto"
               onWheel={handleStoriesWheel}
             >
               <div className="flex items-center gap-2 min-w-max pr-1">
