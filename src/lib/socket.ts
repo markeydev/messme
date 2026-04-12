@@ -58,13 +58,13 @@ class MessengerSocket {
 
       // Local dev: set NEXT_PUBLIC_WS_URL=http://localhost:3003
       // Production (nginx): leave unset → same-origin /ws proxy
-      const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? ''
+      const wsUrl = this.resolveWsUrl(process.env.NEXT_PUBLIC_WS_URL ?? '')
 
       this.socket = io(wsUrl, {
         path: '/ws',
-        // Start with HTTP long-polling so the connection works through mobile
-        // carrier proxies that mangle WebSocket upgrade headers, then upgrade.
-        transports: ['polling', 'websocket'],
+        // Try WebSocket first (faster and often more reliable behind reverse proxies),
+        // while keeping polling as fallback for restrictive networks.
+        transports: ['websocket', 'polling'],
         forceNew: true,
         reconnection: true,
         reconnectionAttempts: this.maxReconnectAttempts,
@@ -99,6 +99,16 @@ class MessengerSocket {
 
       this.setupEventListeners()
     })
+  }
+
+  private resolveWsUrl(rawUrl: string): string {
+    const normalized = rawUrl.trim()
+    if (!normalized || typeof window === 'undefined') return normalized
+    const isRemotePage = !['localhost', '127.0.0.1'].includes(window.location.hostname)
+    const isLocalWsUrl = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(normalized)
+    // Protect production/mobile clients from accidental localhost build-time config.
+    if (isRemotePage && isLocalWsUrl) return ''
+    return normalized
   }
 
   private setupEventListeners() {
