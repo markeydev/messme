@@ -2,17 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { canAccessClipVideo, getSession } from '@/lib/clipme'
 
-export async function GET(request: NextRequest) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ videoId: string }> }
+) {
   try {
     const session = await getSession(request)
     if (!session) return NextResponse.json({ error: 'Не авторизован' }, { status: 401 })
+    const { videoId } = await params
 
-    const limitRaw = Number(request.nextUrl.searchParams.get('limit') ?? '20')
-    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(50, Math.round(limitRaw))) : 20
-
-    const raw = await db.clipMeVideo.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 120,
+    const video = await db.clipMeVideo.findUnique({
+      where: { id: videoId },
       include: {
         user: { select: { id: true, username: true, avatarUrl: true } },
         likes: { where: { userId: session.userId }, select: { id: true } },
@@ -21,16 +21,13 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    const visible: typeof raw = []
-    for (const video of raw) {
-      if (await canAccessClipVideo(session.userId, video.userId, video.privacy)) {
-        visible.push(video)
-      }
-      if (visible.length >= limit) break
+    if (!video) return NextResponse.json({ error: 'Ролик не найден' }, { status: 404 })
+    if (!(await canAccessClipVideo(session.userId, video.userId, video.privacy))) {
+      return NextResponse.json({ error: 'Нет доступа к ролику' }, { status: 403 })
     }
 
     return NextResponse.json({
-      videos: visible.map(video => ({
+      video: {
         id: video.id,
         user: video.user,
         videoUrl: video.videoUrl,
@@ -43,10 +40,10 @@ export async function GET(request: NextRequest) {
         commentsCount: video._count.comments,
         likedByMe: video.likes.length > 0,
         repostedByMe: video.reposts.length > 0,
-      })),
+      },
     })
   } catch (error) {
-    console.error('ClipMe feed error:', error)
-    return NextResponse.json({ error: 'Ошибка при получении ленты ClipMe' }, { status: 500 })
+    console.error('ClipMe single video error:', error)
+    return NextResponse.json({ error: 'Ошибка загрузки ролика' }, { status: 500 })
   }
 }

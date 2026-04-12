@@ -8,6 +8,7 @@ interface CustomVideoPlayerProps {
   src: string
   className?: string
   autoPlay?: boolean
+  shouldPlay?: boolean
   loop?: boolean
   playsInline?: boolean
   muted?: boolean
@@ -28,13 +29,14 @@ export function CustomVideoPlayer({
   src,
   className,
   autoPlay = false,
+  shouldPlay,
   loop = false,
   playsInline = true,
   muted = false,
   onEnded,
 }: CustomVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
-  const [isPlaying, setIsPlaying] = useState(autoPlay)
+  const [isPlaying, setIsPlaying] = useState(autoPlay || !!shouldPlay)
   const [isMuted, setIsMuted] = useState(muted)
   const [duration, setDuration] = useState(0)
   const [currentTime, setCurrentTime] = useState(0)
@@ -59,10 +61,6 @@ export function CustomVideoPlayer({
     video.addEventListener('pause', handlePause)
     video.addEventListener('volumechange', handleVolumeChange)
 
-    if (autoPlay) {
-      void video.play().catch(() => setIsPlaying(false))
-    }
-
     return () => {
       video.removeEventListener('loadedmetadata', handleLoadedMetadata)
       video.removeEventListener('timeupdate', handleTimeUpdate)
@@ -70,7 +68,18 @@ export function CustomVideoPlayer({
       video.removeEventListener('pause', handlePause)
       video.removeEventListener('volumechange', handleVolumeChange)
     }
-  }, [src, autoPlay, muted])
+  }, [src, muted])
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+    const wantPlay = shouldPlay ?? autoPlay
+    if (wantPlay) {
+      void video.play().catch(() => setIsPlaying(false))
+      return
+    }
+    video.pause()
+  }, [autoPlay, shouldPlay, src])
 
   const togglePlayback = () => {
     const video = videoRef.current

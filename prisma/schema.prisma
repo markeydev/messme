@@ -30,6 +30,7 @@ model User {
   clipMeLikes      ClipMeLike[]
   clipMeComments   ClipMeComment[]
   clipMeReposts    ClipMeRepost[]
+  clipMeViews      ClipMeView[]
   clipMeFollowing  ClipMeSubscription[] @relation("ClipMeFollowing")
   clipMeFollowers  ClipMeSubscription[] @relation("ClipMeFollowers")
 
@@ -266,6 +267,7 @@ model ClipMeVideo {
   likes       ClipMeLike[]
   comments    ClipMeComment[]
   reposts     ClipMeRepost[]
+  views       ClipMeView[]
 
   @@index([userId, createdAt])
   @@index([privacy, createdAt])
@@ -310,6 +312,20 @@ model ClipMeRepost {
   @@unique([videoId, userId])
   @@index([userId])
   @@map("clipme_reposts")
+}
+
+model ClipMeView {
+  id        String      @id @default(cuid())
+  videoId   String
+  userId    String
+  createdAt DateTime    @default(now())
+  video     ClipMeVideo @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([videoId, userId])
+  @@index([videoId])
+  @@index([userId])
+  @@map("clipme_views")
 }
 
 model ClipMeSubscription {

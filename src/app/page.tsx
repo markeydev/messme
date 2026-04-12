@@ -28,6 +28,7 @@ export default function MessengerPage() {
   const [isInitializing, setIsInitializing] = useState(true)
   const [chatListTab, setChatListTab] = useState<Tab>('chats')
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const [initialClipVideoId, setInitialClipVideoId] = useState<string | null>(null)
   const [lastPlaymeChat, setLastPlaymeChat] = useState<Chat | null>(null)
   const [returnedFromPlayme, setReturnedFromPlayme] = useState(false)
   const [playmeOverlayPos, setPlaymeOverlayPos] = useState({ x: 12, y: 12 })
@@ -43,6 +44,15 @@ export default function MessengerPage() {
   } | null>(null)
 
   usePushNotifications(isAuthenticated)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const deepLinkClip = params.get('clip')
+    const deepLinkTab = params.get('tab')
+    if (deepLinkClip) setInitialClipVideoId(deepLinkClip)
+    if (deepLinkTab === 'clipme' || deepLinkClip) setChatListTab('clipme')
+  }, [])
 
   useEffect(() => {
     const initApp = async () => {
@@ -266,7 +276,7 @@ export default function MessengerPage() {
 
         {/* Chat list */}
         <ChatList onSelectChat={handleSelectChat} activeChatId={activeChatId} onLogout={handleLogout}
-          activeTab={chatListTab} onTabChange={setChatListTab} />
+          activeTab={chatListTab} onTabChange={setChatListTab} initialClipVideoId={initialClipVideoId} />
       </div>
 
       {/* Main chat area */}
