@@ -85,6 +85,10 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
   const deepLinkResolvedRef = useRef(false)
 
   const messmeChats = useMemo(() => chats.filter(c => !c.gameMode), [chats])
+  const channelTotalViews = useMemo(
+    () => (channelData?.videos ?? []).reduce((sum, video) => sum + (video.viewsCount ?? 0), 0),
+    [channelData?.videos]
+  )
 
   const hydrateAuthorMeta = async (feedVideos: ClipMeVideo[]) => {
     try {
@@ -157,6 +161,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
             && typeof navigator !== 'undefined'
             && typeof navigator.vibrate === 'function'
           ) {
+            // Very short pulse for subtle snap confirmation without prolonged vibration.
             navigator.vibrate(8)
           }
           return id
@@ -588,7 +593,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
                     <p className="opacity-65">Подписчики</p>
                   </div>
                   <div className="rounded-lg bg-black/[0.05] dark:bg-white/[0.08] py-2">
-                    <p className="font-semibold">{(channelData.videos ?? []).reduce((sum, v) => sum + (v.viewsCount ?? 0), 0)}</p>
+                    <p className="font-semibold">{channelTotalViews}</p>
                     <p className="opacity-65">Просмотры</p>
                   </div>
                   <div className="rounded-lg bg-black/[0.05] dark:bg-white/[0.08] py-2">
