@@ -166,6 +166,7 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
                   src={activeStory.mediaUrl}
                   className="max-w-full max-h-full w-auto h-auto object-contain"
                   autoPlay
+                  fit="contain"
                   onEnded={goNext}
                 />
               )}

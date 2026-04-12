@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { STORY_MAX_VIDEO_DURATION_SECONDS } from '@/lib/stories'
+import { STORY_MAX_VIDEO_DURATION_SECONDS, STORY_TTL_HOURS } from '@/lib/stories'
 
 async function getSession(request: NextRequest) {
   const token = request.headers.get('Authorization')?.replace('Bearer ', '')
@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date()
-    const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+    const expiresAt = new Date(now.getTime() + STORY_TTL_HOURS * 60 * 60 * 1000)
 
     const story = await db.story.create({
       data: {

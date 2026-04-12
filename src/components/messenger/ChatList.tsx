@@ -19,6 +19,9 @@ import {
 import { PenSquare, Search, MessageSquare, Users, Check, X, BellOff, UserRound, Camera, Bell, Loader2, LogOut, Sun, Moon, Gamepad2, Trash2, Plus, Mic, Volume2, VolumeX, Film, Headphones } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+const STORY_IMAGE_TARGET_BYTES = 380 * 1024
+const STORY_IMAGE_MAX_DIMENSION = 1920
+
 export type Tab = 'chats' | 'search' | 'profile' | 'clipme'
 
 interface ChatListProps {
@@ -184,6 +187,49 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
       }
     })
 
+  const readImage = (file: File): Promise<HTMLImageElement> =>
+    new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file)
+      const img = new Image()
+      img.onload = () => {
+        URL.revokeObjectURL(url)
+        resolve(img)
+      }
+      img.onerror = () => {
+        URL.revokeObjectURL(url)
+        reject(new Error('Ошибка чтения изображения'))
+      }
+      img.src = url
+    })
+
+  const compressStoryImage = async (file: File): Promise<File> => {
+    if (!file.type.startsWith('image/') || file.type === 'image/gif') return file
+    const img = await readImage(file)
+    const maxSide = Math.max(img.width, img.height)
+    const scale = maxSide > STORY_IMAGE_MAX_DIMENSION ? STORY_IMAGE_MAX_DIMENSION / maxSide : 1
+    const width = Math.max(1, Math.round(img.width * scale))
+    const height = Math.max(1, Math.round(img.height * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return file
+    ctx.drawImage(img, 0, 0, width, height)
+
+    const tryBlob = (quality: number) => new Promise<Blob | null>(resolve => {
+      canvas.toBlob(resolve, 'image/jpeg', quality)
+    })
+
+    let quality = 0.86
+    let blob = await tryBlob(quality)
+    while (blob && blob.size > STORY_IMAGE_TARGET_BYTES && quality > 0.5) {
+      quality -= 0.1
+      blob = await tryBlob(quality)
+    }
+    if (!blob) return file
+    return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })
+  }
+
   const handleStoryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = ''
@@ -192,13 +238,14 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
     setIsUploadingStory(true)
     try {
       const isVideo = file.type.startsWith('video/')
-      const duration = isVideo ? await readVideoDuration(file) : null
+      const storyFile = isVideo ? file : await compressStoryImage(file)
+      const duration = isVideo ? await readVideoDuration(storyFile) : null
       if (isVideo && (duration ?? 0) > STORY_MAX_VIDEO_DURATION_SECONDS) {
         setProfileError(`Видео для сторис должно быть до ${STORY_MAX_VIDEO_DURATION_SECONDS} секунд`)
         setIsUploadingStory(false)
         return
       }
-      const uploaded = await storiesAPI.uploadStoryMedia(file, duration)
+      const uploaded = await storiesAPI.uploadStoryMedia(storyFile, duration)
       if (uploaded.error || !uploaded.url || !uploaded.mediaType) {
         setProfileError(uploaded.error ?? 'Ошибка загрузки сторис')
         setIsUploadingStory(false)

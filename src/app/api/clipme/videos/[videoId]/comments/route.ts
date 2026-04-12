@@ -22,10 +22,12 @@ export async function GET(
 
     const comments = await db.clipMeComment.findMany({
       where: { videoId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: 'asc' },
       take: 100,
       include: {
         user: { select: { id: true, username: true, avatarUrl: true } },
+        likes: { where: { userId: session.userId }, select: { id: true } },
+        _count: { select: { replies: true, likes: true } },
       },
     })
     return NextResponse.json({
@@ -33,6 +35,10 @@ export async function GET(
         id: c.id,
         content: c.content,
         createdAt: c.createdAt,
+        parentId: c.parentId,
+        repliesCount: c._count.replies,
+        likesCount: c._count.likes,
+        likedByMe: c.likes.length > 0,
         user: c.user,
       })),
     })
@@ -62,12 +68,24 @@ export async function POST(
 
     const body = await request.json()
     const content = typeof body?.content === 'string' ? body.content.trim() : ''
+    const parentId = typeof body?.parentId === 'string' ? body.parentId.trim() : ''
     if (!content) return NextResponse.json({ error: 'Комментарий не может быть пустым' }, { status: 400 })
+
+    let normalizedParentId: string | null = null
+    if (parentId) {
+      const parent = await db.clipMeComment.findFirst({
+        where: { id: parentId, videoId },
+        select: { id: true },
+      })
+      if (!parent) return NextResponse.json({ error: 'Родительский комментарий не найден' }, { status: 404 })
+      normalizedParentId = parent.id
+    }
 
     const comment = await db.clipMeComment.create({
       data: {
         videoId,
         userId: session.userId,
+        parentId: normalizedParentId,
         content: content.slice(0, 1000),
       },
       include: {
@@ -81,6 +99,10 @@ export async function POST(
         id: comment.id,
         content: comment.content,
         createdAt: comment.createdAt,
+        parentId: comment.parentId,
+        repliesCount: 0,
+        likesCount: 0,
+        likedByMe: false,
         user: comment.user,
       },
       commentsCount,
