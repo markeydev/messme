@@ -174,15 +174,16 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
     viewedVideoIdsRef.current.add(activeVideoId)
     void clipMeAPI.registerView(activeVideoId).then(result => {
       if (typeof result.viewsCount !== 'number') return
-      setVideos(prev => prev.map(video => video.id === activeVideoId ? { ...video, viewsCount: result.viewsCount! } : video))
+      const viewsCount = result.viewsCount
+      setVideos(prev => prev.map(video => video.id === activeVideoId ? { ...video, viewsCount } : video))
       setChannelData(prev => {
         if (!prev?.videos?.length) return prev
         return {
           ...prev,
-          videos: prev.videos.map(video => video.id === activeVideoId ? { ...video, viewsCount: result.viewsCount! } : video),
+          videos: prev.videos.map(video => video.id === activeVideoId ? { ...video, viewsCount } : video),
         }
       })
-      setChannelPreviewVideo(prev => prev?.id === activeVideoId ? { ...prev, viewsCount: result.viewsCount! } : prev)
+      setChannelPreviewVideo(prev => prev?.id === activeVideoId ? { ...prev, viewsCount } : prev)
     })
   }, [activeVideoId])
 
