@@ -96,6 +96,7 @@ export interface ClipMeVideo {
   description: string
   privacy: ClipMePrivacy
   createdAt: string
+  viewsCount: number
   likesCount: number
   repostsCount: number
   commentsCount: number
@@ -709,6 +710,16 @@ export const clipMeAPI = {
       body: JSON.stringify({ videoUrl, description, privacy }),
     })
     if (result.data) return { video: result.data.video }
+    return { error: result.error }
+  },
+  async getVideoById(videoId: string): Promise<{ video?: ClipMeVideo; error?: string; status?: number }> {
+    const result = await fetchAPI<{ video: ClipMeVideo }>(`/clipme/videos/${encodeURIComponent(videoId)}`)
+    if (result.data) return { video: result.data.video, status: result.status }
+    return { error: result.error, status: result.status }
+  },
+  async registerView(videoId: string): Promise<{ viewed?: boolean; viewsCount?: number; error?: string }> {
+    const result = await fetchAPI<{ viewed: boolean; viewsCount: number }>(`/clipme/videos/${encodeURIComponent(videoId)}/view`, { method: 'POST' })
+    if (result.data) return { viewed: result.data.viewed, viewsCount: result.data.viewsCount }
     return { error: result.error }
   },
   async toggleLike(videoId: string): Promise<{ liked?: boolean; likesCount?: number; error?: string }> {

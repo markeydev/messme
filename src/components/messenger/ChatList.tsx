@@ -28,9 +28,10 @@ interface ChatListProps {
   onLogout?: () => void
   activeTab: Tab
   onTabChange: (tab: Tab) => void
+  initialClipVideoId?: string | null
 }
 
-export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout, activeTab, onTabChange }: ChatListProps) {
+export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout, activeTab, onTabChange, initialClipVideoId }: ChatListProps) {
   const {
     chats, addChat, user, unreadCounts, mutedChats, updateUser, notificationsEnabled, setNotificationsEnabled,
     darkMode, setDarkMode, removeChat, setActiveChat, microphoneVolume, outputVolume,
@@ -957,7 +958,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
       )}
 
       {activeTab === 'clipme' && (
-        <ClipMeTab onClose={() => onTabChange('chats')} />
+        <ClipMeTab onClose={() => onTabChange('chats')} initialVideoId={initialClipVideoId} />
       )}
 
       {/* Bottom navigation — desktop only; mobile nav is rendered in the parent page */}

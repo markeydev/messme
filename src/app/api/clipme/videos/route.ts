@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
         description: video.description,
         privacy: video.privacy,
         createdAt: video.createdAt,
+        viewsCount: 0,
         likesCount: 0,
         repostsCount: 0,
         commentsCount: 0,

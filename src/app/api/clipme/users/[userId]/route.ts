@@ -30,7 +30,7 @@ export async function GET(
       where: { userId },
       orderBy: { createdAt: 'desc' },
       include: {
-        _count: { select: { likes: true, reposts: true, comments: true } },
+        _count: { select: { likes: true, reposts: true, comments: true, views: true } },
         likes: { where: { userId: session.userId }, select: { id: true } },
         reposts: { where: { userId: session.userId }, select: { id: true } },
       },
@@ -41,10 +41,12 @@ export async function GET(
       if (await canAccessClipVideo(session.userId, userId, v.privacy)) {
         videos.push({
           id: v.id,
+          user: user,
           videoUrl: v.videoUrl,
           description: v.description,
           privacy: v.privacy,
           createdAt: v.createdAt,
+          viewsCount: v._count.views,
           likesCount: v._count.likes,
           repostsCount: v._count.reposts,
           commentsCount: v._count.comments,
