@@ -25,6 +25,9 @@ self.addEventListener('notificationclick', (event) => {
       for (const client of clientList) {
         if ('navigate' in client && 'focus' in client) {
           const navigatedClient = await client.navigate(targetUrl)
+          if (!navigatedClient) {
+            console.warn('[SW] Failed to navigate existing client, focusing current one')
+          }
           return (navigatedClient ?? client).focus()
         }
         if ('focus' in client) return client.focus()
