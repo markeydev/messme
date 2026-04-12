@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { canAccessClipVideo, getSession } from '@/lib/clipme'
 
+const MEANINGFUL_VIEW_THRESHOLD_MS = 1200
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ videoId: string }> }
@@ -19,6 +21,16 @@ export async function POST(
 
     if (!(await canAccessClipVideo(session.userId, video.userId, video.privacy))) {
       return NextResponse.json({ error: 'Нет доступа к ролику' }, { status: 403 })
+    }
+
+    const body = await request.json().catch(() => ({}))
+    const watchedMsRaw = Number(body?.watchedMs ?? 0)
+    const watchedMs = Number.isFinite(watchedMsRaw) ? watchedMsRaw : 0
+    const completed = body?.completed === true
+    const meaningfulView = completed || watchedMs >= MEANINGFUL_VIEW_THRESHOLD_MS
+    if (!meaningfulView) {
+      const viewsCount = await db.clipMeView.count({ where: { videoId } })
+      return NextResponse.json({ viewed: false, viewsCount })
     }
 
     const existingView = await db.clipMeView.findUnique({

@@ -343,7 +343,7 @@ export default function MessengerPage() {
       )}
 
       {/* Mobile bottom nav — hidden when a chat is open */}
-      {isAuthenticated && !isInitializing && !activeChat && (() => {
+      {isAuthenticated && !isInitializing && !activeChat && chatListTab !== 'clipme' && (() => {
         const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0)
         return (
           <div

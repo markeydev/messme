@@ -9,6 +9,7 @@ export interface User {
   username: string
   email?: string
   avatarUrl?: string | null
+  clipMeBio?: string | null
 }
 
 export interface Chat {
@@ -721,8 +722,17 @@ export const clipMeAPI = {
     if (result.data) return { video: result.data.video, status: result.status }
     return { error: result.error, status: result.status }
   },
-  async registerView(videoId: string): Promise<{ viewed?: boolean; viewsCount?: number; error?: string }> {
-    const result = await fetchAPI<{ viewed: boolean; viewsCount: number }>(`/clipme/videos/${encodeURIComponent(videoId)}/view`, { method: 'POST' })
+  async registerView(
+    videoId: string,
+    payload?: { watchedMs?: number; completed?: boolean }
+  ): Promise<{ viewed?: boolean; viewsCount?: number; error?: string }> {
+    const result = await fetchAPI<{ viewed: boolean; viewsCount: number }>(`/clipme/videos/${encodeURIComponent(videoId)}/view`, {
+      method: 'POST',
+      body: JSON.stringify({
+        watchedMs: payload?.watchedMs ?? 0,
+        completed: payload?.completed ?? false,
+      }),
+    })
     if (result.data) return { viewed: result.data.viewed, viewsCount: result.data.viewsCount }
     return { error: result.error }
   },
@@ -763,16 +773,18 @@ export const clipMeAPI = {
     return { error: result.error }
   },
   async getUserChannel(userId: string): Promise<{
-    user?: Pick<User, 'id' | 'username' | 'avatarUrl'>
+    user?: Pick<User, 'id' | 'username' | 'avatarUrl' | 'clipMeBio'>
     videos?: ClipMeVideo[]
+    reposts?: ClipMeVideo[]
     followersCount?: number
     followingCount?: number
     subscribedByMe?: boolean
     error?: string
   }> {
     const result = await fetchAPI<{
-      user: Pick<User, 'id' | 'username' | 'avatarUrl'>
+      user: Pick<User, 'id' | 'username' | 'avatarUrl' | 'clipMeBio'>
       videos: ClipMeVideo[]
+      reposts: ClipMeVideo[]
       followersCount: number
       followingCount: number
       subscribedByMe: boolean
@@ -781,11 +793,26 @@ export const clipMeAPI = {
       return {
         user: result.data.user,
         videos: result.data.videos,
+        reposts: result.data.reposts,
         followersCount: result.data.followersCount,
         followingCount: result.data.followingCount,
         subscribedByMe: result.data.subscribedByMe,
       }
     }
+    return { error: result.error }
+  },
+  async updateChannelBio(
+    userId: string,
+    clipMeBio: string
+  ): Promise<{ user?: Pick<User, 'id' | 'username' | 'avatarUrl' | 'clipMeBio'>; error?: string }> {
+    const result = await fetchAPI<{ user: Pick<User, 'id' | 'username' | 'avatarUrl' | 'clipMeBio'> }>(
+      `/clipme/users/${encodeURIComponent(userId)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ clipMeBio }),
+      }
+    )
+    if (result.data) return { user: result.data.user }
     return { error: result.error }
   },
   async toggleSubscribe(userId: string): Promise<{ subscribed?: boolean; followersCount?: number; error?: string }> {

@@ -457,7 +457,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
           <div className="px-3 pb-2 flex-shrink-0">
             <div
               ref={storiesScrollRef}
-              className="overflow-x-auto no-scrollbar"
+              className="overflow-x-auto"
               onWheel={handleStoriesWheel}
             >
               <div className="flex items-center gap-2 min-w-max pr-1">
@@ -1021,7 +1021,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
       )}
 
       {/* Bottom navigation — desktop only; mobile nav is rendered in the parent page */}
-      <div className="hidden md:block flex-shrink-0 px-3 pt-2 pb-3" style={{ background: darkMode ? 'rgba(17,17,18,0.85)' : 'rgba(255,255,255,0.8)', backdropFilter: 'blur(20px)', boxShadow: darkMode ? '0px -1px 0px 0px rgba(255,255,255,0.06)' : '0px -1px 0px 0px rgba(0,0,0,0.06)' }}>
+      <div className={cn('hidden md:block flex-shrink-0 px-3 pt-2 pb-3', activeTab === 'clipme' && 'hidden')} style={{ background: darkMode ? 'rgba(17,17,18,0.85)' : 'rgba(255,255,255,0.8)', backdropFilter: 'blur(20px)', boxShadow: darkMode ? '0px -1px 0px 0px rgba(255,255,255,0.06)' : '0px -1px 0px 0px rgba(0,0,0,0.06)' }}>
         <div className="flex items-center justify-around bg-black/[0.05] dark:bg-white/[0.08] rounded-2xl px-1 py-2">
           {/* Chats tab */}
           <button
