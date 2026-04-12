@@ -220,14 +220,26 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
       canvas.toBlob(resolve, 'image/jpeg', quality)
     })
 
-    let quality = 0.86
-    let blob = await tryBlob(quality)
-    while (blob && blob.size > STORY_IMAGE_TARGET_BYTES && quality > 0.5) {
-      quality -= 0.1
-      blob = await tryBlob(quality)
+    let low = 0.5
+    let high = 0.92
+    let bestBlob: Blob | null = null
+    for (let i = 0; i < 6; i += 1) {
+      const quality = (low + high) / 2
+      const blob = await tryBlob(quality)
+      if (!blob) continue
+      if (blob.size <= STORY_IMAGE_TARGET_BYTES) {
+        bestBlob = blob
+        low = quality
+      } else {
+        high = quality
+      }
     }
+
+    const fallbackBlob = await tryBlob(0.78)
+    const blob = bestBlob ?? fallbackBlob
     if (!blob) return file
-    return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })
+    const outputName = file.name.includes('.') ? file.name.replace(/\.[^.]+$/, '.jpg') : `${file.name}.jpg`
+    return new File([blob], outputName, { type: 'image/jpeg' })
   }
 
   const handleStoryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -22,7 +22,7 @@ export async function GET(
 
     const comments = await db.clipMeComment.findMany({
       where: { videoId },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: 'desc' },
       take: 100,
       include: {
         user: { select: { id: true, username: true, avatarUrl: true } },

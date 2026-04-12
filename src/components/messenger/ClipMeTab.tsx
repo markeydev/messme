@@ -30,6 +30,8 @@ interface ClipMeTabProps {
   initialVideoId?: string | null
 }
 
+const VIDEO_LIKE_PULSE_DURATION_MS = 420
+
 const formatRelativeTime = (value: string) => {
   const date = new Date(value)
   const diffSec = Math.floor((Date.now() - date.getTime()) / 1000)
@@ -39,6 +41,14 @@ const formatRelativeTime = (value: string) => {
   if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} ч назад`
   if (diffSec < 604800) return `${Math.floor(diffSec / 86400)} дн назад`
   return date.toLocaleDateString('ru-RU')
+}
+
+const formatRepliesLabel = (count: number) => {
+  const mod10 = count % 10
+  const mod100 = count % 100
+  if (mod10 === 1 && mod100 !== 11) return `Показать ${count} ответ`
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `Показать ${count} ответа`
+  return `Показать ${count} ответов`
 }
 
 interface ClipMeCommentNode extends ClipMeComment {
@@ -224,7 +234,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
     const nextLiked = !video.likedByMe
     const optimisticLikes = Math.max(0, video.likesCount + (nextLiked ? 1 : -1))
     setVideoLikePulseId(video.id)
-    setTimeout(() => setVideoLikePulseId(prev => (prev === video.id ? null : prev)), 420)
+    setTimeout(() => setVideoLikePulseId(prev => (prev === video.id ? null : prev)), VIDEO_LIKE_PULSE_DURATION_MS)
     setVideos(prev => prev.map(v => v.id === video.id ? { ...v, likedByMe: nextLiked, likesCount: optimisticLikes } : v))
     setChannelData(prev => {
       if (!prev?.videos?.length) return prev
@@ -333,11 +343,17 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
         : item),
     }))
     const result = await clipMeAPI.toggleCommentLike(commentId)
-    if (result.liked === undefined || result.likesCount === undefined) return
+    if (result.liked === undefined || result.likesCount === undefined) {
+      setComments(prev => ({
+        ...prev,
+        [videoId]: (prev[videoId] ?? []).map(item => item.id === commentId ? comment : item),
+      }))
+      return
+    }
     setComments(prev => ({
       ...prev,
       [videoId]: (prev[videoId] ?? []).map(item => item.id === commentId
-        ? { ...item, likedByMe: result.liked!, likesCount: result.likesCount! }
+        ? { ...item, likedByMe: result.liked, likesCount: result.likesCount }
         : item),
     }))
   }
@@ -473,7 +489,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
                 onClick={() => setExpandedReplies(prev => ({ ...prev, [node.id]: true }))}
                 className="text-xs text-[#5d6cf5] hover:underline"
               >
-                Показать {node.children.length} ответ{node.children.length > 1 ? 'ов' : ''}
+                {formatRepliesLabel(node.children.length)}
               </button>
             ) : (
               <>
