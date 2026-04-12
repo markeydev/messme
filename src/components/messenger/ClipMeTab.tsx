@@ -255,8 +255,9 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
 
   const sendToMessme = async (targetChatId: string) => {
     if (!shareVideo) return
-    const params = new URLSearchParams({ tab: 'clipme', clip: shareVideo.id })
-    const clipUrl = new URL(`${window.location.pathname}?${params.toString()}`, window.location.origin).toString()
+    const clipUrl = new URL(window.location.pathname, window.location.origin)
+    clipUrl.searchParams.set('tab', 'clipme')
+    clipUrl.searchParams.set('clip', shareVideo.id)
     const sent = await chatsAPI.sendMessage(targetChatId, `ClipMe: ${clipUrl}`)
     if (sent.message) messengerSocket.broadcastMessage(sent.message)
     setShareVideo(null)
@@ -493,7 +494,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
                         </div>
                       </div>
                       <div className="flex items-center gap-2 text-[11px]">
-                        <button disabled aria-disabled className="opacity-40 cursor-not-allowed">Лайк</button>
+                        <button disabled aria-disabled="true" className="opacity-40 cursor-not-allowed">Лайк</button>
                         <button
                           onClick={() => setReplyTargetByVideo(prev => ({ ...prev, [commentsOpenFor]: comment }))}
                           className="text-[#5d6cf5] hover:underline"
