@@ -58,47 +58,78 @@ class MessengerSocket {
 
       // Local dev: set NEXT_PUBLIC_WS_URL=http://localhost:3003
       // Production (nginx): leave unset → same-origin /ws proxy
-      const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? ''
+      const wsUrl = this.resolveWsUrl(process.env.NEXT_PUBLIC_WS_URL ?? '')
+      let settled = false
+      let triedSameOriginFallback = wsUrl === ''
 
-      this.socket = io(wsUrl, {
-        path: '/ws',
-        // Start with HTTP long-polling so the connection works through mobile
-        // carrier proxies that mangle WebSocket upgrade headers, then upgrade.
-        transports: ['polling', 'websocket'],
-        forceNew: true,
-        reconnection: true,
-        reconnectionAttempts: this.maxReconnectAttempts,
-        reconnectionDelay: 1000,
-        timeout: 10000
-      })
-
-      this.socket.on('connect', () => {
-        console.log('[Socket] Connected')
-        this.isConnected = true
+      const connectWith = (targetUrl: string) => {
+        this.socket?.disconnect()
+        this.socket?.removeAllListeners()
         this.reconnectAttempts = 0
-        // Re-authenticate after reconnect (e.g. after sleep/wake)
-        if (this.currentUser) {
-          this.socket!.emit('auth', { user: this.currentUser })
-        }
-        resolve(true)
-      })
+        this.socket = io(targetUrl, {
+          path: '/ws',
+          // Start with polling for better compatibility on restrictive mobile/carrier networks,
+          // then upgrade to WebSocket automatically when possible.
+          transports: ['polling', 'websocket'],
+          forceNew: true,
+          reconnection: true,
+          reconnectionAttempts: this.maxReconnectAttempts,
+          reconnectionDelay: 1000,
+          timeout: 10000
+        })
 
-      this.socket.on('disconnect', () => {
-        console.log('[Socket] Disconnected')
-        this.isConnected = false
-        this.emit('disconnect', {})
-      })
+        this.socket.on('connect', () => {
+          if (settled) return
+          settled = true
+          console.log('[Socket] Connected')
+          this.isConnected = true
+          this.reconnectAttempts = 0
+          // Re-authenticate after reconnect (e.g. after sleep/wake)
+          if (this.currentUser) {
+            this.socket!.emit('auth', { user: this.currentUser })
+          }
+          resolve(true)
+        })
 
-      this.socket.on('connect_error', (error) => {
-        console.error('[Socket] Connection error:', error)
-        this.reconnectAttempts++
-        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-          resolve(false)
-        }
-      })
+        this.socket.on('disconnect', () => {
+          console.log('[Socket] Disconnected')
+          this.isConnected = false
+          this.emit('disconnect', {})
+        })
 
-      this.setupEventListeners()
+        this.socket.on('connect_error', (error) => {
+          console.error('[Socket] Connection error:', error)
+          this.reconnectAttempts++
+          if (this.reconnectAttempts < this.maxReconnectAttempts) return
+
+          if (!triedSameOriginFallback && targetUrl !== '') {
+            triedSameOriginFallback = true
+            console.warn('[Socket] Falling back to same-origin /ws')
+            connectWith('')
+            return
+          }
+
+          if (!settled) {
+            settled = true
+            resolve(false)
+          }
+        })
+
+        this.setupEventListeners()
+      }
+
+      connectWith(wsUrl)
     })
+  }
+
+  private resolveWsUrl(rawUrl: string): string {
+    const normalized = rawUrl.trim()
+    if (!normalized || typeof window === 'undefined') return normalized
+    const isRemotePage = !['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+    const isLocalWsUrl = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(normalized)
+    // Protect production/mobile clients from accidental localhost build-time config.
+    if (isRemotePage && isLocalWsUrl) return ''
+    return normalized
   }
 
   private setupEventListeners() {
