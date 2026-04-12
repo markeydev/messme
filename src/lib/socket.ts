@@ -104,8 +104,8 @@ class MessengerSocket {
   private resolveWsUrl(rawUrl: string): string {
     const normalized = rawUrl.trim()
     if (!normalized || typeof window === 'undefined') return normalized
-    const isRemotePage = !['localhost', '127.0.0.1'].includes(window.location.hostname)
-    const isLocalWsUrl = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(normalized)
+    const isRemotePage = !['localhost', '127.0.0.1', '::1', '[::1]'].includes(window.location.hostname)
+    const isLocalWsUrl = /^https?:\/\/(localhost|127\.0\.0\.1|\[?::1\]?)(:\d+)?$/i.test(normalized)
     // Protect production/mobile clients from accidental localhost build-time config.
     if (isRemotePage && isLocalWsUrl) return ''
     return normalized
