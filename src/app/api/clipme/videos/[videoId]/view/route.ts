@@ -21,6 +21,16 @@ export async function POST(
       return NextResponse.json({ error: 'Нет доступа к ролику' }, { status: 403 })
     }
 
+    const body = await request.json().catch(() => ({}))
+    const watchedMsRaw = Number(body?.watchedMs ?? 0)
+    const watchedMs = Number.isFinite(watchedMsRaw) ? watchedMsRaw : 0
+    const completed = body?.completed === true
+    const meaningfulView = completed || watchedMs >= 1200
+    if (!meaningfulView) {
+      const viewsCount = await db.clipMeView.count({ where: { videoId } })
+      return NextResponse.json({ viewed: false, viewsCount })
+    }
+
     const existingView = await db.clipMeView.findUnique({
       where: { videoId_userId: { videoId, userId: session.userId } },
       select: { id: true },
