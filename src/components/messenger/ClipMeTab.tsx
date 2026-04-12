@@ -402,7 +402,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
                       {video.description && <p className="text-sm whitespace-pre-wrap max-w-[75vw]">{video.description}</p>}
 
                       <div className="flex items-center gap-3 text-[11px] text-white/80">
-                        <span className="inline-flex items-center gap-1"><Eye className="h-3.5 w-3.5" /> {video.viewsCount}</span>
+                        <span className="inline-flex items-center gap-1" aria-label={`Просмотры: ${video.viewsCount}`}><Eye className="h-3.5 w-3.5" /> {video.viewsCount}</span>
                         <span>Подписчики автора: {followersByAuthor[authorSubKey] ?? '—'}</span>
                       </div>
                     </div>
@@ -493,7 +493,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
                         </div>
                       </div>
                       <div className="flex items-center gap-2 text-[11px]">
-                        <button className="opacity-70 hover:opacity-100">Лайк</button>
+                        <button disabled aria-disabled className="opacity-40 cursor-not-allowed">Лайк</button>
                         <button
                           onClick={() => setReplyTargetByVideo(prev => ({ ...prev, [commentsOpenFor]: comment }))}
                           className="text-[#5d6cf5] hover:underline"
@@ -616,7 +616,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
                       <video src={video.videoUrl} className="h-full w-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" muted playsInline preload="metadata" />
                       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2 text-left">
                         <p className="text-[11px] text-white/90 line-clamp-2">{video.description || 'Без описания'}</p>
-                        <p className="mt-1 text-[10px] text-white/80 inline-flex items-center gap-1"><Eye className="h-3 w-3" /> {video.viewsCount}</p>
+                        <p className="mt-1 text-[10px] text-white/80 inline-flex items-center gap-1" aria-label={`Просмотры: ${video.viewsCount}`}><Eye className="h-3 w-3" /> {video.viewsCount}</p>
                       </div>
                     </button>
                   ))}

@@ -41,7 +41,7 @@ export async function GET(
       if (await canAccessClipVideo(session.userId, userId, v.privacy)) {
         videos.push({
           id: v.id,
-          user,
+          user: user,
           videoUrl: v.videoUrl,
           description: v.description,
           privacy: v.privacy,
