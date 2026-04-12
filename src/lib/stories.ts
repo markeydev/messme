@@ -1,1 +1,2 @@
 export const STORY_MAX_VIDEO_DURATION_SECONDS = 30
+export const STORY_TTL_HOURS = 12

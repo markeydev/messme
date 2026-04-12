@@ -108,6 +108,10 @@ export interface ClipMeComment {
   id: string
   content: string
   createdAt: string
+  parentId: string | null
+  repliesCount: number
+  likesCount: number
+  likedByMe: boolean
   user: Pick<User, 'id' | 'username' | 'avatarUrl'>
 }
 
@@ -737,12 +741,17 @@ export const clipMeAPI = {
     if (result.data) return { comments: result.data.comments }
     return { error: result.error }
   },
-  async addComment(videoId: string, content: string): Promise<{ comment?: ClipMeComment; commentsCount?: number; error?: string }> {
+  async addComment(videoId: string, content: string, parentId?: string | null): Promise<{ comment?: ClipMeComment; commentsCount?: number; error?: string }> {
     const result = await fetchAPI<{ comment: ClipMeComment; commentsCount: number }>(`/clipme/videos/${encodeURIComponent(videoId)}/comments`, {
       method: 'POST',
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, parentId: parentId ?? null }),
     })
     if (result.data) return { comment: result.data.comment, commentsCount: result.data.commentsCount }
+    return { error: result.error }
+  },
+  async toggleCommentLike(commentId: string): Promise<{ liked?: boolean; likesCount?: number; error?: string }> {
+    const result = await fetchAPI<{ liked: boolean; likesCount: number }>(`/clipme/comments/${encodeURIComponent(commentId)}/like`, { method: 'POST' })
+    if (result.data) return { liked: result.data.liked, likesCount: result.data.likesCount }
     return { error: result.error }
   },
   async updatePrivacy(videoId: string, privacy: ClipMePrivacy): Promise<{ privacy?: ClipMePrivacy; error?: string }> {

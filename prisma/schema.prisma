@@ -31,6 +31,7 @@ model User {
   clipMeComments   ClipMeComment[]
   clipMeReposts    ClipMeRepost[]
   clipMeViews      ClipMeView[]
+  clipMeCommentLikes ClipMeCommentLike[]
   clipMeFollowing  ClipMeSubscription[] @relation("ClipMeFollowing")
   clipMeFollowers  ClipMeSubscription[] @relation("ClipMeFollowers")
 
@@ -291,14 +292,34 @@ model ClipMeComment {
   id        String      @id @default(cuid())
   videoId   String
   userId    String
+  parentId  String?
   content   String
   createdAt DateTime    @default(now())
   video     ClipMeVideo @relation(fields: [videoId], references: [id], onDelete: Cascade)
   user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent    ClipMeComment? @relation("ClipMeCommentThread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   ClipMeComment[] @relation("ClipMeCommentThread")
+  likes     ClipMeCommentLike[]
 
   @@index([videoId, createdAt])
+  @@index([videoId, parentId, createdAt])
+  @@index([parentId])
   @@index([userId, createdAt])
   @@map("clipme_comments")
+}
+
+model ClipMeCommentLike {
+  id        String        @id @default(cuid())
+  commentId String
+  userId    String
+  createdAt DateTime      @default(now())
+  comment   ClipMeComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId])
+  @@index([userId])
+  @@index([commentId])
+  @@map("clipme_comment_likes")
 }
 
 model ClipMeRepost {

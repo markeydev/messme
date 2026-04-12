@@ -30,7 +30,7 @@ interface ClipMeTabProps {
   initialVideoId?: string | null
 }
 
-const formatReplyComment = (username: string, content: string) => `@${username} ${content}`
+const VIDEO_LIKE_PULSE_DURATION_MS = 420
 
 const formatRelativeTime = (value: string) => {
   const date = new Date(value)
@@ -43,6 +43,37 @@ const formatRelativeTime = (value: string) => {
   return date.toLocaleDateString('ru-RU')
 }
 
+const formatRepliesLabel = (count: number) => {
+  const mod10 = count % 10
+  const mod100 = count % 100
+  if (mod10 === 1 && mod100 !== 11) return `Показать ${count} ответ`
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `Показать ${count} ответа`
+  return `Показать ${count} ответов`
+}
+
+interface ClipMeCommentNode extends ClipMeComment {
+  children: ClipMeCommentNode[]
+}
+
+const buildCommentsTree = (items: ClipMeComment[]) => {
+  const nodes = new Map<string, ClipMeCommentNode>()
+  const roots: ClipMeCommentNode[] = []
+  items.forEach(comment => nodes.set(comment.id, { ...comment, children: [] }))
+  items.forEach(comment => {
+    const node = nodes.get(comment.id)
+    if (!node) return
+    if (comment.parentId) {
+      const parent = nodes.get(comment.parentId)
+      if (parent) {
+        parent.children.push(node)
+        return
+      }
+    }
+    roots.push(node)
+  })
+  return roots
+}
+
 export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
   const { user, chats } = useMessengerStore()
   const [videos, setVideos] = useState<ClipMeVideo[]>([])
@@ -53,9 +84,11 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
   const [comments, setComments] = useState<Record<string, ClipMeComment[]>>({})
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({})
   const [replyTargetByVideo, setReplyTargetByVideo] = useState<Record<string, ClipMeComment | null>>({})
+  const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({})
 
   const [subscribedByAuthor, setSubscribedByAuthor] = useState<Record<string, boolean>>({})
   const [followersByAuthor, setFollowersByAuthor] = useState<Record<string, number>>({})
+  const [videoLikePulseId, setVideoLikePulseId] = useState<string | null>(null)
 
   const [shareVideo, setShareVideo] = useState<ClipMeVideo | null>(null)
 
@@ -198,17 +231,33 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
   }, [activeVideoId])
 
   const toggleLike = async (video: ClipMeVideo) => {
-    const result = await clipMeAPI.toggleLike(video.id)
-    if (result.liked === undefined || result.likesCount === undefined) return
-    setVideos(prev => prev.map(v => v.id === video.id ? { ...v, likedByMe: result.liked!, likesCount: result.likesCount! } : v))
+    const nextLiked = !video.likedByMe
+    const optimisticLikes = Math.max(0, video.likesCount + (nextLiked ? 1 : -1))
+    setVideoLikePulseId(video.id)
+    setTimeout(() => setVideoLikePulseId(prev => (prev === video.id ? null : prev)), VIDEO_LIKE_PULSE_DURATION_MS)
+    setVideos(prev => prev.map(v => v.id === video.id ? { ...v, likedByMe: nextLiked, likesCount: optimisticLikes } : v))
     setChannelData(prev => {
       if (!prev?.videos?.length) return prev
       return {
         ...prev,
-        videos: prev.videos.map(v => v.id === video.id ? { ...v, likedByMe: result.liked!, likesCount: result.likesCount! } : v),
+        videos: prev.videos.map(v => v.id === video.id ? { ...v, likedByMe: nextLiked, likesCount: optimisticLikes } : v),
       }
     })
-    setChannelPreviewVideo(prev => prev?.id === video.id ? { ...prev, likedByMe: result.liked!, likesCount: result.likesCount! } : prev)
+    setChannelPreviewVideo(prev => prev?.id === video.id ? { ...prev, likedByMe: nextLiked, likesCount: optimisticLikes } : prev)
+    const result = await clipMeAPI.toggleLike(video.id)
+    if (result.liked === undefined || result.likesCount === undefined) {
+      setVideos(prev => prev.map(v => v.id === video.id ? video : v))
+      return
+    }
+    setVideos(prev => prev.map(v => v.id === video.id ? { ...v, likedByMe: result.liked, likesCount: result.likesCount } : v))
+    setChannelData(prev => {
+      if (!prev?.videos?.length) return prev
+      return {
+        ...prev,
+        videos: prev.videos.map(v => v.id === video.id ? { ...v, likedByMe: result.liked, likesCount: result.likesCount } : v),
+      }
+    })
+    setChannelPreviewVideo(prev => prev?.id === video.id ? { ...prev, likedByMe: result.liked, likesCount: result.likesCount } : prev)
   }
 
   const toggleRepost = async (video: ClipMeVideo) => {
@@ -227,6 +276,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
 
   const openComments = async (videoId: string) => {
     setCommentsOpenFor(videoId)
+    setReplyTargetByVideo(prev => ({ ...prev, [videoId]: null }))
     if (comments[videoId]) return
     const result = await clipMeAPI.getComments(videoId)
     if (result.comments) setComments(prev => ({ ...prev, [videoId]: result.comments! }))
@@ -236,12 +286,39 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
     const text = (commentDrafts[videoId] ?? '').trim()
     if (!text) return
     const replyTarget = replyTargetByVideo[videoId]
-    const finalContent = replyTarget ? formatReplyComment(replyTarget.user.username, text) : text
-    const result = await clipMeAPI.addComment(videoId, finalContent)
+    const result = await clipMeAPI.addComment(videoId, text, replyTarget?.id ?? null)
     if (!result.comment) return
-    setComments(prev => ({ ...prev, [videoId]: [result.comment!, ...(prev[videoId] ?? [])] }))
+    setComments(prev => {
+      const existing = prev[videoId] ?? []
+      if (!replyTarget) return { ...prev, [videoId]: [result.comment!, ...existing] }
+      const nestedIds = new Set<string>()
+      const stack = [replyTarget.id]
+      while (stack.length) {
+        const current = stack.pop()!
+        nestedIds.add(current)
+        existing.forEach(item => {
+          if (item.parentId === current) stack.push(item.id)
+        })
+      }
+      const parentIndex = existing.findIndex(item => item.id === replyTarget.id)
+      let insertAfter = parentIndex
+      for (let i = existing.length - 1; i >= 0; i -= 1) {
+        if (nestedIds.has(existing[i].id)) {
+          insertAfter = i
+          break
+        }
+      }
+      const index = Math.max(parentIndex, insertAfter) + 1
+      return {
+        ...prev,
+        [videoId]: [...existing.slice(0, index), result.comment!, ...existing.slice(index)],
+      }
+    })
     setCommentDrafts(prev => ({ ...prev, [videoId]: '' }))
     setReplyTargetByVideo(prev => ({ ...prev, [videoId]: null }))
+    if (replyTarget) {
+      setExpandedReplies(prev => ({ ...prev, [replyTarget.id]: true }))
+    }
     setVideos(prev => prev.map(v => v.id === videoId ? { ...v, commentsCount: result.commentsCount ?? v.commentsCount + 1 } : v))
     setChannelData(prev => {
       if (!prev?.videos?.length) return prev
@@ -251,6 +328,34 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
       }
     })
     setChannelPreviewVideo(prev => prev?.id === videoId ? { ...prev, commentsCount: result.commentsCount ?? prev.commentsCount + 1 } : prev)
+  }
+
+  const toggleCommentLike = async (videoId: string, commentId: string) => {
+    const commentList = comments[videoId] ?? []
+    const comment = commentList.find(item => item.id === commentId)
+    if (!comment) return
+    const optimisticLiked = !comment.likedByMe
+    const optimisticCount = Math.max(0, comment.likesCount + (optimisticLiked ? 1 : -1))
+    setComments(prev => ({
+      ...prev,
+      [videoId]: (prev[videoId] ?? []).map(item => item.id === commentId
+        ? { ...item, likedByMe: optimisticLiked, likesCount: optimisticCount }
+        : item),
+    }))
+    const result = await clipMeAPI.toggleCommentLike(commentId)
+    if (result.liked === undefined || result.likesCount === undefined) {
+      setComments(prev => ({
+        ...prev,
+        [videoId]: (prev[videoId] ?? []).map(item => item.id === commentId ? comment : item),
+      }))
+      return
+    }
+    setComments(prev => ({
+      ...prev,
+      [videoId]: (prev[videoId] ?? []).map(item => item.id === commentId
+        ? { ...item, likedByMe: result.liked, likesCount: result.likesCount }
+        : item),
+    }))
   }
 
   const sendToMessme = async (targetChatId: string) => {
@@ -338,6 +443,73 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
     }
   }, [uploadPreviewUrl])
 
+  const activeCommentTree = useMemo(
+    () => (commentsOpenFor ? buildCommentsTree(comments[commentsOpenFor] ?? []) : []),
+    [commentsOpenFor, comments]
+  )
+
+  const renderCommentNode = (videoId: string, node: ClipMeCommentNode, depth = 0): ReactNode => {
+    const canRenderChildren = depth < 7
+    const isExpanded = expandedReplies[node.id]
+    return (
+      <div key={node.id} className={cn(depth > 0 && 'pl-3 border-l border-black/10 dark:border-white/10')}>
+        <div className="rounded-xl bg-black/[0.04] dark:bg-white/[0.06] px-3 py-2.5">
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <div className="flex items-center gap-2 min-w-0">
+              <Avatar className="h-7 w-7">
+                {node.user.avatarUrl && <AvatarImage src={node.user.avatarUrl} />}
+                <AvatarFallback className="bg-[#5d6cf5] text-white text-[10px]">{node.user.username.slice(0, 2).toUpperCase()}</AvatarFallback>
+              </Avatar>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold truncate">{node.user.username}</p>
+                <p className="text-[11px] opacity-60">{formatRelativeTime(node.createdAt)}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 text-[11px]">
+              <button
+                onClick={() => toggleCommentLike(videoId, node.id)}
+                className={cn('hover:underline', node.likedByMe ? 'text-red-500' : 'text-black/65 dark:text-white/75')}
+              >
+                Лайк {node.likesCount > 0 ? node.likesCount : ''}
+              </button>
+              <button
+                onClick={() => setReplyTargetByVideo(prev => ({ ...prev, [videoId]: node }))}
+                className="text-[#5d6cf5] hover:underline"
+              >
+                Ответить
+              </button>
+            </div>
+          </div>
+          <p className="text-sm whitespace-pre-wrap">{node.content}</p>
+        </div>
+        {node.children.length > 0 && canRenderChildren && (
+          <div className="mt-2 space-y-2">
+            {!isExpanded ? (
+              <button
+                onClick={() => setExpandedReplies(prev => ({ ...prev, [node.id]: true }))}
+                className="text-xs text-[#5d6cf5] hover:underline"
+              >
+                {formatRepliesLabel(node.children.length)}
+              </button>
+            ) : (
+              <>
+                {node.children.map(child => renderCommentNode(videoId, child, depth + 1))}
+                {node.children.length > 2 && (
+                  <button
+                    onClick={() => setExpandedReplies(prev => ({ ...prev, [node.id]: false }))}
+                    className="text-xs text-black/60 dark:text-white/70 hover:underline"
+                  >
+                    Скрыть ответы
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="h-full min-h-0 md:fixed md:inset-0 md:z-40 md:flex md:items-center md:justify-center md:bg-black md:p-0">
       <div className="h-full min-h-0 flex flex-col bg-black text-white md:w-[min(560px,100vw)] md:h-full md:border-x md:border-white/10 overflow-hidden relative">
@@ -369,82 +541,93 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
                 data-video-id={video.id}
                 className="relative h-full min-h-full snap-start bg-black"
               >
-                <CustomVideoPlayer src={video.videoUrl} className="h-full w-full object-cover" shouldPlay={isActive} loop />
+                <CustomVideoPlayer
+                  src={video.videoUrl}
+                  className="h-full w-full"
+                  shouldPlay={isActive}
+                  loop
+                  fit="contain"
+                  onDoubleTap={() => {
+                    if (!video.likedByMe) void toggleLike(video)
+                  }}
+                />
 
-                <div className="absolute inset-x-0 bottom-0 p-4 pt-16 bg-gradient-to-t from-black/80 via-black/45 to-transparent pointer-events-none">
-                  <div className="flex items-end justify-between gap-3">
-                    <div className="space-y-2 pointer-events-auto">
-                      <button className="flex items-center gap-2" onClick={() => openChannel(video.user.id)}>
-                        <Avatar className="h-9 w-9 border border-white/35">
-                          {video.user.avatarUrl && <AvatarImage src={video.user.avatarUrl} />}
-                          <AvatarFallback className="bg-[#5d6cf5] text-white text-[10px]">{video.user.username.slice(0, 2).toUpperCase()}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="text-sm font-semibold flex items-center gap-1">{video.user.username} <UserRound className="h-3.5 w-3.5 opacity-70" /></p>
-                          <p className="text-[11px] text-white/80 flex items-center gap-1">{PRIVACY_ICON[video.privacy]} {PRIVACY_LABEL[video.privacy]}</p>
-                        </div>
-                      </button>
-
-                      {video.user.id !== user?.id && (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          className="h-8 bg-white/20 hover:bg-white/30 text-white border-white/20"
-                          onClick={async () => {
-                            const result = await clipMeAPI.toggleSubscribe(video.user.id)
-                            if (result.subscribed === undefined) return
-                            applySubscribeResult(authorSubKey, result.subscribed, result.followersCount)
-                          }}
-                        >
-                          {isSubscribed ? 'Вы подписаны' : 'Подписаться'}
-                        </Button>
-                      )}
-
-                      {video.description && <p className="text-sm whitespace-pre-wrap max-w-[75vw]">{video.description}</p>}
-
-                      <div className="flex items-center gap-3 text-[11px] text-white/80">
-                        <span className="inline-flex items-center gap-1" aria-label={`Просмотры: ${video.viewsCount}`}><Eye className="h-3.5 w-3.5" /> {video.viewsCount}</span>
-                        <span>Подписчики автора: {followersByAuthor[authorSubKey] ?? '—'}</span>
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 p-4 pb-5 bg-gradient-to-t from-black/60 via-black/30 to-transparent">
+                  <div className="pointer-events-auto max-w-[calc(100%-72px)] space-y-2 rounded-2xl bg-black/20 px-3 py-2 backdrop-blur-sm">
+                    <button className="flex items-center gap-2" onClick={() => openChannel(video.user.id)}>
+                      <Avatar className="h-9 w-9 border border-white/35">
+                        {video.user.avatarUrl && <AvatarImage src={video.user.avatarUrl} />}
+                        <AvatarFallback className="bg-[#5d6cf5] text-white text-[10px]">{video.user.username.slice(0, 2).toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <p className="text-sm font-semibold flex items-center gap-1">{video.user.username} <UserRound className="h-3.5 w-3.5 opacity-70" /></p>
+                        <p className="text-[11px] text-white/80 flex items-center gap-1">{PRIVACY_ICON[video.privacy]} {PRIVACY_LABEL[video.privacy]}</p>
                       </div>
-                    </div>
+                    </button>
 
-                    <div className="flex flex-col items-center gap-2 pointer-events-auto pb-2">
-                      <button
-                        onClick={() => toggleLike(video)}
-                        className={cn('h-11 w-11 rounded-full text-sm flex items-center justify-center shadow-lg backdrop-blur', video.likedByMe ? 'bg-red-500/90 text-white' : 'bg-black/45 text-white')}
-                        title="Лайк"
+                    {video.user.id !== user?.id && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="h-7 bg-white/15 hover:bg-white/25 text-white border-white/15"
+                        onClick={async () => {
+                          const result = await clipMeAPI.toggleSubscribe(video.user.id)
+                          if (result.subscribed === undefined) return
+                          applySubscribeResult(authorSubKey, result.subscribed, result.followersCount)
+                        }}
                       >
-                        <Heart className={cn('h-4.5 w-4.5', video.likedByMe && 'fill-current')} />
-                      </button>
-                      <span className="text-[10px]">{video.likesCount}</span>
+                        {isSubscribed ? 'Вы подписаны' : 'Подписаться'}
+                      </Button>
+                    )}
 
-                      <button
-                        onClick={() => openComments(video.id)}
-                        className="h-11 w-11 rounded-full text-sm flex items-center justify-center bg-black/45 text-white shadow-lg backdrop-blur"
-                        title="Комментарии"
-                      >
-                        <MessageCircle className="h-4.5 w-4.5" />
-                      </button>
-                      <span className="text-[10px]">{video.commentsCount}</span>
+                    {video.description && <p className="text-sm whitespace-pre-wrap">{video.description}</p>}
 
-                      <button
-                        onClick={() => toggleRepost(video)}
-                        className={cn('h-11 w-11 rounded-full text-sm flex items-center justify-center shadow-lg backdrop-blur', video.repostedByMe ? 'bg-[#5d6cf5] text-white' : 'bg-black/45 text-white')}
-                        title="Репост"
-                      >
-                        <Repeat2 className="h-4.5 w-4.5" />
-                      </button>
-                      <span className="text-[10px]">{video.repostsCount}</span>
-
-                      <button
-                        onClick={() => setShareVideo(video)}
-                        className="h-11 w-11 rounded-full text-sm flex items-center justify-center bg-black/45 text-white shadow-lg backdrop-blur"
-                        title="Поделиться"
-                      >
-                        <Send className="h-4.5 w-4.5" />
-                      </button>
+                    <div className="flex items-center gap-3 text-[11px] text-white/80">
+                      <span className="inline-flex items-center gap-1" aria-label={`Просмотры: ${video.viewsCount}`}><Eye className="h-3.5 w-3.5" /> {video.viewsCount}</span>
+                      <span>Подписчики автора: {followersByAuthor[authorSubKey] ?? '—'}</span>
                     </div>
                   </div>
+                </div>
+
+                <div className="absolute right-3 top-1/2 z-10 -translate-y-1/2 flex flex-col items-center gap-2 pointer-events-auto">
+                  <button
+                    onClick={() => toggleLike(video)}
+                    className={cn(
+                      'h-12 w-12 rounded-full text-sm flex items-center justify-center shadow-lg backdrop-blur transition-transform',
+                      video.likedByMe ? 'bg-red-500/85 text-white' : 'bg-black/35 text-white',
+                      videoLikePulseId === video.id && 'scale-110'
+                    )}
+                    title="Лайк"
+                  >
+                    <Heart className={cn('h-5 w-5', video.likedByMe && 'fill-current')} />
+                  </button>
+                  <span className="text-[10px] text-white/90">{video.likesCount}</span>
+
+                  <button
+                    onClick={() => openComments(video.id)}
+                    className="h-12 w-12 rounded-full text-sm flex items-center justify-center bg-black/35 text-white shadow-lg backdrop-blur"
+                    title="Комментарии"
+                  >
+                    <MessageCircle className="h-5 w-5" />
+                  </button>
+                  <span className="text-[10px] text-white/90">{video.commentsCount}</span>
+
+                  <button
+                    onClick={() => toggleRepost(video)}
+                    className={cn('h-12 w-12 rounded-full text-sm flex items-center justify-center shadow-lg backdrop-blur', video.repostedByMe ? 'bg-[#5d6cf5] text-white' : 'bg-black/35 text-white')}
+                    title="Репост"
+                  >
+                    <Repeat2 className="h-5 w-5" />
+                  </button>
+                  <span className="text-[10px] text-white/90">{video.repostsCount}</span>
+
+                  <button
+                    onClick={() => setShareVideo(video)}
+                    className="h-12 w-12 rounded-full text-sm flex items-center justify-center bg-black/35 text-white shadow-lg backdrop-blur"
+                    title="Поделиться"
+                  >
+                    <Send className="h-5 w-5" />
+                  </button>
                 </div>
               </section>
             )
@@ -480,32 +663,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
               )}
 
               <div className="space-y-2 max-h-[46vh] overflow-y-auto pb-1">
-                {(comments[commentsOpenFor] ?? []).map(comment => (
-                  <div key={comment.id} className="rounded-xl bg-black/[0.04] dark:bg-white/[0.06] px-3 py-2.5">
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Avatar className="h-7 w-7">
-                          {comment.user.avatarUrl && <AvatarImage src={comment.user.avatarUrl} />}
-                          <AvatarFallback className="bg-[#5d6cf5] text-white text-[10px]">{comment.user.username.slice(0, 2).toUpperCase()}</AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold truncate">{comment.user.username}</p>
-                          <p className="text-[11px] opacity-60">{formatRelativeTime(comment.createdAt)}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 text-[11px]">
-                        <button disabled aria-disabled="true" className="opacity-40 cursor-not-allowed">Лайк</button>
-                        <button
-                          onClick={() => setReplyTargetByVideo(prev => ({ ...prev, [commentsOpenFor]: comment }))}
-                          className="text-[#5d6cf5] hover:underline"
-                        >
-                          Ответить
-                        </button>
-                      </div>
-                    </div>
-                    <p className="text-sm whitespace-pre-wrap">{comment.content}</p>
-                  </div>
-                ))}
+                {activeCommentTree.map(comment => renderCommentNode(commentsOpenFor, comment))}
               </div>
 
               <div className="mt-3 flex gap-2">
@@ -633,7 +791,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
           {channelPreviewVideo && (
             <>
               <DialogTitle className="sr-only">Просмотр ролика</DialogTitle>
-              <CustomVideoPlayer src={channelPreviewVideo.videoUrl} className="h-[70vh] w-full object-cover" shouldPlay loop />
+              <CustomVideoPlayer src={channelPreviewVideo.videoUrl} className="h-[70vh] w-full" shouldPlay loop fit="contain" />
               <div className="p-3 space-y-1 bg-black text-white">
                 {channelPreviewVideo.description && <p className="text-sm whitespace-pre-wrap">{channelPreviewVideo.description}</p>}
                 <p className="text-xs text-white/80">👁 {channelPreviewVideo.viewsCount} · ❤️ {channelPreviewVideo.likesCount} · 💬 {channelPreviewVideo.commentsCount}</p>
