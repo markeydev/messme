@@ -151,13 +151,18 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
         if (!id) return
         setActiveVideoId(prev => {
           if (prev === id) return prev
-          if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+          if (
+            typeof window !== 'undefined'
+            && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+            && typeof navigator !== 'undefined'
+            && typeof navigator.vibrate === 'function'
+          ) {
             navigator.vibrate(8)
           }
           return id
         })
       },
-      { root: feedRef.current, threshold: [0.6, 0.8, 1] }
+      { root: feedRef.current, threshold: 0.65 }
     )
 
     videos.forEach(video => {
@@ -246,7 +251,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
   const sendToMessme = async (targetChatId: string) => {
     if (!shareVideo) return
     const params = new URLSearchParams({ tab: 'clipme', clip: shareVideo.id })
-    const clipUrl = `${window.location.origin}/?${params.toString()}`
+    const clipUrl = new URL(`${window.location.pathname}?${params.toString()}`, window.location.origin).toString()
     const sent = await chatsAPI.sendMessage(targetChatId, `ClipMe: ${clipUrl}`)
     if (sent.message) messengerSocket.broadcastMessage(sent.message)
     setShareVideo(null)

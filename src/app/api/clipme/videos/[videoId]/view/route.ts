@@ -21,11 +21,15 @@ export async function POST(
       return NextResponse.json({ error: 'Нет доступа к ролику' }, { status: 403 })
     }
 
-    await db.clipMeView.upsert({
+    const existingView = await db.clipMeView.findUnique({
       where: { videoId_userId: { videoId, userId: session.userId } },
-      create: { videoId, userId: session.userId },
-      update: {},
+      select: { id: true },
     })
+    if (!existingView) {
+      await db.clipMeView.create({
+        data: { videoId, userId: session.userId },
+      })
+    }
 
     const viewsCount = await db.clipMeView.count({ where: { videoId } })
 
