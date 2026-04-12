@@ -1,106 +1,124 @@
-# 🔐 Messenger с E2E Шифрованием
+# ✨ Messme
 
-Полнофункциональный мессенджер с end-to-end шифрованием.
+Современная коммуникационная платформа: безопасный мессенджер, игровые чаты с голосовыми каналами, stories и лента коротких видео ClipMe — в одном приложении.
 
-## ✨ Возможности
+## 🚀 Что внутри
 
-- 🔐 E2E шифрование (ECDH + AES-GCM)
-- 💬 Личные и групповые чаты
-- ⚡ WebSocket для real-time доставки
-- 👥 Добавление участников в группы
-- 🎨 Glassmorphism дизайн
-- 📱 Адаптивный интерфейс
+- 🔐 Безопасный обмен сообщениями (клиентское шифрование + серверное AES-256-GCM хранение)
+- 💬 Личные и групповые чаты в real-time (Socket.IO)
+- 🎮 Game/Play mode: роли, каналы, голосовые комнаты и WebRTC-звонки
+- 📸 Stories (24 часа): просмотр, лайки, статистика
+- 🎬 ClipMe: короткие видео, лайки, комментарии, репосты, подписки
+- 🔔 Push-уведомления и desktop-интеграция (Electron)
 
-## 🛠 Технологии
+## 🧱 Технологический стек
 
-- Next.js 16 + React 19 + TypeScript
-- Tailwind CSS 4 + shadcn/ui
-- Prisma ORM + SQLite
-- Socket.io (WebSocket)
-- Web Crypto API (E2E)
-- Zustand (State)
+- **Frontend:** Next.js 16, React 19, TypeScript
+- **UI:** Tailwind CSS 4, Radix UI, shadcn/ui
+- **State/Data:** Zustand, TanStack Query
+- **Backend (API):** Next.js Route Handlers
+- **Realtime:** Socket.IO (`mini-services/messenger-server`)
+- **DB:** PostgreSQL + Prisma
+- **Storage:** S3-совместимое хранилище
+- **Desktop:** Electron (Windows build)
 
-## 🚀 Запуск
+## ⚡ Быстрый старт (локально)
 
-```bash
-# Установка
-bun install
-
-# База данных
-bun run db:push
-
-# WebSocket сервер (отдельный терминал)
-cd mini-services/messenger-server && bun install && bun run dev
-
-# Next.js (другой терминал)
-bun run dev
-```
-
-Открыть: http://localhost:3000
-
-## 🖥 Desktop client (Electron, Windows)
-
-Desktop-клиент находится в отдельной папке:
+### 1) Установка зависимостей
 
 ```bash
-cd electron-desktop
 npm install
+npm --prefix mini-services/messenger-server install
 ```
 
-Локальный запуск (откроет `http://localhost:3000`, поэтому web-приложение должно быть запущено отдельно):
+### 2) Переменные окружения
+
+```bash
+cp .env.example .env
+```
+
+Заполни обязательные значения в `.env` (минимум `DATABASE_URL`, `SECRET_KEY`, `MESSAGE_ENCRYPTION_KEY` и параметры S3).
+
+### 3) Подними PostgreSQL
+
+```bash
+docker compose up -d postgres
+```
+
+### 4) Применение схемы Prisma
+
+```bash
+npm run db:push
+```
+
+### 5) Запуск сервисов
+
+В первом терминале:
 
 ```bash
 npm run dev
 ```
 
-Сборка Windows-артефактов:
+Во втором терминале:
+
+```bash
+npm run dev --prefix mini-services/messenger-server
+```
+
+Открой: **http://localhost:3000**
+
+## 🐳 Запуск через Docker Compose
+
+Для production-окружения используется `docker-compose.yml` (app + ws + postgres + migrate + coturn).
+
+```bash
+docker compose up -d --build
+```
+
+## 🖥 Desktop-клиент (Electron)
+
+```bash
+cd electron-desktop
+npm install
+npm run dev
+```
+
+Сборка Windows:
 
 ```bash
 npm run build:win
 ```
 
-Отдельные таргеты:
+Артефакты: `electron-desktop/dist`.
+
+## 📁 Структура проекта
+
+```text
+src/
+├─ app/                    # Next.js app + API routes
+├─ components/messenger/   # UI мессенджера, звонки, ClipMe, игровые окна
+├─ hooks/                  # клиентские хуки
+└─ lib/                    # api, socket, crypto, store и утилиты
+
+mini-services/
+└─ messenger-server/       # Socket.IO realtime сервер
+
+prisma/
+└─ schema.prisma           # модели БД
+
+electron-desktop/          # desktop-клиент
+```
+
+## 🔧 Основные npm-скрипты
 
 ```bash
-# Только portable
-npm run build:win:portable
-
-# Только installer (NSIS)
-npm run build:win:installer
+npm run dev
+npm run build
+npm run start
+npm run db:push
+npm run db:migrate
 ```
 
-Готовые файлы появляются в `electron-desktop/dist`.
+## 📄 Лицензия
 
-Для релиза в GitHub добавлен workflow `.github/workflows/electron-windows-release.yml`, который собирает Windows клиент и прикладывает артефакты к тегам `v*`.
-
-## 📁 Структура
-
-```
-src/
-├── app/api/          # API Routes
-├── components/       # UI компоненты
-├── lib/              # API, Socket, E2E, Store
-└── hooks/            # React хуки
-mini-services/
-└── messenger-server/ # WebSocket сервер
-prisma/
-└── schema.prisma     # Database schema
-```
-
-## 🔐 E2E Шифрование
-
-- Генерация ECDH ключей при регистрации
-- Публичный ключ хранится на сервере
-- Приватный ключ — только в localStorage клиента
-- AES-GCM для шифрования сообщений
-
-## 📡 WebSocket Events
-
-- `auth` — аутентификация
-- `join-chat` / `leave-chat` — комнаты
-- `send-message` / `new-message` — сообщения
-- `typing` / `user-typing` — индикатор набора
-- `chat-created` / `new-chat` — создание чатов
-- `members-added` — добавление участников
-
-MIT License
+MIT
