@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hasAdminAccess } from '@/lib/admin'
+import { MAX_PROFILE_BIO_LENGTH } from '@/lib/product-config'
 
 async function getSession(request: NextRequest) {
   const token = request.headers.get('Authorization')?.replace('Bearer ', '')
@@ -135,7 +136,7 @@ export async function PATCH(request: NextRequest) {
       data: {
         ...(username !== undefined ? { username: username.trim() } : {}),
         ...(avatarUrl !== undefined ? { avatarUrl: avatarUrl ?? null } : {}),
-        ...(bio !== undefined ? { bio: typeof bio === 'string' ? bio.trim().slice(0, 240) || null : null } : {}),
+        ...(bio !== undefined ? { bio: typeof bio === 'string' ? bio.trim().slice(0, MAX_PROFILE_BIO_LENGTH) || null : null } : {}),
         ...(nextLinkedChannelId !== undefined ? { linkedMessmeChannelId: nextLinkedChannelId } : {}),
       },
       select: { id: true, username: true, email: true, avatarUrl: true, bio: true, linkedMessmeChannelId: true, isBadgeVerified: true, isAdmin: true, isBlocked: true }

@@ -144,7 +144,10 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
   )
   const messmeChatsCount = chats.filter(chat => !chat.gameMode).length
   const playmeChatsCount = chats.filter(chat => !!chat.gameMode).length
-  const ownedPersonalChannels = chats.filter(chat => chat.isPersonalChannel && chat.ownerId === user?.id)
+  const ownedPersonalChannels = useMemo(
+    () => chats.filter(chat => chat.isPersonalChannel && chat.ownerId === user?.id),
+    [chats, user?.id]
+  )
   const storiesByUser = new Map(storyFeed.map(item => [item.user.id, item]))
   const isAdminUser = Boolean(user?.isAdmin)
   const adminbotChat: Chat = {

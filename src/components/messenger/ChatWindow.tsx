@@ -859,6 +859,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
         const rx = Math.min(contextMenu.x, vw - menuW - 8)
         const flipped = contextMenu.y + menuH > vh - 8
         const ry = flipped ? Math.max(contextMenu.y - menuH, 8) : contextMenu.y
+        const boundedY = Math.max(8, Math.min(ry, vh - menuH - 8))
         const origin = flipped ? 'origin-bottom-left' : 'origin-top-left'
         return (
           <div
@@ -873,7 +874,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                 'animate-in zoom-in-95 fade-in duration-100',
                 origin
               )}
-              style={{ left: rx, top: ry, minWidth: menuW }}
+              style={{ left: rx, top: boundedY, minWidth: menuW }}
               onClick={e => e.stopPropagation()}
             >
               <div className="px-3 pb-1.5">
