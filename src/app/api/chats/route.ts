@@ -88,6 +88,7 @@ export async function GET(request: NextRequest) {
         id: chat.id,
         title,
         isGroup: chat.isGroup,
+        isPersonalChannel: (chat as any).isPersonalChannel ?? false,
         gameMode: (chat as any).gameMode ?? false,
         avatarUrl,
         ownerId: (chat as any).ownerId ?? null,

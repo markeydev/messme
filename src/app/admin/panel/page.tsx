@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 type AdminUser = {
   id: string
@@ -24,6 +25,23 @@ type Stats = {
   blockedUsersCount: number
   badgeVerifiedCount: number
   newUsers24hCount: number
+  messme?: {
+    chatsCount: number
+    messagesCount: number
+    storiesCount: number
+    activeSessionsCount: number
+  }
+  clipme?: {
+    clipMeVideosCount: number
+  }
+}
+
+type TrendPoint = {
+  day: string
+  users: number
+  messages: number
+  stories: number
+  clipmeVideos: number
 }
 
 export default function AdminPanelPage() {
@@ -38,6 +56,7 @@ export default function AdminPanelPage() {
   const [suspiciousAccounts, setSuspiciousAccounts] = useState<AdminUser[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [trends, setTrends] = useState<TrendPoint[]>([])
 
   const loadPanel = useCallback(async () => {
     if (!token) {
@@ -55,6 +74,7 @@ export default function AdminPanelPage() {
       return
     }
     setStats(data.stats)
+    setTrends(data.trends ?? [])
     setUsers(data.users ?? [])
     setSuspiciousAccounts(data.suspiciousAccounts ?? [])
     setLoading(false)
@@ -117,6 +137,60 @@ export default function AdminPanelPage() {
         <StatCard title="Блокировки" value={stats.blockedUsersCount} />
         <StatCard title="С галочкой" value={stats.badgeVerifiedCount} />
         <StatCard title="Новые 24ч" value={stats.newUsers24hCount} />
+      </section>
+
+      <section className="mb-8 grid gap-4 lg:grid-cols-2">
+        <div className="rounded-xl bg-white/[0.05] border border-white/[0.08] p-4">
+          <h2 className="text-base font-semibold mb-3">Динамика Messme</h2>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={trends}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+                <XAxis dataKey="day" stroke="rgba(255,255,255,0.45)" />
+                <YAxis stroke="rgba(255,255,255,0.45)" />
+                <Tooltip />
+                <Legend />
+                <Line type="monotone" dataKey="users" stroke="#7fa2ff" strokeWidth={2} />
+                <Line type="monotone" dataKey="messages" stroke="#56d28f" strokeWidth={2} />
+                <Line type="monotone" dataKey="stories" stroke="#f3b462" strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <div className="rounded-xl bg-white/[0.05] border border-white/[0.08] p-4">
+          <h2 className="text-base font-semibold mb-3">Динамика ClipMe</h2>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={trends}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+                <XAxis dataKey="day" stroke="rgba(255,255,255,0.45)" />
+                <YAxis stroke="rgba(255,255,255,0.45)" />
+                <Tooltip />
+                <Legend />
+                <Line type="monotone" dataKey="clipmeVideos" stroke="#ff7cc6" strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </section>
+
+      <section className="mb-8 grid gap-4 lg:grid-cols-2">
+        <div className="rounded-xl bg-white/[0.05] border border-white/[0.08] p-4">
+          <h2 className="text-base font-semibold mb-3">Messme метрики</h2>
+          <div className="grid grid-cols-2 gap-2">
+            <StatCard title="Чаты" value={stats.messme?.chatsCount ?? stats.chatsCount} />
+            <StatCard title="Сообщения" value={stats.messme?.messagesCount ?? stats.messagesCount} />
+            <StatCard title="Сторис" value={stats.messme?.storiesCount ?? stats.storiesCount} />
+            <StatCard title="Сессии" value={stats.messme?.activeSessionsCount ?? stats.activeSessionsCount} />
+          </div>
+        </div>
+        <div className="rounded-xl bg-white/[0.05] border border-white/[0.08] p-4">
+          <h2 className="text-base font-semibold mb-3">ClipMe метрики</h2>
+          <div className="grid grid-cols-2 gap-2">
+            <StatCard title="Видео" value={stats.clipme?.clipMeVideosCount ?? stats.clipMeVideosCount} />
+            <StatCard title="Новые пользователи 24ч" value={stats.newUsers24hCount} />
+          </div>
+        </div>
       </section>
 
       <section className="mb-8">

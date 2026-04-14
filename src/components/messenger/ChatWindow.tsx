@@ -16,7 +16,7 @@ import { VerifiedBadge } from './VerifiedBadge'
 import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
 import { chatsAPI, usersAPI, storiesAPI, type Chat, type Message, type StoryFeedItem, type User } from '@/lib/api'
-import { ArrowDown, ArrowLeft, Users, Loader2, UserPlus, Check, X, Reply, Forward, Trash2, Pencil, FileText, Download, ZoomIn, Copy, Bell, BellOff, Phone, Clock, AlertCircle, ShieldCheck } from 'lucide-react'
+import { ArrowDown, ArrowLeft, Users, Loader2, UserPlus, Check, X, Reply, Forward, Trash2, Pencil, FileText, Download, ZoomIn, Copy, Bell, BellOff, Phone, Clock, AlertCircle, ShieldCheck, Smile } from 'lucide-react'
 import { cn, openExternalUrl } from '@/lib/utils'
 
 interface ChatWindowProps {
@@ -62,7 +62,9 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
   const [activeStoryUserId, setActiveStoryUserId] = useState<string | null>(null)
   const [storyInfo, setStoryInfo] = useState<StoryFeedItem | null>(null)
 
-  const { user, addMessage, deleteMessage, chats, mutedChats, toggleMuteChat, removeChat, setActiveChat, prependMessages, updateChatMembers } = useMessengerStore()
+  const { user, addMessage, deleteMessage, chats, mutedChats, toggleMuteChat, removeChat, setActiveChat, prependMessages, updateChatMembers, updateMessageReactions } = useMessengerStore()
+  const baseReactions = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥']
+  const isReadOnlyPersonalChannel = !!chat.isPersonalChannel && chat.ownerId !== user?.id
 
   // Infinite scroll state
   const [isLoadingMore, setIsLoadingMore] = useState(false)
@@ -213,6 +215,11 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
       deleteMessage(chat.id, messageId)
       messengerSocket.broadcastDeleteMessage(chat.id, messageId)
     }
+  }
+
+  const toggleReaction = async (messageId: string, emoji: string) => {
+    const result = await chatsAPI.toggleReaction(chat.id, messageId, emoji)
+    if (result.reactions) updateMessageReactions(chat.id, messageId, result.reactions)
   }
 
   const handleStartReply = (msg: Message) => {
@@ -567,6 +574,24 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                               {renderTextWithLinks(msg.content)}
                             </p>
                           )}
+                          {!!msg.reactions?.length && (
+                            <div className="mt-1.5 flex flex-wrap gap-1.5">
+                              {msg.reactions.map(reaction => (
+                                <button
+                                  key={`${msg.id}-${reaction.emoji}`}
+                                  className={cn(
+                                    'px-1.5 py-0.5 rounded-full text-[11px] border',
+                                    reaction.reactedByMe
+                                      ? 'border-[#5D6CF5]/70 bg-[#5D6CF5]/15'
+                                      : 'border-black/10 dark:border-white/20 bg-black/[0.04] dark:bg-white/[0.08]'
+                                  )}
+                                  onClick={() => toggleReaction(msg.id, reaction.emoji)}
+                                >
+                                  {reaction.emoji} {reaction.count}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                           <div className={cn(
                             'flex items-center gap-1 justify-end mt-1',
                             (msg as any).type === 'VIDEO_NOTE' && 'hidden'
@@ -635,16 +660,22 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
 
       {/* Input */}
       <div className="flex-shrink-0 min-w-0">
-        <MessageInput
-          chatId={chat.id}
-          members={chatMembers}
-          replyTo={replyToMessage ? { message: replyToMessage, text: replyToText } : null}
-          onCancelReply={() => setReplyToMessage(null)}
-          editingMessage={editingMessage}
-          editingText={editingText}
-          onCancelEdit={() => { setEditingMessage(null); setEditingText('') }}
-          onEditDone={() => { setEditingMessage(null); setEditingText('') }}
-        />
+        {isReadOnlyPersonalChannel ? (
+          <div className="px-4 py-3 text-sm text-black/55 dark:text-white/60 bg-black/[0.03] dark:bg-white/[0.05]">
+            Это личный канал. Публиковать может только создатель.
+          </div>
+        ) : (
+          <MessageInput
+            chatId={chat.id}
+            members={chatMembers}
+            replyTo={replyToMessage ? { message: replyToMessage, text: replyToText } : null}
+            onCancelReply={() => setReplyToMessage(null)}
+            editingMessage={editingMessage}
+            editingText={editingText}
+            onCancelEdit={() => { setEditingMessage(null); setEditingText('') }}
+            onEditDone={() => { setEditingMessage(null); setEditingText('') }}
+          />
+        )}
       </div>
 
       {/* Add Members Dialog */}
@@ -821,7 +852,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
         const isText = !(m as any).type || (m as any).type === 'TEXT'
         const menuW = 196
         const itemCount = 2 + (isText ? 1 : 0) + (menuIsOwn && isText ? 1 : 0) + 1 // +1 delete
-        const menuH = itemCount * 44 + 24
+        const menuH = itemCount * 44 + 64
         const vw = typeof window !== 'undefined' ? window.innerWidth : 400
         const vh = typeof window !== 'undefined' ? window.innerHeight : 800
         const rx = Math.min(contextMenu.x, vw - menuW - 8)
@@ -844,6 +875,20 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
               style={{ left: rx, top: ry, minWidth: menuW }}
               onClick={e => e.stopPropagation()}
             >
+              <div className="px-3 pb-1.5">
+                <div className="flex items-center gap-1">
+                  <Smile className="h-3.5 w-3.5 text-black/40 dark:text-white/45" />
+                  {baseReactions.map(emoji => (
+                    <button
+                      key={`${m.id}-${emoji}`}
+                      className="h-7 w-7 rounded-full hover:bg-black/[0.06] dark:hover:bg-white/[0.08] text-[14px]"
+                      onClick={() => { void toggleReaction(m.id, emoji); setContextMenu(null) }}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <button
                 className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] active:bg-black/[0.06] dark:active:bg-white/[0.08] transition-colors text-left"
                 onClick={() => { handleStartReply(m); setContextMenu(null) }}

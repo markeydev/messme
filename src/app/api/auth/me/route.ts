@@ -32,6 +32,8 @@ export async function GET(request: NextRequest) {
             username: true,
             email: true,
             avatarUrl: true,
+            bio: true,
+            linkedMessmeChannelId: true,
             isBadgeVerified: true,
             isAdmin: true,
             isBlocked: true,
@@ -61,6 +63,8 @@ export async function GET(request: NextRequest) {
         username: session.user.username,
         email: session.user.email,
         avatarUrl: session.user.avatarUrl ?? null,
+        bio: session.user.bio ?? null,
+        linkedMessmeChannelId: session.user.linkedMessmeChannelId ?? null,
         isBadgeVerified: session.user.isBadgeVerified,
         isAdmin: hasAdminAccess(session.user),
         isBlocked: session.user.isBlocked,
@@ -81,7 +85,7 @@ export async function PATCH(request: NextRequest) {
     if (!session) return NextResponse.json({ error: 'Не авторизован' }, { status: 401 })
 
     const body = await request.json()
-    const { username, avatarUrl } = body
+    const { username, avatarUrl, bio, linkedMessmeChannelId } = body
 
     if (username !== undefined) {
       if (typeof username !== 'string' || username.trim().length < 2) {
@@ -104,13 +108,37 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Аккаунт заблокирован' }, { status: 403 })
     }
 
+    let nextLinkedChannelId: string | null | undefined = undefined
+    if (linkedMessmeChannelId !== undefined) {
+      if (linkedMessmeChannelId === null || linkedMessmeChannelId === '') {
+        nextLinkedChannelId = null
+      } else if (typeof linkedMessmeChannelId === 'string') {
+        const ownChannel = await db.chat.findFirst({
+          where: {
+            id: linkedMessmeChannelId,
+            ownerId: session.userId,
+            isPersonalChannel: true,
+          },
+          select: { id: true },
+        })
+        if (!ownChannel) {
+          return NextResponse.json({ error: 'Можно привязать только свой личный канал' }, { status: 400 })
+        }
+        nextLinkedChannelId = ownChannel.id
+      } else {
+        return NextResponse.json({ error: 'Некорректный канал для привязки' }, { status: 400 })
+      }
+    }
+
     const updated = await db.user.update({
       where: { id: session.userId },
       data: {
         ...(username !== undefined ? { username: username.trim() } : {}),
         ...(avatarUrl !== undefined ? { avatarUrl: avatarUrl ?? null } : {}),
+        ...(bio !== undefined ? { bio: typeof bio === 'string' ? bio.trim().slice(0, 240) || null : null } : {}),
+        ...(nextLinkedChannelId !== undefined ? { linkedMessmeChannelId: nextLinkedChannelId } : {}),
       },
-      select: { id: true, username: true, email: true, avatarUrl: true, isBadgeVerified: true, isAdmin: true, isBlocked: true }
+      select: { id: true, username: true, email: true, avatarUrl: true, bio: true, linkedMessmeChannelId: true, isBadgeVerified: true, isAdmin: true, isBlocked: true }
     })
 
     return NextResponse.json({

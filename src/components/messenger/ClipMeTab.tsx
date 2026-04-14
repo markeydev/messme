@@ -66,7 +66,7 @@ const buildCommentsTree = (items: ClipMeComment[]) => {
 }
 
 export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
-  const { user, chats } = useMessengerStore()
+  const { user, chats, setActiveChat } = useMessengerStore()
   const [videos, setVideos] = useState<ClipMeVideo[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null)
@@ -87,7 +87,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
   const [activeChannelUserId, setActiveChannelUserId] = useState<string | null>(null)
   const [channelLoading, setChannelLoading] = useState(false)
   const [channelData, setChannelData] = useState<{
-    user?: { id: string; username: string; avatarUrl?: string | null; clipMeBio?: string | null; isBadgeVerified?: boolean }
+    user?: { id: string; username: string; avatarUrl?: string | null; clipMeBio?: string | null; linkedMessmeChannelId?: string | null; isBadgeVerified?: boolean }
     videos?: ClipMeVideo[]
     reposts?: ClipMeVideo[]
     followersCount?: number
@@ -917,6 +917,21 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
                     </div>
                   ) : (
                     <p className="text-sm text-white/85 whitespace-pre-wrap">{channelData.user.clipMeBio || 'Описание не добавлено'}</p>
+                  )}
+                  {!!channelData.user.linkedMessmeChannelId && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="bg-white/15 hover:bg-white/25 text-white"
+                      onClick={() => {
+                        const linked = chats.find(chat => chat.id === channelData.user?.linkedMessmeChannelId)
+                        if (!linked) return
+                        setActiveChat(linked)
+                        onClose?.()
+                      }}
+                    >
+                      Перейти в Messme канал
+                    </Button>
                   )}
 
                   <div className="mt-1 grid grid-cols-3 gap-2 text-center text-xs">

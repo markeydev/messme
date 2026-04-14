@@ -10,6 +10,7 @@ export interface User {
   email?: string
   avatarUrl?: string | null
   bio?: string | null
+  linkedMessmeChannelId?: string | null
   clipMeBio?: string | null
   isBadgeVerified?: boolean
   isAdmin?: boolean
@@ -20,6 +21,7 @@ export interface Chat {
   id: string
   title: string
   isGroup: boolean
+  isPersonalChannel?: boolean
   gameMode?: boolean
   avatarUrl?: string | null
   ownerId?: string | null
@@ -68,6 +70,7 @@ export interface Message {
   createdAt: string | Date
   // Client-only optimistic status (never persisted / sent to server)
   pendingStatus?: 'sending' | 'failed'
+  reactions?: Array<{ emoji: string; count: number; reactedByMe: boolean }>
 }
 
 export interface Story {
@@ -273,11 +276,12 @@ export const chatsAPI = {
     memberIds: string[],
     isGroup: boolean = false,
     title?: string,
-    gameMode: boolean = false
+    gameMode: boolean = false,
+    isPersonalChannel: boolean = false
   ): Promise<{ chat?: Chat & { memberIds: string[] }; isNew?: boolean; error?: string }> {
     const result = await fetchAPI<{ chat: Chat & { memberIds: string[] }; isNew: boolean }>('/chats/create', {
       method: 'POST',
-      body: JSON.stringify({ memberIds, isGroup, title, gameMode })
+      body: JSON.stringify({ memberIds, isGroup, title, gameMode, isPersonalChannel })
     })
 
     if (result.data) {
@@ -401,6 +405,18 @@ export const chatsAPI = {
     return { error: result.error }
   },
 
+  async toggleReaction(chatId: string, messageId: string, emoji: string): Promise<{ reactions?: Message['reactions']; error?: string }> {
+    const result = await fetchAPI<{ reactions: Message['reactions'] }>(
+      `/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/reactions`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ emoji }),
+      }
+    )
+    if (result.data) return { reactions: result.data.reactions }
+    return { error: result.error }
+  },
+
   async getMembers(chatId: string): Promise<{ members?: User[]; error?: string }> {
     const result = await fetchAPI<{ members: User[] }>(`/chats/${chatId}/members`)
     if (result.data) {
@@ -455,10 +471,16 @@ export const usersAPI = {
 }
 
 // Profile / Account API
-export const profileAPI = {  async updateProfile(username: string, avatarUrl?: string | null): Promise<{ user?: User; error?: string }> {
+export const profileAPI = {
+  async updateProfile(
+    username: string,
+    avatarUrl?: string | null,
+    bio?: string | null,
+    linkedMessmeChannelId?: string | null
+  ): Promise<{ user?: User; error?: string }> {
     const result = await fetchAPI<{ user: User }>('/auth/me', {
       method: 'PATCH',
-      body: JSON.stringify({ username, avatarUrl }),
+      body: JSON.stringify({ username, avatarUrl, bio, linkedMessmeChannelId }),
     })
     if (result.data) return { user: result.data.user }
     return { error: result.error }
@@ -788,7 +810,7 @@ export const clipMeAPI = {
     return { error: result.error }
   },
   async getUserChannel(userId: string): Promise<{
-    user?: Pick<User, 'id' | 'username' | 'avatarUrl' | 'clipMeBio' | 'isBadgeVerified'>
+    user?: Pick<User, 'id' | 'username' | 'avatarUrl' | 'clipMeBio' | 'linkedMessmeChannelId' | 'isBadgeVerified'>
     videos?: ClipMeVideo[]
     reposts?: ClipMeVideo[]
     followersCount?: number
@@ -797,7 +819,7 @@ export const clipMeAPI = {
     error?: string
   }> {
     const result = await fetchAPI<{
-      user: Pick<User, 'id' | 'username' | 'avatarUrl' | 'clipMeBio' | 'isBadgeVerified'>
+      user: Pick<User, 'id' | 'username' | 'avatarUrl' | 'clipMeBio' | 'linkedMessmeChannelId' | 'isBadgeVerified'>
       videos: ClipMeVideo[]
       reposts: ClipMeVideo[]
       followersCount: number
@@ -819,8 +841,8 @@ export const clipMeAPI = {
   async updateChannelBio(
     userId: string,
     clipMeBio: string
-  ): Promise<{ user?: Pick<User, 'id' | 'username' | 'avatarUrl' | 'clipMeBio' | 'isBadgeVerified'>; error?: string }> {
-    const result = await fetchAPI<{ user: Pick<User, 'id' | 'username' | 'avatarUrl' | 'clipMeBio' | 'isBadgeVerified'> }>(
+  ): Promise<{ user?: Pick<User, 'id' | 'username' | 'avatarUrl' | 'clipMeBio' | 'linkedMessmeChannelId' | 'isBadgeVerified'>; error?: string }> {
+    const result = await fetchAPI<{ user: Pick<User, 'id' | 'username' | 'avatarUrl' | 'clipMeBio' | 'linkedMessmeChannelId' | 'isBadgeVerified'> }>(
       `/clipme/users/${encodeURIComponent(userId)}`,
       {
         method: 'PATCH',

@@ -13,7 +13,7 @@ export async function GET(
 
     const user = await db.user.findUnique({
       where: { id: userId },
-      select: { id: true, username: true, avatarUrl: true, clipMeBio: true, isBadgeVerified: true },
+      select: { id: true, username: true, avatarUrl: true, clipMeBio: true, linkedMessmeChannelId: true, isBadgeVerified: true },
     })
     if (!user) return NextResponse.json({ error: 'Пользователь не найден' }, { status: 404 })
 
@@ -42,7 +42,7 @@ export async function GET(
       include: {
         video: {
           include: {
-            user: { select: { id: true, username: true, avatarUrl: true, clipMeBio: true, isBadgeVerified: true } },
+            user: { select: { id: true, username: true, avatarUrl: true, clipMeBio: true, linkedMessmeChannelId: true, isBadgeVerified: true } },
             likes: { where: { userId: session.userId }, select: { id: true } },
             reposts: { where: { userId: session.userId }, select: { id: true } },
             _count: { select: { likes: true, reposts: true, comments: true, views: true } },
@@ -123,7 +123,7 @@ export async function PATCH(
     const user = await db.user.update({
       where: { id: userId },
       data: { clipMeBio: clipMeBio.length > 0 ? clipMeBio : null },
-      select: { id: true, username: true, avatarUrl: true, clipMeBio: true, isBadgeVerified: true },
+      select: { id: true, username: true, avatarUrl: true, clipMeBio: true, linkedMessmeChannelId: true, isBadgeVerified: true },
     })
 
     return NextResponse.json({ user })

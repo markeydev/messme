@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { title, memberIds, isGroup, gameMode } = body
+    const { title, memberIds, isGroup, gameMode, isPersonalChannel } = body
 
     // Validation
     if (!memberIds || !Array.isArray(memberIds) || memberIds.length === 0) {
@@ -36,6 +36,11 @@ export async function POST(request: NextRequest) {
         { error: 'Необходимо выбрать хотя бы одного участника' },
         { status: 400 }
       )
+    }
+
+    const wantsPersonalChannel = !!isPersonalChannel
+    if (wantsPersonalChannel && !isGroup) {
+      return NextResponse.json({ error: 'Личный канал должен быть групповым' }, { status: 400 })
     }
 
     // Include the creator in members
@@ -101,7 +106,8 @@ export async function POST(request: NextRequest) {
         id: chatId,
         title: isGroup ? title : null,
         isGroup: isGroup || false,
-        gameMode: !!(isGroup && gameMode),
+        isPersonalChannel: isGroup ? wantsPersonalChannel : false,
+        gameMode: !!(isGroup && gameMode && !wantsPersonalChannel),
         ownerId: session.userId,
         members: {
           create: allMemberIds.map(userId => ({
@@ -169,6 +175,7 @@ export async function POST(request: NextRequest) {
         id: chat.id,
         title: chatTitle,
         isGroup: chat.isGroup,
+        isPersonalChannel: (chat as any).isPersonalChannel ?? false,
         gameMode: chat.gameMode,
         members: chat.members.map(m => ({
           id: m.user.id,

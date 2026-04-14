@@ -13,6 +13,8 @@ export async function GET(request: NextRequest) {
 
     const now = new Date()
     const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    const trendDays = 7
+    const trendStart = new Date(Date.now() - (trendDays - 1) * 24 * 60 * 60 * 1000)
 
     const [
       usersCount,
@@ -26,6 +28,10 @@ export async function GET(request: NextRequest) {
       newUsers24hCount,
       suspiciousAccounts,
       recentUsers,
+      recentMessages,
+      recentStories,
+      recentVideos,
+      recentRegistrations,
     ] = await Promise.all([
       db.user.count(),
       db.chat.count(),
@@ -72,6 +78,10 @@ export async function GET(request: NextRequest) {
           createdAt: true,
         },
       }),
+      db.message.findMany({ where: { createdAt: { gte: trendStart } }, select: { createdAt: true } }),
+      db.story.findMany({ where: { createdAt: { gte: trendStart } }, select: { createdAt: true } }),
+      db.clipMeVideo.findMany({ where: { createdAt: { gte: trendStart } }, select: { createdAt: true } }),
+      db.user.findMany({ where: { createdAt: { gte: trendStart } }, select: { createdAt: true } }),
     ])
 
     const normalizeUser = (u: {
@@ -89,6 +99,14 @@ export async function GET(request: NextRequest) {
       isAdmin: hasAdminAccess(u),
     })
 
+    const dayLabels = Array.from({ length: trendDays }, (_, idx) => {
+      const date = new Date(trendStart)
+      date.setDate(trendStart.getDate() + idx)
+      return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
+    })
+    const toLabel = (value: Date) => value.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
+    const countByDay = (items: Date[]) => dayLabels.map(label => items.filter(value => toLabel(value) === label).length)
+
     return NextResponse.json({
       stats: {
         usersCount,
@@ -100,7 +118,23 @@ export async function GET(request: NextRequest) {
         blockedUsersCount,
         badgeVerifiedCount,
         newUsers24hCount,
+        messme: {
+          chatsCount,
+          messagesCount,
+          storiesCount,
+          activeSessionsCount,
+        },
+        clipme: {
+          clipMeVideosCount,
+        },
       },
+      trends: dayLabels.map((label, idx) => ({
+        day: label,
+        users: countByDay(recentRegistrations.map(item => item.createdAt))[idx],
+        messages: countByDay(recentMessages.map(item => item.createdAt))[idx],
+        stories: countByDay(recentStories.map(item => item.createdAt))[idx],
+        clipmeVideos: countByDay(recentVideos.map(item => item.createdAt))[idx],
+      })),
       suspiciousAccounts: suspiciousAccounts.map(normalizeUser),
       users: recentUsers.map(normalizeUser),
     })
