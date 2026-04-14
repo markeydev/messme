@@ -326,9 +326,9 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
                       <p className="text-sm text-white/60">Загрузка профиля...</p>
                     ) : (
                       <>
-                          {profileDetails?.clipMeBio ? (
+                          {profileDetails?.clipMeBio && (
                             <p className="text-sm text-white/80 text-center whitespace-pre-wrap">{profileDetails.clipMeBio}</p>
-                          ) : null}
+                          )}
                         {profileDetails?.linkedMessmeChannelId && (
                           <Button
                             variant="secondary"

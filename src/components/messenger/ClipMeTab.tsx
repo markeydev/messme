@@ -637,7 +637,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
                 key={video.id}
                 ref={node => { videoRefs.current[video.id] = node }}
                 data-video-id={video.id}
-                className="relative h-full min-h-full snap-start bg-black"
+                className="relative h-full snap-start bg-black"
               >
                 <CustomVideoPlayer
                   src={video.videoUrl}
@@ -870,7 +870,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
                       </Button>
                     </div>
                   ) : (
-                    channelData.user.clipMeBio ? <p className="text-sm text-white/85 whitespace-pre-wrap">{channelData.user.clipMeBio}</p> : null
+                    channelData.user.clipMeBio && <p className="text-sm text-white/85 whitespace-pre-wrap">{channelData.user.clipMeBio}</p>
                   )}
                   {!!channelData.user.linkedMessmeChannelId && (
                     <Button
@@ -938,7 +938,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
                       >
                         <video src={video.videoUrl} className="h-full w-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" muted playsInline preload="metadata" />
                         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2 text-left">
-                          {video.description ? <p className="text-[11px] text-white/90 line-clamp-2">{video.description}</p> : null}
+                          {video.description && <p className="text-[11px] text-white/90 line-clamp-2">{video.description}</p>}
                           <p className="mt-1 text-[10px] text-white/80 inline-flex items-center gap-1" aria-label={`Просмотры: ${video.viewsCount}`}><Eye className="h-3 w-3" /> {video.viewsCount}</p>
                         </div>
                       </button>

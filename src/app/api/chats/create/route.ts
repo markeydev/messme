@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     // Validation
     const providedMemberIds = Array.isArray(memberIds) ? memberIds : []
     const wantsPersonalChannel = !!isPersonalChannel
-    if (!wantsPersonalChannel && (!memberIds || !Array.isArray(memberIds) || memberIds.length === 0)) {
+    if (!wantsPersonalChannel && providedMemberIds.length === 0) {
       return NextResponse.json(
         { error: 'Необходимо выбрать хотя бы одного участника' },
         { status: 400 }
