@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { clipMeAPI, chatsAPI, type ClipMeComment, type ClipMePrivacy, type ClipMeVideo } from '@/lib/api'
 import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
-import { Heart, MessageCircle, Repeat2, Plus, Send, Loader2, X, Eye, ChevronLeft } from 'lucide-react'
+import { Heart, MessageCircle, Repeat2, Plus, Send, Loader2, X, Eye, ChevronLeft, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
@@ -68,6 +68,7 @@ const buildCommentsTree = (items: ClipMeComment[]) => {
 export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
   const { user, chats, setActiveChat } = useMessengerStore()
   const [videos, setVideos] = useState<ClipMeVideo[]>([])
+  const [clipSearchQuery, setClipSearchQuery] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null)
 
@@ -85,6 +86,8 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
   const [shareVideo, setShareVideo] = useState<ClipMeVideo | null>(null)
 
   const [activeChannelUserId, setActiveChannelUserId] = useState<string | null>(null)
+  const [channelOverlayVideo, setChannelOverlayVideo] = useState<ClipMeVideo | null>(null)
+  const [channelAvatarLightbox, setChannelAvatarLightbox] = useState<string | null>(null)
   const [channelLoading, setChannelLoading] = useState(false)
   const [channelData, setChannelData] = useState<{
     user?: { id: string; username: string; avatarUrl?: string | null; clipMeBio?: string | null; linkedMessmeChannelId?: string | null; isBadgeVerified?: boolean }
@@ -119,6 +122,14 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
   const deepLinkResolvedRef = useRef(false)
 
   const messmeChats = useMemo(() => chats.filter(c => !c.gameMode), [chats])
+  const filteredFeedVideos = useMemo(() => {
+    const q = clipSearchQuery.trim().toLowerCase()
+    if (!q) return videos
+    return videos.filter(video =>
+      video.user.username.toLowerCase().includes(q)
+      || (video.description ?? '').toLowerCase().includes(q)
+    )
+  }, [videos, clipSearchQuery])
   const channelTotalViews = useMemo(
     () => (channelData?.videos ?? []).reduce((sum, video) => sum + (video.viewsCount ?? 0), 0),
     [channelData?.videos]
@@ -173,16 +184,16 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
 
   useEffect(() => {
     if (!initialVideoId) return
-    if (!videos.length) return
-    const exists = videos.some(video => video.id === initialVideoId)
+    if (!filteredFeedVideos.length) return
+    const exists = filteredFeedVideos.some(video => video.id === initialVideoId)
     if (!exists) return
     setActiveVideoId(initialVideoId)
     const node = videoRefs.current[initialVideoId]
     if (node) node.scrollIntoView({ block: 'start' })
-  }, [initialVideoId, videos])
+  }, [initialVideoId, filteredFeedVideos])
 
   useEffect(() => {
-    if (!videos.length) return
+    if (!filteredFeedVideos.length) return
     const observer = new IntersectionObserver(
       entries => {
         const visibleEntries = entries
@@ -208,13 +219,23 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
       { root: feedRef.current, threshold: 0.65 }
     )
 
-    videos.forEach(video => {
+    filteredFeedVideos.forEach(video => {
       const node = videoRefs.current[video.id]
       if (node) observer.observe(node)
     })
 
     return () => observer.disconnect()
-  }, [videos])
+  }, [filteredFeedVideos])
+
+  useEffect(() => {
+    if (!filteredFeedVideos.length) {
+      setActiveVideoId(null)
+      return
+    }
+    if (!activeVideoId || !filteredFeedVideos.some(video => video.id === activeVideoId)) {
+      setActiveVideoId(filteredFeedVideos[0]?.id ?? null)
+    }
+  }, [filteredFeedVideos, activeVideoId])
 
   useEffect(() => {
     if (pendingViewTimerRef.current) clearTimeout(pendingViewTimerRef.current)
@@ -274,15 +295,6 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
         videos: prev.videos.map(v => v.id === video.id ? { ...v, likedByMe: result.liked, likesCount: result.likesCount } : v),
       }
     })
-    if (result.liked) {
-      window.dispatchEvent(new CustomEvent('messme:notify', {
-        detail: {
-          title: 'ClipMe',
-          message: 'Вы поставили лайк ролику',
-          type: 'social',
-        }
-      }))
-    }
   }
 
   const toggleRepost = async (video: ClipMeVideo) => {
@@ -296,15 +308,6 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
         videos: prev.videos.map(v => v.id === video.id ? { ...v, repostedByMe: result.reposted!, repostsCount: result.repostsCount! } : v),
       }
     })
-    if (result.reposted) {
-      window.dispatchEvent(new CustomEvent('messme:notify', {
-        detail: {
-          title: 'ClipMe',
-          message: 'Вы сделали репост ролика',
-          type: 'social',
-        }
-      }))
-    }
   }
 
   const openComments = async (videoId: string) => {
@@ -360,13 +363,6 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
         videos: prev.videos.map(v => v.id === videoId ? { ...v, commentsCount: result.commentsCount ?? v.commentsCount + 1 } : v),
       }
     })
-    window.dispatchEvent(new CustomEvent('messme:notify', {
-      detail: {
-        title: 'ClipMe',
-        message: 'Ваш комментарий добавлен',
-        type: 'social',
-      }
-    }))
   }
 
   const toggleCommentLike = async (videoId: string, commentId: string) => {
@@ -434,6 +430,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
 
   const closeChannel = () => {
     setActiveChannelUserId(null)
+    setChannelOverlayVideo(null)
     setFeedPausedForOverlay(false)
     const previousActive = previousActiveVideoIdRef.current
     if (previousActive) {
@@ -444,14 +441,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
   }
 
   const openVideoFromChannel = (video: ClipMeVideo) => {
-    setVideos(prev => prev.some(item => item.id === video.id) ? prev : [video, ...prev])
-    setActiveChannelUserId(null)
-    setFeedPausedForOverlay(false)
-    setActiveVideoId(video.id)
-    requestAnimationFrame(() => {
-      const node = videoRefs.current[video.id]
-      if (node) node.scrollIntoView({ block: 'start' })
-    })
+    setChannelOverlayVideo(video)
   }
 
   const applySubscribeResult = (authorId: string, subscribed: boolean, followersCount?: number) => {
@@ -623,13 +613,22 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
               <ChevronLeft className="h-5 w-5" />
             </button>
           )}
+          <div className="h-9 rounded-full bg-black/55 px-3 inline-flex items-center gap-2 max-w-[180px]">
+            <Search className="h-3.5 w-3.5 text-white/70" />
+            <input
+              value={clipSearchQuery}
+              onChange={e => setClipSearchQuery(e.target.value)}
+              placeholder="Поиск"
+              className="w-full bg-transparent text-xs text-white placeholder:text-white/60 outline-none"
+            />
+          </div>
         </div>
 
         <div ref={feedRef} className="flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory scroll-smooth">
           {isLoading && <div className="h-full flex items-center justify-center text-sm text-white/70">Загрузка ленты...</div>}
-          {!isLoading && videos.length === 0 && <div className="h-full flex items-center justify-center text-sm text-white/70">Пока нет видео.</div>}
+          {!isLoading && filteredFeedVideos.length === 0 && <div className="h-full flex items-center justify-center text-sm text-white/70">{clipSearchQuery.trim() ? 'Ничего не найдено' : 'Пока нет видео.'}</div>}
 
-          {videos.map(video => {
+          {filteredFeedVideos.map(video => {
             const authorSubKey = video.user.id
             const isSubscribed = subscribedByAuthor[authorSubKey] ?? false
             const isActive = activeVideoId === video.id
@@ -638,7 +637,9 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
                 key={video.id}
                 ref={node => { videoRefs.current[video.id] = node }}
                 data-video-id={video.id}
-                className="relative h-dvh min-h-dvh snap-start bg-black"
+                className="relative snap-start bg-black"
+                // Prefer dvh; minHeight keeps a 100vh fallback only in browsers that don't understand dvh.
+                style={{ height: '100dvh', minHeight: '100vh' }}
               >
                 <CustomVideoPlayer
                   src={video.videoUrl}
@@ -824,7 +825,12 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
                 <div className="rounded-2xl bg-white/10 p-3.5 space-y-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
-                      <Avatar className="h-14 w-14">
+                      <Avatar
+                        className={cn('h-14 w-14', channelData.user.avatarUrl && 'cursor-zoom-in')}
+                        onClick={() => {
+                          if (channelData.user.avatarUrl) setChannelAvatarLightbox(channelData.user.avatarUrl)
+                        }}
+                      >
                         {channelData.user.avatarUrl && <AvatarImage src={channelData.user.avatarUrl} />}
                         <AvatarFallback className="bg-[#5d6cf5] text-white text-sm font-semibold">{channelData.user.username.slice(0, 2).toUpperCase()}</AvatarFallback>
                       </Avatar>
@@ -866,7 +872,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
                       </Button>
                     </div>
                   ) : (
-                    <p className="text-sm text-white/85 whitespace-pre-wrap">{channelData.user.clipMeBio || 'Описание не добавлено'}</p>
+                    channelData.user.clipMeBio && <p className="text-sm text-white/85 whitespace-pre-wrap">{channelData.user.clipMeBio}</p>
                   )}
                   {!!channelData.user.linkedMessmeChannelId && (
                     <Button
@@ -934,7 +940,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
                       >
                         <video src={video.videoUrl} className="h-full w-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" muted playsInline preload="metadata" />
                         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2 text-left">
-                          <p className="text-[11px] text-white/90 line-clamp-2">{video.description || 'Без описания'}</p>
+                          {video.description && <p className="text-[11px] text-white/90 line-clamp-2">{video.description}</p>}
                           <p className="mt-1 text-[10px] text-white/80 inline-flex items-center gap-1" aria-label={`Просмотры: ${video.viewsCount}`}><Eye className="h-3 w-3" /> {video.viewsCount}</p>
                         </div>
                       </button>
@@ -943,6 +949,43 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
                 )}
               </div>
             )}
+            <Dialog open={!!channelOverlayVideo} onOpenChange={open => { if (!open) setChannelOverlayVideo(null) }}>
+              <DialogContent showCloseButton={false} className="max-w-3xl w-[96vw] h-[92vh] bg-black border-black p-0 overflow-hidden">
+                {channelOverlayVideo && (
+                  <div className="relative h-full">
+                    <button
+                      onClick={() => setChannelOverlayVideo(null)}
+                      className="absolute right-3 top-3 z-20 h-8 w-8 rounded-full bg-black/45 hover:bg-black/60 flex items-center justify-center"
+                    >
+                      <X className="h-4 w-4 text-white" />
+                    </button>
+                    <CustomVideoPlayer
+                      src={channelOverlayVideo.videoUrl}
+                      className="h-full w-full"
+                      autoPlay
+                      loop
+                      fit="contain"
+                    />
+                    {channelOverlayVideo.description ? (
+                      <div className="absolute left-3 right-3 bottom-3 z-10 rounded-xl bg-black/55 px-3 py-2 text-sm text-white/90">
+                        {channelOverlayVideo.description}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
+            <Dialog open={!!channelAvatarLightbox} onOpenChange={open => { if (!open) setChannelAvatarLightbox(null) }}>
+              <DialogContent className="bg-black/90 border-0 max-w-3xl p-2 flex items-center justify-center">
+                {channelAvatarLightbox && (
+                  <img
+                    src={channelAvatarLightbox}
+                    alt="Полный размер аватарки канала"
+                    className="max-w-full max-h-[85vh] object-contain rounded-lg"
+                  />
+                )}
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
       )}

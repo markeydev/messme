@@ -14,7 +14,7 @@ import {
   ArrowLeft, Hash, Volume2, Plus, Trash2, Send, Loader2,
   Mic, MicOff, PhoneOff, Gamepad2, X, Pencil, Check,
   Headphones, EarOff, UserPlus, Camera, LogOut, Video, VideoOff,
-  ScreenShare, ScreenShareOff, Monitor, PanelLeft, Reply, AtSign, MoreVertical, MessageCircle,
+  ScreenShare, ScreenShareOff, Monitor, PanelLeft, AtSign, MoreVertical, MessageCircle,
 } from 'lucide-react'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -75,7 +75,6 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   // ── Text messages ─────────────────────────────────────────────────────────
   const [messages, setMessages] = useState<ChannelMessage[]>([])
   const [draft, setDraft] = useState('')
-  const [replyToMessage, setReplyToMessage] = useState<ChannelMessage | null>(null)
   const [mentionsOpen, setMentionsOpen] = useState(false)
   const [mentionQuery, setMentionQuery] = useState('')
   const [isSending, setIsSending] = useState(false)
@@ -804,7 +803,6 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     if (!draft.trim() || !activeChannel || activeChannel.type !== 'TEXT' || !user) return
     const content = draft.trim()
     setDraft('')
-    setReplyToMessage(null)
     setMentionsOpen(false)
     const tmpId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2)}`
     const optimistic: ChannelMessage = {
@@ -813,19 +811,12 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       senderId: user.id,
       senderUsername: user.username,
       content,
-      replyToId: replyToMessage?.id ?? null,
-      replyTo: replyToMessage ? {
-        id: replyToMessage.id,
-        senderId: replyToMessage.senderId,
-        senderUsername: replyToMessage.senderUsername,
-        content: replyToMessage.content,
-      } : null,
       createdAt: new Date().toISOString(),
     }
     setMessages(prev => [...prev, optimistic])
     setIsSending(true)
     try {
-      const r = await channelsAPI.sendMessage(chat.id, activeChannel.id, content, replyToMessage?.id)
+      const r = await channelsAPI.sendMessage(chat.id, activeChannel.id, content)
       if (r.message) {
         setMessages(prev => prev.map(m => m.id === tmpId ? r.message! : m))
         messengerSocket.broadcastChannelMessage(activeChannel.id, r.message)
@@ -1643,13 +1634,6 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                     {/* Hover actions */}
                     {editingId !== msg.id && !msg.id.startsWith('tmp_') && (
                       <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 absolute right-0 top-0 transition-opacity">
-                        <button
-                          onClick={() => setReplyToMessage(msg)}
-                          className="h-6 w-6 flex items-center justify-center rounded bg-[#1a1b26] hover:bg-white/10 text-white/40 hover:text-white/80 transition-colors"
-                          title="Ответить"
-                        >
-                          <Reply className="h-3 w-3" />
-                        </button>
                         {isMine && (
                           <>
                         <button
@@ -1683,12 +1667,6 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                 style={{ left: ctxMenu.x, top: ctxMenu.y }}
                 onClick={e => e.stopPropagation()}
               >
-                <button
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-white/70 hover:bg-white/[0.08] hover:text-white transition-colors"
-                  onClick={() => { setReplyToMessage(ctxMenu.msg); setCtxMenu(null) }}
-                >
-                  <Reply className="h-3.5 w-3.5" /> Ответить
-                </button>
                 <button
                   className={cn(
                     'w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors',
@@ -1739,17 +1717,6 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
 
             {/* Input */}
             <div className="flex-shrink-0 px-4 pb-4 pt-2">
-              {replyToMessage && (
-                <div className="mb-2 flex items-center justify-between gap-2 bg-white/[0.06] border border-white/[0.1] rounded-xl px-3 py-2">
-                  <div className="min-w-0">
-                    <p className="text-[11px] text-[#8b97ff] truncate">Ответ: {replyToMessage.senderUsername}</p>
-                    <p className="text-[11px] text-white/50 truncate">{replyToMessage.content}</p>
-                  </div>
-                  <button className="text-white/40 hover:text-white/80" onClick={() => setReplyToMessage(null)}>
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              )}
               <div className="flex items-center gap-2 bg-white/[0.07] rounded-xl px-3 h-12 border border-white/[0.08]">
                 <Input
                   value={draft}

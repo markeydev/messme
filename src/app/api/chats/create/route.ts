@@ -31,20 +31,21 @@ export async function POST(request: NextRequest) {
     const { title, memberIds, isGroup, gameMode, isPersonalChannel } = body
 
     // Validation
-    if (!memberIds || !Array.isArray(memberIds) || memberIds.length === 0) {
+    const providedMemberIds = Array.isArray(memberIds) ? memberIds : []
+    const wantsPersonalChannel = !!isPersonalChannel
+    if (!wantsPersonalChannel && providedMemberIds.length === 0) {
       return NextResponse.json(
         { error: 'Необходимо выбрать хотя бы одного участника' },
         { status: 400 }
       )
     }
 
-    const wantsPersonalChannel = !!isPersonalChannel
     if (wantsPersonalChannel && !isGroup) {
       return NextResponse.json({ error: 'Личный канал должен быть групповым' }, { status: 400 })
     }
 
     // Include the creator in members
-    const allMemberIds = [...new Set([session.userId, ...memberIds])]
+    const allMemberIds = [...new Set([session.userId, ...providedMemberIds])]
 
     // For 1-on-1 chat, check if chat already exists
     if (!isGroup && allMemberIds.length === 2) {
@@ -178,6 +179,8 @@ export async function POST(request: NextRequest) {
         isGroup: chat.isGroup,
         isPersonalChannel: (chat as any).isPersonalChannel ?? false,
         gameMode: chat.gameMode,
+        ownerId: (chat as any).ownerId ?? null,
+        avatarUrl: (chat as any).avatarUrl ?? null,
         members: chat.members.map(m => ({
           id: m.user.id,
           username: m.user.username,

@@ -57,6 +57,7 @@ export default function AdminPanelPage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [trends, setTrends] = useState<TrendPoint[]>([])
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null)
 
   const loadPanel = useCallback(async () => {
     if (!token) {
@@ -119,13 +120,36 @@ export default function AdminPanelPage() {
     void loadPanel()
   }
 
+  const deleteUser = async (userId: string) => {
+    if (deletingUserId) return
+    const ok = typeof window === 'undefined' ? true : window.confirm('Удалить профиль пользователя без возможности восстановления?')
+    if (!ok) return
+    setDeletingUserId(userId)
+    const response = await fetch(`/api/admin/panel/users/${encodeURIComponent(userId)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      setError(data.error ?? 'Ошибка удаления профиля')
+      setDeletingUserId(null)
+      return
+    }
+    setUsers(prev => prev.filter(user => user.id !== userId))
+    setSuspiciousAccounts(prev => prev.filter(user => user.id !== userId))
+    setDeletingUserId(null)
+    void loadPanel()
+  }
+
   if (loading) return <div className="min-h-screen bg-[#0f1014] text-white p-6">Загрузка панели…</div>
   if (error) return <div className="min-h-screen bg-[#0f1014] text-red-300 p-6">{error}</div>
   if (!stats) return <div className="min-h-screen bg-[#0f1014] text-white p-6">Нет данных</div>
 
   return (
     <main className="min-h-screen bg-[#0f1014] text-white p-6 md:p-8">
-      <h1 className="text-2xl font-bold mb-6">Messme Admin Panel</h1>
+      <h1 className="text-2xl font-bold mb-2">Messme Admin Panel</h1>
+      <p className="text-sm text-white/60 mb-6">Модерация, верификация, блокировки и удаление профилей.</p>
 
       <section className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-8">
         <StatCard title="Пользователи" value={stats.usersCount} />
@@ -195,12 +219,12 @@ export default function AdminPanelPage() {
 
       <section className="mb-8">
         <h2 className="text-lg font-semibold mb-3">Подозрительные аккаунты</h2>
-        <UsersTable users={suspiciousAccounts} onBlock={setBlocked} onVerify={setBadgeVerified} />
+        <UsersTable users={suspiciousAccounts} onBlock={setBlocked} onVerify={setBadgeVerified} onDelete={deleteUser} deletingUserId={deletingUserId} />
       </section>
 
       <section>
         <h2 className="text-lg font-semibold mb-3">Пользователи</h2>
-        <UsersTable users={users} onBlock={setBlocked} onVerify={setBadgeVerified} />
+        <UsersTable users={users} onBlock={setBlocked} onVerify={setBadgeVerified} onDelete={deleteUser} deletingUserId={deletingUserId} />
       </section>
     </main>
   )
@@ -219,10 +243,14 @@ function UsersTable({
   users,
   onBlock,
   onVerify,
+  onDelete,
+  deletingUserId,
 }: {
   users: AdminUser[]
   onBlock: (userId: string, blocked: boolean) => void
   onVerify: (userId: string, verified: boolean) => void
+  onDelete: (userId: string) => void
+  deletingUserId: string | null
 }) {
   if (!users.length) {
     return <div className="rounded-xl bg-white/[0.04] border border-white/[0.08] p-4 text-white/60">Пусто</div>
@@ -268,6 +296,13 @@ function UsersTable({
                       className={user.isBlocked ? 'px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500' : 'px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-500'}
                     >
                       {user.isBlocked ? 'Разблокировать' : 'Заблокировать'}
+                    </button>
+                    <button
+                      onClick={() => onDelete(user.id)}
+                      disabled={deletingUserId === user.id}
+                      className="px-2.5 py-1 rounded-lg bg-rose-700 hover:bg-rose-600 disabled:opacity-60"
+                    >
+                      {deletingUserId === user.id ? 'Удаление…' : 'Удалить профиль'}
                     </button>
                   </div>
                 </td>

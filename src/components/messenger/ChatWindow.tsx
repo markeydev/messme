@@ -68,6 +68,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
   const { user, addMessage, deleteMessage, chats, mutedChats, toggleMuteChat, removeChat, setActiveChat, prependMessages, updateChatMembers, updateMessageReactions } = useMessengerStore()
   const baseReactions = REACTION_EMOJIS
   const isReadOnlyPersonalChannel = !!chat.isPersonalChannel && chat.ownerId !== user?.id
+  const canManageChannelMembers = !!chat.isGroup && (!chat.isPersonalChannel || chat.ownerId === user?.id)
 
   // Infinite scroll state
   const [isLoadingMore, setIsLoadingMore] = useState(false)
@@ -407,7 +408,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
             </div>
           )}
         </div>
-        {chat.isGroup && (
+        {canManageChannelMembers && (
           <Button variant="ghost" size="icon" onClick={() => setIsAddMemberOpen(true)}
               className="h-8 w-8 text-black/40 dark:text-white/40 hover:text-black/80 dark:hover:text-white/80 hover:bg-black/[0.05] dark:hover:bg-white/[0.08] rounded-lg">
             <UserPlus className="h-4 w-4" />
@@ -718,9 +719,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
       {/* Input */}
       <div className="flex-shrink-0 min-w-0">
         {isReadOnlyPersonalChannel ? (
-          <div className="px-4 py-3 text-sm text-black/55 dark:text-white/60 bg-black/[0.03] dark:bg-white/[0.05]">
-            Это личный канал. Публиковать может только создатель.
-          </div>
+          <div className="px-4 py-3 bg-black/[0.03] dark:bg-white/[0.05]" />
         ) : (
           <MessageInput
             chatId={chat.id}
@@ -858,7 +857,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
 
             <div className="flex flex-col items-center gap-5 px-4 py-8">
               {/* Avatar */}
-              <Avatar className="h-24 w-24">
+              <Avatar className={cn('h-24 w-24', avatarUrl && 'cursor-zoom-in')} onClick={() => avatarUrl && setLightboxUrl(avatarUrl)}>
                 {avatarUrl && <AvatarImage src={avatarUrl} alt={displayName} className="object-cover" />}
                 <AvatarFallback className="bg-[#5d6cf5] text-white text-2xl font-bold">
                   {initials}
@@ -907,8 +906,9 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
         const m = contextMenu.msg
         const menuIsOwn = m.senderId === user?.id
         const isText = !(m as any).type || (m as any).type === 'TEXT'
+        const canReplyToMessages = !chat.isPersonalChannel
         const menuW = 196
-        const itemCount = 2 + (isText ? 1 : 0) + (menuIsOwn && isText ? 1 : 0) + 1 // +1 delete
+        const itemCount = (canReplyToMessages ? 1 : 0) + 1 + (isText ? 1 : 0) + (menuIsOwn && isText ? 1 : 0) + 1 // +1 delete
         const menuH = itemCount * CHAT_MESSAGE_CONTEXT_MENU_ITEM_HEIGHT + CHAT_MESSAGE_CONTEXT_REACTIONS_MENU_EXTRA_HEIGHT
         const vw = typeof window !== 'undefined' ? window.innerWidth : 400
         const vh = typeof window !== 'undefined' ? window.innerHeight : 800
@@ -947,13 +947,15 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                   ))}
                 </div>
               </div>
-              <button
-                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] active:bg-black/[0.06] dark:active:bg-white/[0.08] transition-colors text-left"
-                onClick={() => { handleStartReply(m); setContextMenu(null) }}
-              >
-                <Reply className="h-4 w-4 text-black/40 dark:text-white/40 flex-shrink-0" />
-                <span className="text-black dark:text-white text-sm">Ответить</span>
-              </button>
+              {canReplyToMessages && (
+                <button
+                  className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] active:bg-black/[0.06] dark:active:bg-white/[0.08] transition-colors text-left"
+                  onClick={() => { handleStartReply(m); setContextMenu(null) }}
+                >
+                  <Reply className="h-4 w-4 text-black/40 dark:text-white/40 flex-shrink-0" />
+                  <span className="text-black dark:text-white text-sm">Ответить</span>
+                </button>
+              )}
               <button
                 className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] active:bg-black/[0.06] dark:active:bg-white/[0.08] transition-colors text-left"
                 onClick={() => { setForwardMessage(m); setIsForwardOpen(true); setContextMenu(null) }}

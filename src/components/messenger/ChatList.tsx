@@ -361,7 +361,9 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
   }
 
   const handleCreateChat = async () => {
-    if (selectedUsers.length === 0) return
+    if (selectedUsers.length === 0 && !isGroupMode) return
+    if (isGroupMode && !groupTitle.trim()) return
+    if (isGroupMode && !isPersonalChannel && selectedUsers.length === 0) return
     setIsLoading(true)
     const result = await chatsAPI.create(
       selectedUsers.map(u => u.id),
@@ -471,7 +473,8 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
     <div className="flex flex-col flex-1 min-h-0 bg-white dark:bg-[#111112]">
       {/* Header */}
       <div className="px-4 pt-5 pb-3 flex items-center justify-between flex-shrink-0">
-        <h1 className="text-[22px] font-bold text-black dark:text-white tracking-[-0.5px]">
+        <h1 className="text-[22px] font-bold text-black dark:text-white tracking-[-0.5px] inline-flex items-center gap-2">
+          {activeTab === 'clipme' && <Film className="h-5 w-5 text-[#5d6cf5]" />}
           {activeTab === 'chats' ? 'Чаты' : activeTab === 'search' ? 'Поиск' : activeTab === 'clipme' ? 'ClipMe' : 'Профиль'}
         </h1>
         {activeTab === 'chats' && (
@@ -856,9 +859,11 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
             )}
           </div>
 
-          {selectedUsers.length > 0 && (
+          {(selectedUsers.length > 0 || (isGroupMode && isPersonalChannel && groupTitle.trim().length > 0)) && (
             <div className="pt-3 pb-[128px] md:pb-3 flex-shrink-0">
-              <Button onClick={handleCreateChat} disabled={isLoading}
+              <Button
+                onClick={handleCreateChat}
+                disabled={isLoading || (isGroupMode && !groupTitle.trim()) || (!isGroupMode && selectedUsers.length === 0) || (isGroupMode && !isPersonalChannel && selectedUsers.length === 0)}
                 className="w-full bg-[#152cff] hover:bg-[#1124e0] h-10 rounded-xl text-white font-medium">
                 {isLoading ? 'Создание...' : `Создать ${isGroupMode ? 'группу' : 'чат'}`}
               </Button>

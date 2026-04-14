@@ -9,6 +9,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Loader2, Camera, X, Check, ArrowLeft, Users, LogOut, UserMinus } from 'lucide-react'
 import { chatsAPI, profileAPI, type Chat } from '@/lib/api'
 import { useMessengerStore } from '@/lib/store'
@@ -42,9 +43,11 @@ export function GroupSettingsDialog({ chat, open, onOpenChange, members, current
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
   const [kickTarget, setKickTarget] = useState<{ id: string; username: string } | null>(null)
   const [isKicking, setIsKicking] = useState(false)
+  const [avatarLightboxUrl, setAvatarLightboxUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const isOwner = currentUserId === chat.ownerId
+  const isRestrictedPersonalChannel = !!chat.isPersonalChannel && !isOwner
 
   const handleClose = () => {
     if (avatarPreview) URL.revokeObjectURL(avatarPreview)
@@ -161,18 +164,26 @@ export function GroupSettingsDialog({ chat, open, onOpenChange, members, current
         <div className="flex flex-col items-center gap-5 px-4 py-6">
           {/* Avatar */}
           <div className="relative">
-            <Avatar className="h-24 w-24 cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+            <Avatar
+              className={cn('h-24 w-24', currentAvatar && 'cursor-zoom-in', !isRestrictedPersonalChannel && 'cursor-pointer')}
+              onClick={() => {
+                if (!isRestrictedPersonalChannel) fileInputRef.current?.click()
+                else if (currentAvatar) setAvatarLightboxUrl(currentAvatar)
+              }}
+            >
               {currentAvatar && <AvatarImage src={currentAvatar} className="object-cover" />}
               <AvatarFallback className="bg-[#5d6cf5] text-white text-2xl font-bold">
                 <Users className="h-10 w-10" />
               </AvatarFallback>
             </Avatar>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="absolute bottom-0 right-0 h-8 w-8 rounded-full bg-[#5d6cf5] flex items-center justify-center shadow-[0px_6px_20px_0px_rgba(93,108,245,0.35)] transition-colors hover:bg-[#4a5be0]"
-            >
-              <Camera className="h-4 w-4 text-white" />
-            </button>
+            {!isRestrictedPersonalChannel && (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="absolute bottom-0 right-0 h-8 w-8 rounded-full bg-[#5d6cf5] flex items-center justify-center shadow-[0px_6px_20px_0px_rgba(93,108,245,0.35)] transition-colors hover:bg-[#4a5be0]"
+              >
+                <Camera className="h-4 w-4 text-white" />
+              </button>
+            )}
             {avatarPreview && (
               <button
                 onClick={clearAvatar}
@@ -182,6 +193,15 @@ export function GroupSettingsDialog({ chat, open, onOpenChange, members, current
               </button>
             )}
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+            {currentAvatar && (
+              <button
+                onClick={() => setAvatarLightboxUrl(currentAvatar)}
+                className="absolute top-0 left-0 h-6 w-6 rounded-full bg-black/30 hover:bg-black/40 flex items-center justify-center text-white text-[11px]"
+                title="Открыть фото"
+              >
+                ↗
+              </button>
+            )}
           </div>
 
           {/* Title */}
@@ -191,6 +211,7 @@ export function GroupSettingsDialog({ chat, open, onOpenChange, members, current
               value={title}
               onChange={e => setTitle(e.target.value)}
               placeholder="Введите название"
+              disabled={isRestrictedPersonalChannel}
               className="bg-black/[0.05] dark:bg-white/[0.07] border-0 text-black dark:text-white placeholder:text-black/30 dark:placeholder:text-white/30 rounded-xl h-11 text-[15px]"
               onKeyDown={e => { if (e.key === 'Enter') handleSave() }}
             />
@@ -200,7 +221,7 @@ export function GroupSettingsDialog({ chat, open, onOpenChange, members, current
 
           <Button
             onClick={handleSave}
-            disabled={isSaving || !title.trim()}
+            disabled={isRestrictedPersonalChannel || isSaving || !title.trim()}
             className="w-full bg-[#5d6cf5] hover:bg-[#4a5be0] h-11 rounded-xl text-white font-semibold text-[15px] shadow-[0px_6px_20px_0px_rgba(93,108,245,0.25)]"
           >
             {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Check className="h-4 w-4 mr-1.5" />Сохранить</>}
@@ -209,42 +230,48 @@ export function GroupSettingsDialog({ chat, open, onOpenChange, members, current
           {/* Members list */}
           <div className="w-full space-y-1.5">
             <label className="text-xs text-black/40 dark:text-white/40 font-semibold uppercase tracking-wider px-1">
-              Участники · {members.length}
+              {chat.isPersonalChannel ? 'Подписчики' : 'Участники'} · {members.length}
             </label>
-            <div className="bg-black/[0.03] dark:bg-white/[0.05] rounded-2xl overflow-hidden">
-              {members.map((member, i) => (
-                <div
-                  key={member.id}
-                  className={cn(
-                    'flex items-center gap-3 px-4 py-3 group',
-                    i < members.length - 1 && 'border-b border-black/[0.04] dark:border-white/[0.04]'
-                  )}
-                >
-                  <Avatar className="h-9 w-9 flex-shrink-0">
-                    {member.avatarUrl && <AvatarImage src={member.avatarUrl} alt={member.username} />}
-                    <AvatarFallback className="bg-[#5d6cf5] text-white text-xs font-medium">
-                      {getInitials(member.username)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="text-[15px] text-black dark:text-white flex-1">{member.username}</span>
-                  {member.id === chat.ownerId && (
-                    <span className="text-xs text-[#5d6cf5] font-medium">Создатель</span>
-                  )}
-                  {member.id === currentUserId && member.id !== chat.ownerId && (
-                    <span className="text-xs text-black/30 dark:text-white/30">Вы</span>
-                  )}
-                  {isOwner && member.id !== currentUserId && member.id !== chat.ownerId && (
-                    <button
-                      onClick={() => setKickTarget({ id: member.id, username: member.username })}
-                      className="opacity-0 group-hover:opacity-100 h-7 w-7 flex items-center justify-center rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all"
-                      title="Исключить"
-                    >
-                      <UserMinus className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
+            {isRestrictedPersonalChannel ? (
+              <div className="bg-black/[0.03] dark:bg-white/[0.05] rounded-2xl px-4 py-3 text-sm text-black/60 dark:text-white/60">
+                Подписчиков: {members.length}
+              </div>
+            ) : (
+              <div className="bg-black/[0.03] dark:bg-white/[0.05] rounded-2xl overflow-hidden">
+                {members.map((member, i) => (
+                  <div
+                    key={member.id}
+                    className={cn(
+                      'flex items-center gap-3 px-4 py-3 group',
+                      i < members.length - 1 && 'border-b border-black/[0.04] dark:border-white/[0.04]'
+                    )}
+                  >
+                    <Avatar className="h-9 w-9 flex-shrink-0">
+                      {member.avatarUrl && <AvatarImage src={member.avatarUrl} alt={member.username} />}
+                      <AvatarFallback className="bg-[#5d6cf5] text-white text-xs font-medium">
+                        {getInitials(member.username)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="text-[15px] text-black dark:text-white flex-1">{member.username}</span>
+                    {member.id === chat.ownerId && (
+                      <span className="text-xs text-[#5d6cf5] font-medium">Создатель</span>
+                    )}
+                    {member.id === currentUserId && member.id !== chat.ownerId && (
+                      <span className="text-xs text-black/30 dark:text-white/30">Вы</span>
+                    )}
+                    {isOwner && member.id !== currentUserId && member.id !== chat.ownerId && (
+                      <button
+                        onClick={() => setKickTarget({ id: member.id, username: member.username })}
+                        className="opacity-0 group-hover:opacity-100 h-7 w-7 flex items-center justify-center rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all"
+                        title="Исключить"
+                      >
+                        <UserMinus className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Leave group */}
@@ -306,6 +333,17 @@ export function GroupSettingsDialog({ chat, open, onOpenChange, members, current
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <Dialog open={!!avatarLightboxUrl} onOpenChange={open => { if (!open) setAvatarLightboxUrl(null) }}>
+        <DialogContent className="bg-black/90 border-0 max-w-3xl p-2 flex items-center justify-center">
+          {avatarLightboxUrl && (
+            <img
+              src={avatarLightboxUrl}
+              alt="Полный размер аватарки"
+              className="max-w-full max-h-[85vh] object-contain rounded-lg"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
