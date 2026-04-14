@@ -624,7 +624,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
           </div>
         </div>
 
-        <div ref={feedRef} className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain snap-y snap-mandatory scroll-smooth">
+        <div ref={feedRef} className="flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory scroll-smooth">
           {isLoading && <div className="h-full flex items-center justify-center text-sm text-white/70">Загрузка ленты...</div>}
           {!isLoading && filteredFeedVideos.length === 0 && <div className="h-full flex items-center justify-center text-sm text-white/70">{clipSearchQuery.trim() ? 'Ничего не найдено' : 'Пока нет видео.'}</div>}
 
@@ -637,7 +637,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
                 key={video.id}
                 ref={node => { videoRefs.current[video.id] = node }}
                 data-video-id={video.id}
-                className="relative h-full snap-start bg-black"
+                className="relative h-[100svh] min-h-[100svh] snap-start bg-black"
               >
                 <CustomVideoPlayer
                   src={video.videoUrl}
