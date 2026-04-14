@@ -852,6 +852,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
         const isText = !(m as any).type || (m as any).type === 'TEXT'
         const menuW = 196
         const itemCount = 2 + (isText ? 1 : 0) + (menuIsOwn && isText ? 1 : 0) + 1 // +1 delete
+        // Extra vertical room includes reaction-row height above action items.
         const menuH = itemCount * 44 + 64
         const vw = typeof window !== 'undefined' ? window.innerWidth : 400
         const vh = typeof window !== 'undefined' ? window.innerHeight : 800

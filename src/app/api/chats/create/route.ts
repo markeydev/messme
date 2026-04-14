@@ -107,6 +107,7 @@ export async function POST(request: NextRequest) {
         title: isGroup ? title : null,
         isGroup: isGroup || false,
         isPersonalChannel: isGroup ? wantsPersonalChannel : false,
+        // Personal channels are read-only for non-owners and intentionally cannot be game-mode rooms.
         gameMode: !!(isGroup && gameMode && !wantsPersonalChannel),
         ownerId: session.userId,
         members: {
