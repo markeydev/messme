@@ -637,8 +637,8 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
                 key={video.id}
                 ref={node => { videoRefs.current[video.id] = node }}
                 data-video-id={video.id}
-                className="relative h-screen min-h-screen snap-start bg-black"
-                style={{ height: '100dvh', minHeight: '100dvh' }}
+                className="relative snap-start bg-black"
+                style={{ height: '100dvh', minHeight: '100vh' }}
               >
                 <CustomVideoPlayer
                   src={video.videoUrl}

@@ -200,6 +200,7 @@ export async function GET(
       )
     }
 
+    // In personal channels, non-owners can only see aggregate subscriber count, not member identities.
     if ((chat as any).isPersonalChannel && chat.ownerId !== session.userId) {
       return NextResponse.json({
         members: [],
