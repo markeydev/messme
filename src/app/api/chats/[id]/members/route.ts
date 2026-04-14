@@ -60,6 +60,13 @@ export async function POST(
       )
     }
 
+    if ((chat as any).isPersonalChannel && chat.ownerId !== session.userId) {
+      return NextResponse.json(
+        { error: 'Только владелец канала может добавлять участников' },
+        { status: 403 }
+      )
+    }
+
     const body = await request.json()
     const { userIds } = body
 
@@ -175,6 +182,29 @@ export async function GET(
         { error: 'Чат не найден' },
         { status: 404 }
       )
+    }
+
+    const membership = await db.chatMember.findUnique({
+      where: {
+        chatId_userId: {
+          chatId,
+          userId: session.userId
+        }
+      }
+    })
+
+    if (!membership) {
+      return NextResponse.json(
+        { error: 'Нет доступа к этому чату' },
+        { status: 403 }
+      )
+    }
+
+    if ((chat as any).isPersonalChannel && chat.ownerId !== session.userId) {
+      return NextResponse.json({
+        members: [],
+        subscribersCount: chat.members.length
+      })
     }
 
     return NextResponse.json({

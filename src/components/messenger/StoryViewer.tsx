@@ -28,6 +28,7 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
   const [activeIndex, setActiveIndex] = useState(0)
   const [showViewers, setShowViewers] = useState(false)
   const [showProfileCard, setShowProfileCard] = useState(false)
+  const [profileAvatarLightbox, setProfileAvatarLightbox] = useState<string | null>(null)
   const [profileDetails, setProfileDetails] = useState<{ clipMeBio?: string | null; linkedMessmeChannelId?: string | null } | null>(null)
   const [profileLoading, setProfileLoading] = useState(false)
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
@@ -95,15 +96,6 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
     if (!activeStory || isOwner) return
     const result = await storiesAPI.toggleLike(activeStory.id)
     if (result.error) return
-    if (result.liked) {
-      window.dispatchEvent(new CustomEvent('messme:notify', {
-        detail: {
-          title: 'Сторис',
-          message: 'Вы поставили лайк сторис',
-          type: 'social',
-        }
-      }))
-    }
     setStories(prev => prev.map(s => s.id === activeStory.id
       ? {
           ...s,
@@ -274,11 +266,7 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
                     <Eye className="h-3.5 w-3.5" />
                     <span>Просмотры: {activeStory.viewsCount}</span>
                   </button>
-                  {!!activeStory.likes?.length && (
-                    <p className="text-[11px] text-white/70 line-clamp-2">
-                      Лайкнули: {activeStory.likes.map(v => v.username).join(', ')}
-                    </p>
-                  )}
+                  {!!activeStory.likes?.length && <p className="text-[11px] text-white/70">❤️ {activeStory.likes.length}</p>}
                 </div>
               )}
             </div>
@@ -322,7 +310,12 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
                 <>
                   <DialogTitle>Профиль</DialogTitle>
                   <div className="flex flex-col items-center gap-3 py-1">
-                    <Avatar className="h-20 w-20 border border-white/20">
+                    <Avatar
+                      className={cn('h-20 w-20 border border-white/20', activeStory.user.avatarUrl && 'cursor-zoom-in')}
+                      onClick={() => {
+                        if (activeStory.user.avatarUrl) setProfileAvatarLightbox(activeStory.user.avatarUrl)
+                      }}
+                    >
                       {activeStory.user.avatarUrl && <AvatarImage src={activeStory.user.avatarUrl} alt={activeStory.user.username} />}
                       <AvatarFallback className="bg-[#5d6cf5] text-white text-lg font-semibold">
                         {getInitials(activeStory.user.username)}
@@ -333,9 +326,9 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
                       <p className="text-sm text-white/60">Загрузка профиля...</p>
                     ) : (
                       <>
-                        <p className="text-sm text-white/80 text-center whitespace-pre-wrap">
-                          {profileDetails?.clipMeBio || 'Описание не добавлено'}
-                        </p>
+                          {profileDetails?.clipMeBio ? (
+                            <p className="text-sm text-white/80 text-center whitespace-pre-wrap">{profileDetails.clipMeBio}</p>
+                          ) : null}
                         {profileDetails?.linkedMessmeChannelId && (
                           <Button
                             variant="secondary"
@@ -363,6 +356,17 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
                     )}
                   </div>
                 </>
+              )}
+            </DialogContent>
+          </Dialog>
+          <Dialog open={!!profileAvatarLightbox} onOpenChange={open => { if (!open) setProfileAvatarLightbox(null) }}>
+            <DialogContent className="bg-black/90 border-0 max-w-3xl p-2 flex items-center justify-center">
+              {profileAvatarLightbox && (
+                <img
+                  src={profileAvatarLightbox}
+                  alt="Полный размер аватарки"
+                  className="max-w-full max-h-[85vh] object-contain rounded-lg"
+                />
               )}
             </DialogContent>
           </Dialog>
