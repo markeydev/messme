@@ -29,16 +29,24 @@ export function usePushNotifications(isAuthenticated = false, notificationsEnabl
           if (existing) {
             const token = getAuthToken()
             const endpoint = existing.endpoint
-            await existing.unsubscribe()
+            try {
+              await existing.unsubscribe()
+            } catch (err) {
+              console.error('Push unsubscribe browser error:', err)
+            }
             if (token && endpoint) {
-              await fetch('/api/push/subscribe', {
-                method: 'DELETE',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${token}`,
-                },
-                body: JSON.stringify({ endpoint }),
-              })
+              try {
+                await fetch('/api/push/subscribe', {
+                  method: 'DELETE',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                  },
+                  body: JSON.stringify({ endpoint }),
+                })
+              } catch (err) {
+                console.error('Push unsubscribe API error:', err)
+              }
             }
           }
           return

@@ -329,7 +329,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
     ? messages.reduce<Date | null>((latest, msg) => {
       if (msg.senderId !== peerUserId) return latest
       const createdAt = new Date(msg.createdAt)
-      if (!Number.isFinite(createdAt.getTime())) return latest
+      if (isNaN(createdAt.getTime())) return latest
       if (!latest || createdAt > latest) return createdAt
       return latest
     }, null)
