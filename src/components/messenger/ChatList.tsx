@@ -1003,26 +1003,40 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
               <AccordionItem value="notifications" className="border-black/10 dark:border-white/10">
                 <AccordionTrigger className="text-black dark:text-white">Уведомления</AccordionTrigger>
                 <AccordionContent>
-                  <div className="w-full flex items-center justify-between bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 h-14">
-                    <div className="flex items-center gap-3">
-                      {notificationsEnabled
-                        ? <Bell className="h-5 w-5 text-black/50 dark:text-white/50" />
-                        : <BellOff className="h-5 w-5 text-black/30 dark:text-white/30" />
-                      }
-                      <div>
-                        <p className="text-[15px] font-medium text-black dark:text-white">Уведомления</p>
-                        <p className="text-xs text-black/40 dark:text-white/40">{notificationsEnabled ? 'Включены' : 'Отключены'}</p>
+                  <div className="space-y-2.5">
+                    <div className="w-full flex items-center justify-between bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 h-14">
+                      <div className="flex items-center gap-3">
+                        {notificationsEnabled
+                          ? <Bell className="h-5 w-5 text-black/50 dark:text-white/50" />
+                          : <BellOff className="h-5 w-5 text-black/30 dark:text-white/30" />
+                        }
+                        <div>
+                          <p className="text-[15px] font-medium text-black dark:text-white">Уведомления</p>
+                          <p className="text-xs text-black/40 dark:text-white/40">{notificationsEnabled ? 'Включены' : 'Отключены'}</p>
+                        </div>
                       </div>
+                      <button
+                        onClick={() => setNotificationsEnabled(!notificationsEnabled)}
+                        className={cn(
+                          'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none',
+                          notificationsEnabled ? 'bg-[#5d6cf5]' : 'bg-black/[0.15] dark:bg-white/[0.15]'
+                        )}
+                      >
+                        <span className={cn('inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform', notificationsEnabled ? 'translate-x-6' : 'translate-x-1')} />
+                      </button>
                     </div>
-                    <button
+
+                    <Button
                       onClick={() => setNotificationsEnabled(!notificationsEnabled)}
                       className={cn(
-                        'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none',
-                        notificationsEnabled ? 'bg-[#5d6cf5]' : 'bg-black/[0.15] dark:bg-white/[0.15]'
+                        'w-full h-10 rounded-xl',
+                        notificationsEnabled
+                          ? 'bg-red-500/15 text-red-600 dark:text-red-300 hover:bg-red-500/25'
+                          : 'bg-[#5d6cf5] text-white hover:bg-[#4a5be0]'
                       )}
                     >
-                      <span className={cn('inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform', notificationsEnabled ? 'translate-x-6' : 'translate-x-1')} />
-                    </button>
+                      {notificationsEnabled ? 'Выключить уведомления' : 'Включить уведомления'}
+                    </Button>
                   </div>
                 </AccordionContent>
               </AccordionItem>

@@ -125,10 +125,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
   const filteredFeedVideos = useMemo(() => {
     const q = clipSearchQuery.trim().toLowerCase()
     if (!q) return videos
-    return videos.filter(video =>
-      video.user.username.toLowerCase().includes(q)
-      || (video.description ?? '').toLowerCase().includes(q)
-    )
+    return videos.filter(video => video.user.username.toLowerCase().includes(q))
   }, [videos, clipSearchQuery])
   const channelTotalViews = useMemo(
     () => (channelData?.videos ?? []).reduce((sum, video) => sum + (video.viewsCount ?? 0), 0),
@@ -618,7 +615,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
             <input
               value={clipSearchQuery}
               onChange={e => setClipSearchQuery(e.target.value)}
-              placeholder="Поиск"
+              placeholder="Поиск каналов"
               className="w-full bg-transparent text-xs text-white placeholder:text-white/60 outline-none"
             />
           </div>

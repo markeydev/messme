@@ -14,7 +14,7 @@ function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
   return output.buffer as ArrayBuffer
 }
 
-export function usePushNotifications(isAuthenticated = false) {
+export function usePushNotifications(isAuthenticated = false, notificationsEnabled = true) {
   useEffect(() => {
     if (!isAuthenticated) return
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
@@ -23,11 +23,33 @@ export function usePushNotifications(isAuthenticated = false) {
     const setup = async () => {
       try {
         const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' })
+        const existing = await registration.pushManager.getSubscription()
+
+        if (!notificationsEnabled) {
+          if (existing) {
+            const token = getAuthToken()
+            const endpoint = existing.endpoint
+            await existing.unsubscribe()
+            if (token && endpoint) {
+              await fetch('/api/push/subscribe', {
+                method: 'DELETE',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`,
+                },
+                body: JSON.stringify({ endpoint }),
+              })
+            }
+          }
+          return
+        }
+
+        const currentPermission = Notification.permission
+        if (currentPermission === 'denied') return
 
         const permission = await Notification.requestPermission()
         if (permission !== 'granted') return
 
-        const existing = await registration.pushManager.getSubscription()
         const subscription = existing ?? await registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!),
@@ -49,5 +71,5 @@ export function usePushNotifications(isAuthenticated = false) {
     }
 
     setup()
-  }, [isAuthenticated])
+  }, [isAuthenticated, notificationsEnabled])
 }

@@ -30,7 +30,7 @@ export default function MessengerPage() {
     user, isAuthenticated, activeChat, activeChatId, messages,
     setUser, setToken, setAuthenticated, logout, setActiveChat,
     setMessages, setChats, addChat, addMessage, deleteMessage, updateMessage,
-    incrementUnread, clearUnread, updateChat, darkMode, unreadCounts
+    incrementUnread, clearUnread, updateChat, darkMode, unreadCounts, notificationsEnabled
   } = useMessengerStore()
 
   const [isConnected, setIsConnected] = useState(false)
@@ -55,7 +55,7 @@ export default function MessengerPage() {
     withVideo: boolean; incomingOffer: RTCSessionDescriptionInit
   } | null>(null)
 
-  usePushNotifications(isAuthenticated)
+  usePushNotifications(isAuthenticated, notificationsEnabled)
 
   const addActivityNotification = useCallback((title: string, message: string) => {
     const item: ActivityNotification = {
