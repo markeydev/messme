@@ -17,7 +17,7 @@ import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
 import { chatsAPI, usersAPI, storiesAPI, type Chat, type Message, type StoryFeedItem, type User } from '@/lib/api'
 import { CHAT_MESSAGE_CONTEXT_MENU_ITEM_HEIGHT, CHAT_MESSAGE_CONTEXT_REACTIONS_MENU_EXTRA_HEIGHT, REACTION_EMOJIS } from '@/lib/product-config'
-import { ArrowDown, ArrowLeft, Users, Loader2, UserPlus, Check, X, Reply, Forward, Trash2, Pencil, FileText, Download, ZoomIn, Copy, Bell, BellOff, Phone, Clock, AlertCircle, ShieldCheck, Smile } from 'lucide-react'
+import { ArrowDown, ArrowLeft, Users, Loader2, UserPlus, Check, X, Reply, Forward, Trash2, Pencil, FileText, Download, ZoomIn, Copy, Bell, BellOff, Phone, Clock, AlertCircle, ShieldCheck, Smile, Circle } from 'lucide-react'
 import { cn, openExternalUrl } from '@/lib/utils'
 
 interface ChatWindowProps {
@@ -316,6 +316,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
     groups[key].push(msg)
     return groups
   }, {} as Record<string, Message[]>)
+  const peerSeenAt = peerLastSeenAt ? new Date(peerLastSeenAt) : null
 
   useEffect(() => {
     if (chat.isGroup || !peerUserId) {
@@ -328,7 +329,6 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
       if (data.chatId !== chat.id) return
       const online = data.users.some(item => item.id === peerUserId && item.isOnline)
       setIsPeerOnline(online)
-      if (!online && !peerLastSeenAt) setPeerLastSeenAt(new Date().toISOString())
     }
     const handleOffline = (data: { chatId: string; userId: string; timestamp: string }) => {
       if (data.chatId !== chat.id || data.userId !== peerUserId) return
@@ -401,9 +401,10 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
             )}
           </div>
           {!chat.isGroup && (
-            <p className={cn('text-xs', isPeerOnline ? 'text-[#0ed221]' : 'text-black/35 dark:text-white/35')}>
-              {isPeerOnline ? 'в сети' : formatLastSeen(peerLastSeenAt)}
-            </p>
+            <div className={cn('text-xs inline-flex items-center gap-1.5', isPeerOnline ? 'text-[#0ed221]' : 'text-black/35 dark:text-white/35')}>
+              <Circle className={cn('h-2.5 w-2.5', isPeerOnline && 'fill-current')} />
+              <span>{isPeerOnline ? 'в сети' : formatLastSeen(peerLastSeenAt)}</span>
+            </div>
           )}
           <div className="flex items-center gap-1 text-black/30 dark:text-white/30 text-[11px]">
             <ShieldCheck className="h-2.5 w-2.5" />
@@ -490,11 +491,10 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                 const alignOwnRight = isOwn && !isChannelLayout
                 const sender = getSender(msg.senderId)
                 const prevMsg = msgs[i - 1]
-                const showAvatar = isChannelLayout ? true : (!prevMsg || prevMsg.senderId !== msg.senderId)
+                const showAvatar = isChannelLayout || (!prevMsg || prevMsg.senderId !== msg.senderId)
                 const showName = (chat.isGroup || isChannelLayout) && showAvatar
                 const msgCreatedAt = new Date(msg.createdAt)
-                const peerSeenAt = peerLastSeenAt ? new Date(peerLastSeenAt) : null
-                const isReadByPeer = !chat.isGroup && isOwn && ((isPeerOnline) || (!!peerSeenAt && msgCreatedAt <= peerSeenAt))
+                const isReadByPeer = !chat.isGroup && isOwn && (!!peerSeenAt && msgCreatedAt <= peerSeenAt)
 
                 return (
                   <div key={msg.id} className="animate-in fade-in slide-in-from-bottom-2 duration-150">

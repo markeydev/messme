@@ -23,6 +23,7 @@ interface ActivityNotification {
   message: string
   createdAt: string
 }
+const MAX_ACTIVITY_NOTIFICATIONS = 200
 
 export default function MessengerPage() {
   const {
@@ -43,6 +44,7 @@ export default function MessengerPage() {
   const dragOffsetRef = useRef<{ dx: number; dy: number } | null>(null)
   const [notificationCenterOpen, setNotificationCenterOpen] = useState(false)
   const [activityNotifications, setActivityNotifications] = useState<ActivityNotification[]>([])
+  const notificationsCount = activityNotifications.length
   // Incoming call state
   const [incomingCall, setIncomingCall] = useState<{
     chatId: string; callerId: string; callerName: string
@@ -62,7 +64,7 @@ export default function MessengerPage() {
       message,
       createdAt: new Date().toISOString(),
     }
-    setActivityNotifications(prev => [item, ...prev].slice(0, 200))
+    setActivityNotifications(prev => [item, ...prev].slice(0, MAX_ACTIVITY_NOTIFICATIONS))
   }, [])
 
   useEffect(() => {
@@ -380,15 +382,15 @@ export default function MessengerPage() {
             title="Уведомления"
           >
             <Bell className="h-5 w-5 text-black/70 dark:text-white/80" />
-            {activityNotifications.length > 0 && (
+            {notificationsCount > 0 && (
               <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#5d6cf5] px-1 text-[10px] font-bold text-white leading-none">
-                {activityNotifications.length > 99 ? '99+' : activityNotifications.length}
+                {notificationsCount > 99 ? '99+' : notificationsCount}
               </span>
             )}
           </button>
 
           {notificationCenterOpen && (
-            <div className="fixed right-4 top-18 z-40 w-[min(360px,calc(100vw-2rem))] max-h-[60vh] overflow-hidden rounded-2xl border border-black/[0.08] dark:border-white/[0.12] bg-white/95 dark:bg-[#1a1a1d]/95 backdrop-blur shadow-2xl">
+            <div className="fixed right-4 top-[72px] z-40 w-[min(360px,calc(100vw-2rem))] max-h-[60vh] overflow-hidden rounded-2xl border border-black/[0.08] dark:border-white/[0.12] bg-white/95 dark:bg-[#1a1a1d]/95 backdrop-blur shadow-2xl">
               <div className="h-11 px-3 flex items-center justify-between border-b border-black/[0.06] dark:border-white/[0.08]">
                 <p className="text-sm font-semibold text-black dark:text-white">Уведомления</p>
                 <button

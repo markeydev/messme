@@ -137,7 +137,8 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
         linkedMessmeChannelId: result.user?.linkedMessmeChannelId ?? null,
       })
       setProfileLoading(false)
-    }).catch(() => {
+    }).catch(error => {
+      console.error('Story profile load error:', error)
       if (cancelled) return
       setProfileLoading(false)
     })
@@ -339,7 +340,9 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
                           <Button
                             variant="secondary"
                             onClick={() => {
-                              onOpenLinkedChannel?.(profileDetails.linkedMessmeChannelId!)
+                              if (profileDetails.linkedMessmeChannelId) {
+                                onOpenLinkedChannel?.(profileDetails.linkedMessmeChannelId)
+                              }
                               setShowProfileCard(false)
                               onOpenChange(false)
                             }}
