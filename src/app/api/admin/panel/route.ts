@@ -100,11 +100,9 @@ export async function GET(request: NextRequest) {
       isAdmin: hasAdminAccess(u),
     })
 
-    const dayLabels = Array.from({ length: trendDays }, (_, idx) => {
-      const date = new Date(trendStart)
-      date.setDate(trendStart.getDate() + idx)
-      return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
-    })
+    const dayLabels = Array.from({ length: trendDays }, (_, idx) =>
+      new Date(trendStart.getTime() + idx * 24 * 60 * 60 * 1000).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
+    )
     const toLabel = (value: Date) => value.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
     const countByDay = (items: Date[]) => dayLabels.map(label => items.filter(value => toLabel(value) === label).length)
 
