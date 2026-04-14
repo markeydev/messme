@@ -66,6 +66,7 @@ export async function GET(
                 id: true,
                 username: true,
                 avatarUrl: true,
+                isBadgeVerified: true,
               }
             }
           }
@@ -148,6 +149,7 @@ export async function GET(
           id: m.user.id,
           username: m.user.username,
           avatarUrl: (m.user as any).avatarUrl ?? null,
+          isBadgeVerified: (m.user as any).isBadgeVerified ?? false,
         })),
         messages: mappedMessages,
         hasMore: chat.messages.length === 100,

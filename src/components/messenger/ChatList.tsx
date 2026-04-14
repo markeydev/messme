@@ -11,12 +11,13 @@ import { messengerSocket } from '@/lib/socket'
 import { STORY_MAX_VIDEO_DURATION_SECONDS } from '@/lib/stories'
 import { StoryViewer } from '@/components/messenger/StoryViewer'
 import { ClipMeTab } from '@/components/messenger/ClipMeTab'
+import { VerifiedBadge } from '@/components/messenger/VerifiedBadge'
 import { Slider } from '@/components/ui/slider'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { PenSquare, Search, MessageSquare, Users, Check, X, BellOff, UserRound, Camera, Bell, Loader2, LogOut, Sun, Moon, Gamepad2, Trash2, Plus, Mic, Volume2, VolumeX, Film, Headphones } from 'lucide-react'
+import { PenSquare, Search, MessageSquare, Users, Check, X, BellOff, UserRound, Camera, Bell, Loader2, LogOut, Sun, Moon, Gamepad2, Trash2, Plus, Mic, Volume2, VolumeX, Film, Headphones, Bot } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const STORY_IMAGE_TARGET_BYTES = 380 * 1024
@@ -135,6 +136,24 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
   const messmeChatsCount = chats.filter(chat => !chat.gameMode).length
   const playmeChatsCount = chats.filter(chat => !!chat.gameMode).length
   const storiesByUser = new Map(storyFeed.map(item => [item.user.id, item]))
+  const isAdminUser = Boolean(user?.isAdmin)
+  const adminbotChat: Chat = {
+    id: 'adminbot',
+    title: 'adminbot',
+    isGroup: false,
+    members: [
+      { id: 'adminbot', username: 'adminbot', avatarUrl: null, isBadgeVerified: true },
+      ...(user ? [{ id: user.id, username: user.username, avatarUrl: user.avatarUrl ?? null, isBadgeVerified: user.isBadgeVerified }] : []),
+    ],
+    lastMessage: {
+      id: 'adminbot-system',
+      content: 'Сгенерируйте ссылку на админ-панель',
+      createdAt: new Date().toISOString(),
+      senderId: 'adminbot',
+      type: 'TEXT',
+      fileName: null,
+    },
+  }
 
   const refreshStories = async () => {
     setIsStoriesLoading(true)
@@ -523,8 +542,33 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
               </div>
             ) : (
               <div className="px-2 pb-[128px] md:pb-2">
+                {isAdminUser && (
+                  <button
+                    onClick={() => onSelectChat?.(adminbotChat)}
+                    className={cn(
+                      'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 text-left mb-1.5',
+                      activeChatId === 'adminbot'
+                        ? 'bg-[#152cff]/[0.08] dark:bg-[#5d6cf5]/[0.15]'
+                        : 'hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+                    )}
+                  >
+                    <div className="h-12 w-12 rounded-full bg-[#5d6cf5]/15 text-[#5d6cf5] flex items-center justify-center flex-shrink-0">
+                      <Bot className="h-6 w-6" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold truncate text-[14px] text-black dark:text-white">adminbot</span>
+                        <VerifiedBadge />
+                      </div>
+                      <div className="text-[13px] text-black/50 dark:text-white/50 truncate leading-snug">
+                        Сгенерируйте ссылку на админ-панель
+                      </div>
+                    </div>
+                  </button>
+                )}
                 {filteredChats.map(chat => {
                   const peerUserId = !chat.isGroup ? chat.members.find(m => m.id !== user?.id)?.id ?? null : null
+                  const peer = !chat.isGroup ? chat.members.find(m => m.id !== user?.id) : null
                   const chatStory = peerUserId ? storiesByUser.get(peerUserId) : null
                   const hasStory = !!chatStory
                   return (
@@ -582,6 +626,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                         <span className="font-semibold truncate text-[14px] text-black dark:text-white">
                           {chat.title}
                         </span>
+                        {peer?.isBadgeVerified && <VerifiedBadge className="flex-shrink-0" />}
                         {chat.lastMessage?.createdAt && (
                           <span className={cn('text-[11px] flex-shrink-0',
                             (unreadCounts[chat.id] ?? 0) > 0 ? 'text-[#152cff]' : 'text-black/40 dark:text-white/40')}>
@@ -708,6 +753,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                       </AvatarFallback>
                     </Avatar>
                     <span className="text-sm flex-1 text-left text-black dark:text-white">{u.username}</span>
+                    {u.isBadgeVerified && <VerifiedBadge className="flex-shrink-0" />}
                     {selectedUsers.some(x => x.id === u.id) && (
                       <Check className="h-4 w-4 text-[#152cff]" />
                     )}
@@ -800,7 +846,10 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
               <div className="w-full space-y-1.5">
                 <label className="text-xs text-black/40 dark:text-white/40 font-semibold uppercase tracking-wider px-1">Email</label>
                 <div className="bg-black/[0.05] dark:bg-white/[0.07] rounded-xl h-11 flex items-center px-3">
-                  <span className="text-[15px] text-black/50 dark:text-white/50">{user.email}</span>
+                  <span className="text-[15px] text-black/50 dark:text-white/50 flex items-center gap-1.5">
+                    {user.email}
+                    {user.isBadgeVerified && <VerifiedBadge />}
+                  </span>
                 </div>
               </div>
             )}

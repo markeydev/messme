@@ -10,6 +10,9 @@ export interface User {
   email?: string
   avatarUrl?: string | null
   clipMeBio?: string | null
+  isBadgeVerified?: boolean
+  isAdmin?: boolean
+  isBlocked?: boolean
 }
 
 export interface Chat {
@@ -23,6 +26,7 @@ export interface Chat {
     id: string
     username: string
     avatarUrl?: string | null
+    isBadgeVerified?: boolean
   }>
   lastMessage?: {
     id: string
@@ -242,6 +246,16 @@ export const authAPI = {
     }
     return { error: result.error, status: result.status }
   }
+}
+
+export const adminbotAPI = {
+  async generatePanelLink(): Promise<{ url?: string; expiresAt?: string; error?: string }> {
+    const result = await fetchAPI<{ url: string; expiresAt: string }>('/adminbot/generate-panel-link', {
+      method: 'POST',
+    })
+    if (result.data) return { url: result.data.url, expiresAt: result.data.expiresAt }
+    return { error: result.error }
+  },
 }
 
 // Chats API

@@ -12,6 +12,7 @@ import { VideoNote } from './VideoNote'
 import { GroupSettingsDialog } from './GroupSettingsDialog'
 import { CallWindow } from './CallWindow'
 import { StoryViewer } from './StoryViewer'
+import { VerifiedBadge } from './VerifiedBadge'
 import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
 import { chatsAPI, usersAPI, storiesAPI, type Chat, type Message, type StoryFeedItem, type User } from '@/lib/api'
@@ -101,6 +102,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
   // Reflect store updates for group title/avatar/members
   const currentChat = chats.find(c => c.id === chat.id) ?? chat
   const peerUserId = !chat.isGroup ? currentChat.members.find(m => m.id !== user?.id)?.id ?? null : null
+  const peerMember = !chat.isGroup ? currentChat.members.find(m => m.id !== user?.id) : null
 
   useEffect(() => {
     if (chat.isGroup || !peerUserId) {
@@ -340,6 +342,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="font-semibold text-black dark:text-white text-sm truncate">{currentChat.title}</h3>
+            {peerMember?.isBadgeVerified && <VerifiedBadge className="flex-shrink-0" />}
             {chat.isGroup && (
               <span className="text-xs text-black/30 dark:text-white/30">{chatMembers.length} участников</span>
             )}
@@ -492,7 +495,10 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                             </div>
                           )}
                           {showName && (
-                            <p className="text-[11px] text-[#5D6CF5] font-semibold mb-1">{sender?.username}</p>
+                            <p className="text-[11px] text-[#5D6CF5] font-semibold mb-1 inline-flex items-center gap-1">
+                              {sender?.username}
+                              {sender?.isBadgeVerified && <VerifiedBadge className="h-3 w-3 min-h-3 min-w-3" />}
+                            </p>
                           )}
                           {/* Audio message */}
                           {(msg as any).type === 'AUDIO' && (msg as any).audioUrl ? (

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { hasAdminAccess } from '@/lib/admin'
 
 async function getSession(request: NextRequest) {
   const token = request.headers.get('Authorization')?.replace('Bearer ', '')
@@ -31,6 +32,9 @@ export async function GET(request: NextRequest) {
             username: true,
             email: true,
             avatarUrl: true,
+            isBadgeVerified: true,
+            isAdmin: true,
+            isBlocked: true,
           }
         }
       }
@@ -43,12 +47,23 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    if (session.user.isBlocked) {
+      await db.session.delete({ where: { token } }).catch(() => {})
+      return NextResponse.json(
+        { error: 'Аккаунт заблокирован' },
+        { status: 403 }
+      )
+    }
+
     return NextResponse.json({
       user: {
         id: session.user.id,
         username: session.user.username,
         email: session.user.email,
         avatarUrl: session.user.avatarUrl ?? null,
+        isBadgeVerified: session.user.isBadgeVerified,
+        isAdmin: hasAdminAccess(session.user),
+        isBlocked: session.user.isBlocked,
       }
     })
   } catch (error) {
@@ -81,16 +96,29 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
+    const currentUser = await db.user.findUnique({
+      where: { id: session.userId },
+      select: { isBlocked: true },
+    })
+    if (currentUser?.isBlocked) {
+      return NextResponse.json({ error: 'Аккаунт заблокирован' }, { status: 403 })
+    }
+
     const updated = await db.user.update({
       where: { id: session.userId },
       data: {
         ...(username !== undefined ? { username: username.trim() } : {}),
         ...(avatarUrl !== undefined ? { avatarUrl: avatarUrl ?? null } : {}),
       },
-      select: { id: true, username: true, email: true, avatarUrl: true }
+      select: { id: true, username: true, email: true, avatarUrl: true, isBadgeVerified: true, isAdmin: true, isBlocked: true }
     })
 
-    return NextResponse.json({ user: updated })
+    return NextResponse.json({
+      user: {
+        ...updated,
+        isAdmin: hasAdminAccess(updated),
+      }
+    })
   } catch (error) {
     console.error('Update profile error:', error)
     return NextResponse.json({ error: 'Ошибка при обновлении профиля' }, { status: 500 })

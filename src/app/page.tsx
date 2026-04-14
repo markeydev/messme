@@ -5,6 +5,7 @@ import { AuthForm } from '@/components/messenger/AuthForm'
 import { ChatList, type Tab } from '@/components/messenger/ChatList'
 import { ChatWindow } from '@/components/messenger/ChatWindow'
 import { GameChatWindow } from '@/components/messenger/GameChatWindow'
+import { AdminBotWindow } from '@/components/messenger/AdminBotWindow'
 import { CallWindow, IncomingCallDialog } from '@/components/messenger/CallWindow'
 import { Button } from '@/components/ui/button'
 import { useMessengerStore } from '@/lib/store'
@@ -177,6 +178,10 @@ export default function MessengerPage() {
   }, [isAuthenticated, user, addChat, addMessage, deleteMessage, updateMessage, incrementUnread])
 
   const handleSelectChat = useCallback(async (chat: Chat) => {
+    if (chat.id === 'adminbot') {
+      setActiveChat(chat)
+      return
+    }
     if (chat.gameMode) {
       setLastPlaymeChat(chat)
       setReturnedFromPlayme(false)
@@ -194,14 +199,14 @@ export default function MessengerPage() {
   const handleBack = useCallback(() => {
     if (activeChat?.gameMode) setReturnedFromPlayme(true)
     else setReturnedFromPlayme(false)
-    if (activeChatId && user && !activeChat?.gameMode) messengerSocket.leaveChat(activeChatId, user.id)
+    if (activeChatId && activeChatId !== 'adminbot' && user && !activeChat?.gameMode) messengerSocket.leaveChat(activeChatId, user.id)
     setActiveChat(null)
   }, [activeChatId, activeChat?.gameMode, user, setActiveChat])
 
   const handleMobileTabChange = useCallback((tab: Tab) => {
     setChatListTab(tab)
     if (activeChat) {
-      if (activeChatId && user && !activeChat.gameMode) messengerSocket.leaveChat(activeChatId, user.id)
+      if (activeChatId && activeChatId !== 'adminbot' && user && !activeChat.gameMode) messengerSocket.leaveChat(activeChatId, user.id)
       setActiveChat(null)
     }
   }, [activeChat, activeChatId, user, setActiveChat])
@@ -291,6 +296,12 @@ export default function MessengerPage() {
                 key={activeChat.id}
                 chat={activeChat}
                 onBack={handleBack}
+              />
+            ) : activeChat.id === 'adminbot' ? (
+              <AdminBotWindow
+                key={activeChat.id}
+                onBack={handleBack}
+                isMobile={true}
               />
             ) : (
               <ChatWindow

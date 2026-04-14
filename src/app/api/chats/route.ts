@@ -43,7 +43,8 @@ export async function GET(request: NextRequest) {
                   select: {
                     id: true,
                     username: true,
-                    avatarUrl: true
+                    avatarUrl: true,
+                    isBadgeVerified: true,
                   }
                 }
               }
@@ -93,7 +94,8 @@ export async function GET(request: NextRequest) {
         members: chat.members.map(m => ({
           id: m.user.id,
           username: m.user.username,
-          avatarUrl: m.user.avatarUrl ?? null
+          avatarUrl: m.user.avatarUrl ?? null,
+          isBadgeVerified: m.user.isBadgeVerified,
         })),
         lastMessage: chat.messages[0]
           ? {

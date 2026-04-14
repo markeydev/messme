@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { randomUUID } from 'crypto'
 import { sendMail, generateCode } from '@/lib/mail'
+import { hasAdminAccess } from '@/lib/admin'
 
 // Simple hash function (must match register)
 async function hashPassword(password: string): Promise<string> {
@@ -39,6 +40,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Пользователь не найден' },
         { status: 401 }
+      )
+    }
+
+    if (user.isBlocked) {
+      return NextResponse.json(
+        { error: 'Ваш аккаунт заблокирован' },
+        { status: 403 }
       )
     }
 
@@ -91,6 +99,9 @@ export async function POST(request: NextRequest) {
         username: user.username,
         email: user.email,
         avatarUrl: user.avatarUrl ?? null,
+        isBadgeVerified: user.isBadgeVerified,
+        isAdmin: hasAdminAccess(user),
+        isBlocked: user.isBlocked,
       },
       token
     })
