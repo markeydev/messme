@@ -100,11 +100,22 @@ export async function GET(request: NextRequest) {
       isAdmin: hasAdminAccess(u),
     })
 
-    const dayLabels = Array.from({ length: trendDays }, (_, idx) =>
-      new Date(trendStart.getTime() + idx * 24 * 60 * 60 * 1000).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
+    const dayLabels = Array.from({ length: trendDays }, (_, dayOffset) =>
+      new Date(trendStart.getTime() + dayOffset * 24 * 60 * 60 * 1000).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
     )
     const toLabel = (value: Date) => value.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
-    const countByDay = (items: Date[]) => dayLabels.map(label => items.filter(value => toLabel(value) === label).length)
+    const countByDay = (items: Date[]) => {
+      const grouped = new Map<string, number>()
+      for (const value of items) {
+        const label = toLabel(value)
+        grouped.set(label, (grouped.get(label) ?? 0) + 1)
+      }
+      return dayLabels.map(label => grouped.get(label) ?? 0)
+    }
+    const usersTrend = countByDay(recentRegistrations.map(item => item.createdAt))
+    const messagesTrend = countByDay(recentMessages.map(item => item.createdAt))
+    const storiesTrend = countByDay(recentStories.map(item => item.createdAt))
+    const clipmeVideosTrend = countByDay(recentVideos.map(item => item.createdAt))
 
     return NextResponse.json({
       stats: {
@@ -127,12 +138,12 @@ export async function GET(request: NextRequest) {
           clipMeVideosCount,
         },
       },
-      trends: dayLabels.map((label, idx) => ({
+      trends: dayLabels.map((label, dayIndex) => ({
         day: label,
-        users: countByDay(recentRegistrations.map(item => item.createdAt))[idx],
-        messages: countByDay(recentMessages.map(item => item.createdAt))[idx],
-        stories: countByDay(recentStories.map(item => item.createdAt))[idx],
-        clipmeVideos: countByDay(recentVideos.map(item => item.createdAt))[idx],
+        users: usersTrend[dayIndex],
+        messages: messagesTrend[dayIndex],
+        stories: storiesTrend[dayIndex],
+        clipmeVideos: clipmeVideosTrend[dayIndex],
       })),
       suspiciousAccounts: suspiciousAccounts.map(normalizeUser),
       users: recentUsers.map(normalizeUser),

@@ -16,7 +16,7 @@ import { VerifiedBadge } from './VerifiedBadge'
 import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
 import { chatsAPI, usersAPI, storiesAPI, type Chat, type Message, type StoryFeedItem, type User } from '@/lib/api'
-import { CHAT_MESSAGE_CONTEXT_REACTIONS_MENU_EXTRA_HEIGHT, REACTION_EMOJIS } from '@/lib/product-config'
+import { CHAT_MESSAGE_CONTEXT_MENU_ITEM_HEIGHT, CHAT_MESSAGE_CONTEXT_REACTIONS_MENU_EXTRA_HEIGHT, REACTION_EMOJIS } from '@/lib/product-config'
 import { ArrowDown, ArrowLeft, Users, Loader2, UserPlus, Check, X, Reply, Forward, Trash2, Pencil, FileText, Download, ZoomIn, Copy, Bell, BellOff, Phone, Clock, AlertCircle, ShieldCheck, Smile } from 'lucide-react'
 import { cn, openExternalUrl } from '@/lib/utils'
 
@@ -853,7 +853,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
         const isText = !(m as any).type || (m as any).type === 'TEXT'
         const menuW = 196
         const itemCount = 2 + (isText ? 1 : 0) + (menuIsOwn && isText ? 1 : 0) + 1 // +1 delete
-        const menuH = itemCount * 44 + CHAT_MESSAGE_CONTEXT_REACTIONS_MENU_EXTRA_HEIGHT
+        const menuH = itemCount * CHAT_MESSAGE_CONTEXT_MENU_ITEM_HEIGHT + CHAT_MESSAGE_CONTEXT_REACTIONS_MENU_EXTRA_HEIGHT
         const vw = typeof window !== 'undefined' ? window.innerWidth : 400
         const vh = typeof window !== 'undefined' ? window.innerHeight : 800
         const rx = Math.min(contextMenu.x, vw - menuW - 8)

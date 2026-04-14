@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
         isGroup: isGroup || false,
         isPersonalChannel: isGroup ? wantsPersonalChannel : false,
         // Personal channels are read-only for non-owners and intentionally cannot be game-mode rooms.
-        gameMode: !!(isGroup && gameMode && !wantsPersonalChannel),
+        gameMode: isGroup && gameMode && !wantsPersonalChannel,
         ownerId: session.userId,
         members: {
           create: allMemberIds.map(userId => ({
