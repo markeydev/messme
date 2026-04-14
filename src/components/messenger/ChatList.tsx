@@ -175,6 +175,9 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
     () => chats.find(chat => chat.id === linkedMessmeChannelId && chat.isPersonalChannel),
     [chats, linkedMessmeChannelId]
   )
+  const handleToggleNotifications = useCallback(() => {
+    setNotificationsEnabled(!notificationsEnabled)
+  }, [notificationsEnabled, setNotificationsEnabled])
   const storiesByUser = new Map(storyFeed.map(item => [item.user.id, item]))
   const isAdminUser = Boolean(user?.isAdmin)
   const adminbotChat: Chat = {
@@ -1016,7 +1019,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                         </div>
                       </div>
                       <button
-                        onClick={() => setNotificationsEnabled(!notificationsEnabled)}
+                        onClick={handleToggleNotifications}
                         className={cn(
                           'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none',
                           notificationsEnabled ? 'bg-[#5d6cf5]' : 'bg-black/[0.15] dark:bg-white/[0.15]'
@@ -1027,7 +1030,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                     </div>
 
                     <Button
-                      onClick={() => setNotificationsEnabled(!notificationsEnabled)}
+                      onClick={handleToggleNotifications}
                       className={cn(
                         'w-full h-10 rounded-xl',
                         notificationsEnabled

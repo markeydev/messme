@@ -325,6 +325,15 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
     return groups
   }, {} as Record<string, Message[]>)
   const peerSeenAt = peerLastSeenAt ? new Date(peerLastSeenAt) : null
+  const peerLatestActivityAt = (!chat.isGroup && peerUserId)
+    ? messages.reduce<Date | null>((latest, msg) => {
+      if (msg.senderId !== peerUserId) return latest
+      const createdAt = new Date(msg.createdAt)
+      if (!Number.isFinite(createdAt.getTime())) return latest
+      if (!latest || createdAt > latest) return createdAt
+      return latest
+    }, null)
+    : null
 
   useEffect(() => {
     if (chat.isGroup || !peerUserId) {
@@ -499,7 +508,8 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                 const showName = (chat.isGroup || isChannelLayout) && showAvatar
                 const msgCreatedAt = new Date(msg.createdAt)
                 const isReadByPeer = !chat.isGroup && isOwn && (
-                  isPeerOnline || (!!peerSeenAt && msgCreatedAt <= peerSeenAt)
+                  (!!peerSeenAt && msgCreatedAt <= peerSeenAt)
+                  || (!!peerLatestActivityAt && msgCreatedAt <= peerLatestActivityAt)
                 )
 
                 return (
