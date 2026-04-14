@@ -14,8 +14,16 @@ import { authAPI, chatsAPI, getAuthToken, setAuthToken, type Chat, type Message 
 import { usePushNotifications } from '@/hooks/usePushNotifications'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
-import { LogOut, MessageCircle, Wifi, WifiOff, MessageSquare, Search, UserRound, Film, Gamepad2 } from 'lucide-react'
+import { LogOut, MessageCircle, Wifi, WifiOff, MessageSquare, Search, UserRound, Film, Gamepad2, Bell } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+interface ActivityNotification {
+  id: string
+  title: string
+  message: string
+  createdAt: string
+}
+const MAX_ACTIVITY_NOTIFICATIONS = 200
 
 export default function MessengerPage() {
   const {
@@ -34,6 +42,9 @@ export default function MessengerPage() {
   const [returnedFromPlayme, setReturnedFromPlayme] = useState(false)
   const [playmeOverlayPos, setPlaymeOverlayPos] = useState({ x: 12, y: 12 })
   const dragOffsetRef = useRef<{ dx: number; dy: number } | null>(null)
+  const [notificationCenterOpen, setNotificationCenterOpen] = useState(false)
+  const [activityNotifications, setActivityNotifications] = useState<ActivityNotification[]>([])
+  const notificationsCount = activityNotifications.length
   // Incoming call state
   const [incomingCall, setIncomingCall] = useState<{
     chatId: string; callerId: string; callerName: string
@@ -45,6 +56,16 @@ export default function MessengerPage() {
   } | null>(null)
 
   usePushNotifications(isAuthenticated)
+
+  const addActivityNotification = useCallback((title: string, message: string) => {
+    const item: ActivityNotification = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      title,
+      message,
+      createdAt: new Date().toISOString(),
+    }
+    setActivityNotifications(prev => [item, ...prev].slice(0, MAX_ACTIVITY_NOTIFICATIONS))
+  }, [])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -104,6 +125,7 @@ export default function MessengerPage() {
 
     const handleIncoming = (data: { chatId: string; callerId: string; callerName: string; offer: RTCSessionDescriptionInit; withVideo: boolean }) => {
       setIncomingCall(data)
+      addActivityNotification('Звонок', `${data.callerName} звонит вам`)
     }
 
     // Caller cancelled before callee answered — dismiss the incoming call dialog
@@ -117,7 +139,7 @@ export default function MessengerPage() {
       messengerSocket.off('call-incoming', handleIncoming)
       messengerSocket.off('call-ended', handleCallEnded)
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated, addActivityNotification])
 
   useEffect(() => {
     if (!isAuthenticated || !user) return
@@ -144,17 +166,18 @@ export default function MessengerPage() {
     const handleNewMessage = (msg: import('@/lib/api').Message) => {
       const { activeChatId: currentChatId, user: currentUser, notificationsEnabled, mutedChats, chats: allChats } = useMessengerStore.getState()
       addMessage(msg.chatId, msg)
-      if (msg.senderId !== currentUser?.id && msg.chatId !== currentChatId) {
-        if (notificationsEnabled && !mutedChats[msg.chatId]) {
-          incrementUnread(msg.chatId)
-          const chat = allChats.find(c => c.id === msg.chatId)
-          const title = chat ? `Messme · ${chat.title}` : 'Messme'
-          const body = getMessagePreview(msg)
-          if (typeof window !== 'undefined' && window.messmeDesktop?.notify) {
-            window.messmeDesktop.notify({ title, body })
+        if (msg.senderId !== currentUser?.id && msg.chatId !== currentChatId) {
+          if (notificationsEnabled && !mutedChats[msg.chatId]) {
+            incrementUnread(msg.chatId)
+            const chat = allChats.find(c => c.id === msg.chatId)
+            const title = chat ? `Messme · ${chat.title}` : 'Messme'
+            const body = getMessagePreview(msg)
+            addActivityNotification(title, body)
+            if (typeof window !== 'undefined' && window.messmeDesktop?.notify) {
+              window.messmeDesktop.notify({ title, body })
+            }
           }
         }
-      }
     }
 
     const handleMessageDeleted = (data: { chatId: string; messageId: string }) => {
@@ -175,7 +198,17 @@ export default function MessengerPage() {
       messengerSocket.off('message-deleted', handleMessageDeleted)
       messengerSocket.off('message-edited', handleMessageEdited)
     }
-  }, [isAuthenticated, user, addChat, addMessage, deleteMessage, updateMessage, incrementUnread])
+  }, [isAuthenticated, user, addChat, addMessage, deleteMessage, updateMessage, incrementUnread, addActivityNotification])
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const payload = (event as CustomEvent<{ title?: string; message?: string }>).detail
+      if (!payload) return
+      addActivityNotification(payload.title ?? 'Уведомление', payload.message ?? '')
+    }
+    window.addEventListener('messme:notify', handler as EventListener)
+    return () => window.removeEventListener('messme:notify', handler as EventListener)
+  }, [addActivityNotification])
 
   const handleSelectChat = useCallback(async (chat: Chat) => {
     if (chat.id === 'adminbot') {
@@ -338,6 +371,51 @@ export default function MessengerPage() {
             setIncomingCall(null)
           }}
         />
+      )}
+
+      {/* Global notification center */}
+      {isAuthenticated && (
+        <>
+          <button
+            className="fixed right-4 top-4 z-40 h-11 w-11 rounded-full bg-white dark:bg-[#1f1f22] border border-black/[0.08] dark:border-white/[0.12] shadow-lg flex items-center justify-center"
+            onClick={() => setNotificationCenterOpen(v => !v)}
+            title="Уведомления"
+          >
+            <Bell className="h-5 w-5 text-black/70 dark:text-white/80" />
+            {notificationsCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#5d6cf5] px-1 text-[10px] font-bold text-white leading-none">
+                {notificationsCount > 99 ? '99+' : notificationsCount}
+              </span>
+            )}
+          </button>
+
+          {notificationCenterOpen && (
+            <div className="fixed right-4 top-[72px] z-40 w-[min(360px,calc(100vw-2rem))] max-h-[60vh] overflow-hidden rounded-2xl border border-black/[0.08] dark:border-white/[0.12] bg-white/95 dark:bg-[#1a1a1d]/95 backdrop-blur shadow-2xl">
+              <div className="h-11 px-3 flex items-center justify-between border-b border-black/[0.06] dark:border-white/[0.08]">
+                <p className="text-sm font-semibold text-black dark:text-white">Уведомления</p>
+                <button
+                  className="text-xs text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white"
+                  onClick={() => setActivityNotifications([])}
+                >
+                  Очистить
+                </button>
+              </div>
+              <div className="max-h-[calc(60vh-44px)] overflow-y-auto">
+                {activityNotifications.length === 0 ? (
+                  <p className="p-4 text-sm text-black/45 dark:text-white/45">Пока уведомлений нет</p>
+                ) : (
+                  activityNotifications.map(item => (
+                    <div key={item.id} className="px-3 py-2.5 border-b border-black/[0.04] dark:border-white/[0.06]">
+                      <p className="text-xs font-semibold text-black/85 dark:text-white/90">{item.title}</p>
+                      <p className="text-sm text-black/70 dark:text-white/75">{item.message}</p>
+                      <p className="text-[11px] text-black/35 dark:text-white/35 mt-1">{new Date(item.createdAt).toLocaleString('ru-RU')}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Active call (from incoming) */}

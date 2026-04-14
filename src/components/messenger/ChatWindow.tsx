@@ -17,7 +17,7 @@ import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
 import { chatsAPI, usersAPI, storiesAPI, type Chat, type Message, type StoryFeedItem, type User } from '@/lib/api'
 import { CHAT_MESSAGE_CONTEXT_MENU_ITEM_HEIGHT, CHAT_MESSAGE_CONTEXT_REACTIONS_MENU_EXTRA_HEIGHT, REACTION_EMOJIS } from '@/lib/product-config'
-import { ArrowDown, ArrowLeft, Users, Loader2, UserPlus, Check, X, Reply, Forward, Trash2, Pencil, FileText, Download, ZoomIn, Copy, Bell, BellOff, Phone, Clock, AlertCircle, ShieldCheck, Smile } from 'lucide-react'
+import { ArrowDown, ArrowLeft, Users, Loader2, UserPlus, Check, X, Reply, Forward, Trash2, Pencil, FileText, Download, ZoomIn, Copy, Bell, BellOff, Phone, Clock, AlertCircle, ShieldCheck, Smile, Circle } from 'lucide-react'
 import { cn, openExternalUrl } from '@/lib/utils'
 
 interface ChatWindowProps {
@@ -62,6 +62,8 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
   } | null>(null)
   const [activeStoryUserId, setActiveStoryUserId] = useState<string | null>(null)
   const [storyInfo, setStoryInfo] = useState<StoryFeedItem | null>(null)
+  const [isPeerOnline, setIsPeerOnline] = useState(false)
+  const [peerLastSeenAt, setPeerLastSeenAt] = useState<string | null>(null)
 
   const { user, addMessage, deleteMessage, chats, mutedChats, toggleMuteChat, removeChat, setActiveChat, prependMessages, updateChatMembers, updateMessageReactions } = useMessengerStore()
   const baseReactions = REACTION_EMOJIS
@@ -210,6 +212,23 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
       return isNaN(d.getTime()) ? '' : d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
     } catch { return '' }
   }
+  const formatLastSeen = (value?: string | null) => {
+    if (!value) return 'был(а) недавно'
+    const date = new Date(value)
+    const diffSec = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000))
+    if (!Number.isFinite(diffSec)) return 'был(а) недавно'
+    if (diffSec < 60) return 'был(а) только что'
+    if (diffSec < 3600) {
+      const m = Math.floor(diffSec / 60)
+      return `был(а) ${m} ${m === 1 ? 'минуту' : m < 5 ? 'минуты' : 'минут'} назад`
+    }
+    if (diffSec < 86400) {
+      const h = Math.floor(diffSec / 3600)
+      return `был(а) ${h} ${h === 1 ? 'час' : h < 5 ? 'часа' : 'часов'} назад`
+    }
+    const d = Math.floor(diffSec / 86400)
+    return `был(а) ${d} ${d === 1 ? 'день' : d < 5 ? 'дня' : 'дней'} назад`
+  }
   const handleDeleteMessage = async (messageId: string) => {
     const result = await chatsAPI.deleteMessage(chat.id, messageId)
     if (!result.error) {
@@ -297,6 +316,32 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
     groups[key].push(msg)
     return groups
   }, {} as Record<string, Message[]>)
+  const peerSeenAt = peerLastSeenAt ? new Date(peerLastSeenAt) : null
+
+  useEffect(() => {
+    if (chat.isGroup || !peerUserId) {
+      setIsPeerOnline(false)
+      setPeerLastSeenAt(null)
+      return
+    }
+    messengerSocket.getOnlineUsers(chat.id)
+    const handleOnline = (data: { chatId: string; users: Array<{ id: string; username: string; isOnline: boolean }> }) => {
+      if (data.chatId !== chat.id) return
+      const online = data.users.some(item => item.id === peerUserId && item.isOnline)
+      setIsPeerOnline(online)
+    }
+    const handleOffline = (data: { chatId: string; userId: string; timestamp: string }) => {
+      if (data.chatId !== chat.id || data.userId !== peerUserId) return
+      setIsPeerOnline(false)
+      setPeerLastSeenAt(data.timestamp)
+    }
+    messengerSocket.on('online-users', handleOnline)
+    messengerSocket.on('user-offline', handleOffline)
+    return () => {
+      messengerSocket.off('online-users', handleOnline)
+      messengerSocket.off('user-offline', handleOffline)
+    }
+  }, [chat.id, chat.isGroup, peerUserId])
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-[#111112]">
@@ -352,10 +397,16 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
             <h3 className="font-semibold text-black dark:text-white text-sm truncate">{currentChat.title}</h3>
             {peerMember?.isBadgeVerified && <VerifiedBadge className="flex-shrink-0" />}
             {chat.isGroup && (
-              <span className="text-xs text-black/30 dark:text-white/30">{chatMembers.length} участников</span>
+              <span className="text-xs text-black/30 dark:text-white/30">{chatMembers.length} {chat.isPersonalChannel ? 'подписчиков' : 'участников'}</span>
             )}
           </div>
-          <div className="flex items-center gap-1 text-black/30 dark:text-white/30 text-xs">
+          {!chat.isGroup && (
+            <div className={cn('text-xs inline-flex items-center gap-1.5', isPeerOnline ? 'text-[#0ed221]' : 'text-black/35 dark:text-white/35')}>
+              <Circle className={cn('h-2.5 w-2.5', isPeerOnline && 'fill-current')} />
+              <span>{isPeerOnline ? 'в сети' : formatLastSeen(peerLastSeenAt)}</span>
+            </div>
+          )}
+          <div className="flex items-center gap-1 text-black/30 dark:text-white/30 text-[11px]">
             <ShieldCheck className="h-2.5 w-2.5" />
             <span>Encrypted</span>
           </div>
@@ -436,15 +487,19 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
             <div className="space-y-1">
               {msgs.map((msg, i) => {
                 const isOwn = msg.senderId === user?.id
+                const isChannelLayout = !!chat.isPersonalChannel
+                const alignOwnRight = isOwn && !isChannelLayout
                 const sender = getSender(msg.senderId)
                 const prevMsg = msgs[i - 1]
-                const showAvatar = !prevMsg || prevMsg.senderId !== msg.senderId
-                const showName = chat.isGroup && !isOwn && showAvatar
+                const showAvatar = isChannelLayout || (!prevMsg || prevMsg.senderId !== msg.senderId)
+                const showName = (chat.isGroup || isChannelLayout) && showAvatar
+                const msgCreatedAt = new Date(msg.createdAt)
+                const isReadByPeer = !chat.isGroup && isOwn && (!!peerSeenAt && msgCreatedAt <= peerSeenAt)
 
                 return (
                   <div key={msg.id} className="animate-in fade-in slide-in-from-bottom-2 duration-150">
                       <div
-                        className={cn('flex gap-2 items-end select-none', isOwn ? 'flex-row-reverse' : 'flex-row')}
+                        className={cn('flex gap-2 items-end select-none', alignOwnRight ? 'flex-row-reverse' : 'flex-row')}
                         onContextMenu={e => { e.preventDefault(); setContextMenu({ msg, x: e.clientX, y: e.clientY }) }}
                         onTouchStart={e => {
                           const touch = e.touches[0]
@@ -475,7 +530,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                           'max-w-[min(72%,420px)] min-w-0 break-words',
                           (msg as any).type === 'VIDEO_NOTE'
                             ? 'p-0 bg-transparent border-0 shadow-none'
-                            : isOwn
+                            : alignOwnRight
                               ? 'bg-[#5D6CF5] text-white rounded-br-sm'
                               : 'bg-[#f0f1fe] dark:bg-[#1e1e24] text-black dark:text-white rounded-bl-sm'
                         )}>
@@ -610,6 +665,11 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                             )}
                             {isOwn && (msg as any).pendingStatus === 'failed' && (
                               <AlertCircle className="h-2.5 w-2.5 text-red-400" aria-label="Не отправлено" />
+                            )}
+                            {isOwn && !(msg as any).pendingStatus && !chat.isGroup && (
+                              <span className={cn('text-[10px]', isOwn ? 'text-white/55' : 'text-black/35 dark:text-white/45')}>
+                                {isReadByPeer ? 'Прочитано' : 'Не прочитано'}
+                              </span>
                             )}
                           </div>
                         </div>
@@ -955,6 +1015,11 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
       <StoryViewer
         open={!!activeStoryUserId}
         userId={activeStoryUserId}
+        onOpenLinkedChannel={channelId => {
+          const linked = chats.find(item => item.id === channelId)
+          if (!linked) return
+          setActiveChat(linked)
+        }}
         onOpenChange={open => {
           if (!open) {
             setActiveStoryUserId(null)
