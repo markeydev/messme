@@ -96,6 +96,14 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
+    const currentUser = await db.user.findUnique({
+      where: { id: session.userId },
+      select: { isBlocked: true },
+    })
+    if (currentUser?.isBlocked) {
+      return NextResponse.json({ error: 'Аккаунт заблокирован' }, { status: 403 })
+    }
+
     const updated = await db.user.update({
       where: { id: session.userId },
       data: {
@@ -116,10 +124,3 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Ошибка при обновлении профиля' }, { status: 500 })
   }
 }
-    const currentUser = await db.user.findUnique({
-      where: { id: session.userId },
-      select: { isBlocked: true },
-    })
-    if (currentUser?.isBlocked) {
-      return NextResponse.json({ error: 'Аккаунт заблокирован' }, { status: 403 })
-    }
