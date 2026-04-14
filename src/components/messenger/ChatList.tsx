@@ -1251,6 +1251,12 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
         userId={activeStoryUserId}
         storyUserIds={storyFeed.map(item => item.user.id)}
         onOpenChatWithUser={handleOpenChatWithViewer}
+        onOpenLinkedChannel={channelId => {
+          const linked = chats.find(chat => chat.id === channelId)
+          if (!linked) return
+          onTabChange('chats')
+          onSelectChat?.(linked)
+        }}
         onOpenChange={open => {
           if (!open) {
             setActiveStoryUserId(null)

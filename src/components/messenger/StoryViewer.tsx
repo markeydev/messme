@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
-import { storiesAPI, type Story } from '@/lib/api'
+import { clipMeAPI, storiesAPI, type Story } from '@/lib/api'
 import { useMessengerStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { Heart, Eye, X, ChevronUp, ChevronDown } from 'lucide-react'
@@ -18,15 +18,18 @@ interface StoryViewerProps {
   userId: string | null
   storyUserIds?: string[]
   onOpenChatWithUser?: (viewer: { id: string; username: string; avatarUrl?: string | null }) => void | Promise<void>
+  onOpenLinkedChannel?: (channelId: string) => void
 }
 
-export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenChatWithUser }: StoryViewerProps) {
+export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenChatWithUser, onOpenLinkedChannel }: StoryViewerProps) {
   const { user } = useMessengerStore()
   const [stories, setStories] = useState<Story[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
   const [showViewers, setShowViewers] = useState(false)
   const [showProfileCard, setShowProfileCard] = useState(false)
+  const [profileDetails, setProfileDetails] = useState<{ clipMeBio?: string | null; linkedMessmeChannelId?: string | null } | null>(null)
+  const [profileLoading, setProfileLoading] = useState(false)
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
   const lastWheelTimeRef = useRef(0)
 
@@ -92,6 +95,15 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
     if (!activeStory || isOwner) return
     const result = await storiesAPI.toggleLike(activeStory.id)
     if (result.error) return
+    if (result.liked) {
+      window.dispatchEvent(new CustomEvent('messme:notify', {
+        detail: {
+          title: 'Сторис',
+          message: 'Вы поставили лайк сторис',
+          type: 'social',
+        }
+      }))
+    }
     setStories(prev => prev.map(s => s.id === activeStory.id
       ? {
           ...s,
@@ -112,6 +124,25 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
     if (!activeStory) return
     setShowProfileCard(true)
   }
+
+  useEffect(() => {
+    if (!showProfileCard || !activeStory) return
+    let cancelled = false
+    setProfileLoading(true)
+    setProfileDetails(null)
+    clipMeAPI.getUserChannel(activeStory.user.id).then(result => {
+      if (cancelled) return
+      setProfileDetails({
+        clipMeBio: result.user?.clipMeBio ?? null,
+        linkedMessmeChannelId: result.user?.linkedMessmeChannelId ?? null,
+      })
+      setProfileLoading(false)
+    }).catch(() => {
+      if (cancelled) return
+      setProfileLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [showProfileCard, activeStory])
 
   const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 
@@ -297,6 +328,28 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
                       </AvatarFallback>
                     </Avatar>
                     <p className="text-base font-semibold">{activeStory.user.username}</p>
+                    {profileLoading ? (
+                      <p className="text-sm text-white/60">Загрузка профиля...</p>
+                    ) : (
+                      <>
+                        <p className="text-sm text-white/80 text-center whitespace-pre-wrap">
+                          {profileDetails?.clipMeBio || 'Описание не добавлено'}
+                        </p>
+                        {profileDetails?.linkedMessmeChannelId && (
+                          <Button
+                            variant="secondary"
+                            onClick={() => {
+                              onOpenLinkedChannel?.(profileDetails.linkedMessmeChannelId!)
+                              setShowProfileCard(false)
+                              onOpenChange(false)
+                            }}
+                            className="bg-white/15 hover:bg-white/25 text-white"
+                          >
+                            Открыть прикреплённый канал
+                          </Button>
+                        )}
+                      </>
+                    )}
                     {!!onOpenChatWithUser && (
                       <Button
                         onClick={() => handleViewerClick(activeStory.user)}

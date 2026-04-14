@@ -293,6 +293,15 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
       }
     })
     setChannelPreviewVideo(prev => prev?.id === video.id ? { ...prev, likedByMe: result.liked, likesCount: result.likesCount } : prev)
+    if (result.liked) {
+      window.dispatchEvent(new CustomEvent('messme:notify', {
+        detail: {
+          title: 'ClipMe',
+          message: 'Вы поставили лайк ролику',
+          type: 'social',
+        }
+      }))
+    }
   }
 
   const toggleRepost = async (video: ClipMeVideo) => {
@@ -307,6 +316,15 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
       }
     })
     setChannelPreviewVideo(prev => prev?.id === video.id ? { ...prev, repostedByMe: result.reposted!, repostsCount: result.repostsCount! } : prev)
+    if (result.reposted) {
+      window.dispatchEvent(new CustomEvent('messme:notify', {
+        detail: {
+          title: 'ClipMe',
+          message: 'Вы сделали репост ролика',
+          type: 'social',
+        }
+      }))
+    }
   }
 
   const openComments = async (videoId: string) => {
@@ -363,6 +381,13 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
       }
     })
     setChannelPreviewVideo(prev => prev?.id === videoId ? { ...prev, commentsCount: result.commentsCount ?? prev.commentsCount + 1 } : prev)
+    window.dispatchEvent(new CustomEvent('messme:notify', {
+      detail: {
+        title: 'ClipMe',
+        message: 'Ваш комментарий добавлен',
+        type: 'social',
+      }
+    }))
   }
 
   const toggleCommentLike = async (videoId: string, commentId: string) => {
@@ -441,17 +466,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
   }
 
   const openVideoFromChannel = (video: ClipMeVideo) => {
-    setVideos(prev => {
-      if (prev.some(v => v.id === video.id)) return prev
-      return [video, ...prev]
-    })
-    setActiveVideoId(video.id)
-    setChannelPreviewVideo(null)
-    closeChannel()
-    setTimeout(() => {
-      const node = videoRefs.current[video.id]
-      if (node) node.scrollIntoView({ block: 'start' })
-    }, 40)
+    setChannelPreviewVideo(video)
   }
 
   const applySubscribeResult = (authorId: string, subscribed: boolean, followersCount?: number) => {
@@ -618,7 +633,6 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
               <ChevronLeft className="h-5 w-5" />
             </button>
           )}
-          <div className="px-3 py-1.5 rounded-full bg-black/55 text-xs font-semibold">ClipMe</div>
           {user?.id && (
             <button
               onClick={() => openChannel(user.id)}
@@ -629,7 +643,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
           )}
         </div>
 
-        <div className="absolute top-14 left-3 right-3 z-30">
+        <div className="absolute top-3 left-14 right-3 z-30">
           <div className="rounded-xl bg-black/45 backdrop-blur px-2 py-1.5 border border-white/10">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-white/60" />
@@ -670,7 +684,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
           </div>
         </div>
 
-        <div ref={feedRef} className="flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory scroll-smooth pt-[112px]">
+        <div ref={feedRef} className="flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory scroll-smooth pt-[64px]">
           {isLoading && <div className="h-full flex items-center justify-center text-sm text-white/70">Загрузка ленты...</div>}
           {!isLoading && videos.length === 0 && <div className="h-full flex items-center justify-center text-sm text-white/70">Пока нет видео.</div>}
 
@@ -709,27 +723,21 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
                           {video.user.isBadgeVerified && <VerifiedBadge className="h-3 w-3 min-h-3 min-w-3" />}
                         </p>
                         {video.user.id !== user?.id && (
-                          <span className="inline-flex items-center rounded-full bg-black/35 px-2 py-0.5 text-[11px]">
+                          <button
+                            className="inline-flex items-center rounded-full bg-black/35 hover:bg-black/55 px-2 py-0.5 text-[11px]"
+                            onClick={async e => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              const result = await clipMeAPI.toggleSubscribe(video.user.id)
+                              if (result.subscribed === undefined) return
+                              applySubscribeResult(authorSubKey, result.subscribed, result.followersCount)
+                            }}
+                          >
                             {isSubscribed ? 'Вы подписаны' : '+'}
-                          </span>
+                          </button>
                         )}
                       </div>
                     </button>
-
-                    {video.user.id !== user?.id && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        className="h-7 bg-white/15 hover:bg-white/25 text-white border-white/15 px-2.5"
-                        onClick={async () => {
-                          const result = await clipMeAPI.toggleSubscribe(video.user.id)
-                          if (result.subscribed === undefined) return
-                          applySubscribeResult(authorSubKey, result.subscribed, result.followersCount)
-                        }}
-                      >
-                        {isSubscribed ? 'Вы подписаны' : '+'}
-                      </Button>
-                    )}
 
                     {video.description && <p className="text-sm whitespace-pre-wrap">{video.description}</p>}
 
