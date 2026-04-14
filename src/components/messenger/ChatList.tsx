@@ -21,24 +21,10 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { PenSquare, Search, MessageSquare, Users, Check, X, BellOff, UserRound, Camera, Bell, Loader2, LogOut, Sun, Moon, Gamepad2, Trash2, Plus, Mic, Volume2, VolumeX, Film, Headphones, Bot } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, getSafeImageUrl } from '@/lib/utils'
 
 const STORY_IMAGE_TARGET_BYTES = 380 * 1024
 const STORY_IMAGE_MAX_DIMENSION = 1920
-
-const getSafeImageUrl = (value?: string | null): string | null => {
-  if (!value) return null
-  if (value.startsWith('blob:')) return value
-  if (value.startsWith('data:image/')) return value
-  try {
-    const base = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
-    const parsed = new URL(value, base)
-    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return value
-    return null
-  } catch {
-    return null
-  }
-}
 
 export type Tab = 'chats' | 'search' | 'profile' | 'clipme'
 
@@ -953,6 +939,14 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                 className="h-24 w-24 cursor-pointer"
                 onClick={() => {
                   if (profileAvatarImage) setIsProfileAvatarPreviewOpen(true)
+                }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={e => {
+                  if ((e.key === 'Enter' || e.key === ' ') && profileAvatarImage) {
+                    e.preventDefault()
+                    setIsProfileAvatarPreviewOpen(true)
+                  }
                 }}
               >
                 {profileAvatarImage && <AvatarImage src={profileAvatarImage} className="object-cover" />}

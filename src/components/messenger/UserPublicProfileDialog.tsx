@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { clipMeAPI } from '@/lib/api'
+import { getSafeImageUrl } from '@/lib/utils'
 
 interface UserPublicProfileDialogProps {
   open: boolean
@@ -14,20 +15,6 @@ interface UserPublicProfileDialogProps {
     avatarUrl?: string | null
   }
   onOpenLinkedChannel?: (channelId: string) => void
-}
-
-const getSafeImageUrl = (value?: string | null): string | null => {
-  if (!value) return null
-  if (value.startsWith('blob:')) return value
-  if (value.startsWith('data:image/')) return value
-  try {
-    const base = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
-    const parsed = new URL(value, base)
-    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return value
-    return null
-  } catch {
-    return null
-  }
 }
 
 export function UserPublicProfileDialog({
@@ -100,6 +87,14 @@ export function UserPublicProfileDialog({
           <Avatar
             className="h-20 w-20 border border-white/20 cursor-zoom-in"
             onClick={handleOpenAvatarPreview}
+            role="button"
+            tabIndex={0}
+            onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                handleOpenAvatarPreview()
+              }
+            }}
           >
             {displayAvatar && <AvatarImage src={displayAvatar} alt={displayName} />}
             <AvatarFallback className="bg-[#5d6cf5] text-white text-lg font-semibold">
