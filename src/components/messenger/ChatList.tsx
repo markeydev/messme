@@ -26,6 +26,20 @@ import { cn } from '@/lib/utils'
 const STORY_IMAGE_TARGET_BYTES = 380 * 1024
 const STORY_IMAGE_MAX_DIMENSION = 1920
 
+const getSafeImageUrl = (value?: string | null): string | null => {
+  if (!value) return null
+  if (value.startsWith('blob:')) return value
+  if (value.startsWith('data:image/')) return value
+  try {
+    const base = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
+    const parsed = new URL(value, base)
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return value
+    return null
+  } catch {
+    return null
+  }
+}
+
 export type Tab = 'chats' | 'search' | 'profile' | 'clipme'
 
 interface ChatListProps {
@@ -177,6 +191,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
     () => chats.find(chat => chat.id === linkedMessmeChannelId && chat.isPersonalChannel),
     [chats, linkedMessmeChannelId]
   )
+  const profileAvatarImage = getSafeImageUrl(avatarPreview || user?.avatarUrl || null)
   const channelSearchResults = useMemo(() => {
     const query = userSearchQuery.trim().toLowerCase()
     if (query.length < 2) return []
@@ -873,7 +888,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                         <div className="min-w-0 flex-1 text-left">
                           <p className="text-sm text-black dark:text-white truncate">{channel.title}</p>
                           <p className="text-xs text-black/40 dark:text-white/40">
-                            {channel.members.length} подписч.
+                            {channel.members.length} подписчиков
                           </p>
                         </div>
                       </button>
@@ -937,10 +952,10 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
               <Avatar
                 className="h-24 w-24 cursor-pointer"
                 onClick={() => {
-                  if (avatarPreview ?? user?.avatarUrl) setIsProfileAvatarPreviewOpen(true)
+                  if (profileAvatarImage) setIsProfileAvatarPreviewOpen(true)
                 }}
               >
-                {(avatarPreview ?? user?.avatarUrl) && <AvatarImage src={avatarPreview ?? user?.avatarUrl!} className="object-cover" />}
+                {profileAvatarImage && <AvatarImage src={profileAvatarImage} className="object-cover" />}
                 <AvatarFallback className="bg-[#5d6cf5] text-white text-2xl font-bold">
                   {getInitials(profileUsername || user?.username || '?')}
                 </AvatarFallback>
@@ -1052,7 +1067,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                             </p>
                           </div>
                           <span className="text-xs text-black/50 dark:text-white/50 whitespace-nowrap">
-                            {linkedChannelPreview.members.length} подписч.
+                            {linkedChannelPreview.members.length} подписчиков
                           </span>
                         </div>
                       </div>
@@ -1473,9 +1488,9 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
 
       <Dialog open={isProfileAvatarPreviewOpen} onOpenChange={setIsProfileAvatarPreviewOpen}>
         <DialogContent className="bg-black/90 border-0 max-w-4xl p-2 flex items-center justify-center">
-          {(avatarPreview ?? user?.avatarUrl) && (
+          {profileAvatarImage && (
             <img
-              src={avatarPreview ?? user?.avatarUrl!}
+              src={profileAvatarImage}
               alt="Аватар профиля"
               className="max-w-full max-h-[85vh] object-contain rounded-lg"
             />

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { clipMeAPI } from '@/lib/api'
@@ -14,6 +14,20 @@ interface UserPublicProfileDialogProps {
     avatarUrl?: string | null
   }
   onOpenLinkedChannel?: (channelId: string) => void
+}
+
+const getSafeImageUrl = (value?: string | null): string | null => {
+  if (!value) return null
+  if (value.startsWith('blob:')) return value
+  if (value.startsWith('data:image/')) return value
+  try {
+    const base = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
+    const parsed = new URL(value, base)
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return value
+    return null
+  } catch {
+    return null
+  }
 }
 
 export function UserPublicProfileDialog({
@@ -67,13 +81,16 @@ export function UserPublicProfileDialog({
   }, [open, userId])
 
   const displayName = profile?.username ?? fallbackUser?.username ?? 'Пользователь'
-  const displayAvatar = profile?.avatarUrl ?? fallbackUser?.avatarUrl ?? null
+  const displayAvatar = getSafeImageUrl(profile?.avatarUrl || fallbackUser?.avatarUrl || null)
   const channel = profile?.linkedMessmeChannel ?? null
 
   const initials = useMemo(
     () => displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2),
     [displayName]
   )
+  const handleOpenAvatarPreview = useCallback(() => {
+    if (displayAvatar) setIsAvatarPreviewOpen(true)
+  }, [displayAvatar])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -82,7 +99,7 @@ export function UserPublicProfileDialog({
         <div className="flex flex-col items-center gap-4 py-1">
           <Avatar
             className="h-20 w-20 border border-white/20 cursor-zoom-in"
-            onClick={() => { if (displayAvatar) setIsAvatarPreviewOpen(true) }}
+            onClick={handleOpenAvatarPreview}
           >
             {displayAvatar && <AvatarImage src={displayAvatar} alt={displayName} />}
             <AvatarFallback className="bg-[#5d6cf5] text-white text-lg font-semibold">
