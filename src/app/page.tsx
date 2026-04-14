@@ -14,7 +14,7 @@ import { authAPI, chatsAPI, getAuthToken, setAuthToken, type Chat, type Message 
 import { usePushNotifications } from '@/hooks/usePushNotifications'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
-import { LogOut, MessageCircle, Wifi, WifiOff, MessageSquare, Search, UserRound, Film, Gamepad2, Bell } from 'lucide-react'
+import { LogOut, MessageCircle, MessageSquare, Search, UserRound, Film, Gamepad2, Bell } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface ActivityNotification {
@@ -166,18 +166,18 @@ export default function MessengerPage() {
     const handleNewMessage = (msg: import('@/lib/api').Message) => {
       const { activeChatId: currentChatId, user: currentUser, notificationsEnabled, mutedChats, chats: allChats } = useMessengerStore.getState()
       addMessage(msg.chatId, msg)
-        if (msg.senderId !== currentUser?.id && msg.chatId !== currentChatId) {
-          if (notificationsEnabled && !mutedChats[msg.chatId]) {
-            incrementUnread(msg.chatId)
-            const chat = allChats.find(c => c.id === msg.chatId)
-            const title = chat ? `Messme · ${chat.title}` : 'Messme'
-            const body = getMessagePreview(msg)
-            addActivityNotification(title, body)
-            if (typeof window !== 'undefined' && window.messmeDesktop?.notify) {
-              window.messmeDesktop.notify({ title, body })
-            }
+      if (msg.senderId !== currentUser?.id && msg.chatId !== currentChatId) {
+        incrementUnread(msg.chatId)
+        if (notificationsEnabled && !mutedChats[msg.chatId]) {
+          const chat = allChats.find(c => c.id === msg.chatId)
+          const title = chat ? `Messme · ${chat.title}` : 'Messme'
+          const body = getMessagePreview(msg)
+          addActivityNotification(title, body)
+          if (typeof window !== 'undefined' && window.messmeDesktop?.notify) {
+            window.messmeDesktop.notify({ title, body })
           }
         }
+      }
     }
 
     const handleMessageDeleted = (data: { chatId: string; messageId: string }) => {
@@ -279,7 +279,7 @@ export default function MessengerPage() {
     <div className="h-dvh flex overflow-hidden bg-white dark:bg-[#111112]">
       {/* Sidebar */}
       <div className={cn(
-        'flex-shrink-0 flex flex-col w-full md:w-80 lg:w-[340px]',
+        'flex-shrink-0 flex flex-col w-full md:w-[340px] md:min-w-[280px] md:max-w-[520px] md:[resize:horizontal] md:overflow-x-auto',
         'bg-white dark:bg-[#111112] border-r border-black/[0.06] dark:border-white/[0.08]',
         activeChat?.gameMode
           ? 'hidden'
@@ -288,29 +288,38 @@ export default function MessengerPage() {
             : 'flex'
       )}>
         {/* Sidebar header */}
-        <div className="flex items-center justify-between px-4 min-h-16 border-b border-black/[0.06] dark:border-white/[0.08] flex-shrink-0" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-[#5D6CF5] flex items-center justify-center">
-              <MessageCircle className="h-4 w-4 text-white" />
+        {chatListTab !== 'clipme' && (
+          <div className="flex items-center justify-between px-4 min-h-16 border-b border-black/[0.06] dark:border-white/[0.08] flex-shrink-0" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-[#5D6CF5] flex items-center justify-center">
+                <MessageCircle className="h-4 w-4 text-white" />
+              </div>
+              <span className="font-semibold text-black dark:text-white">Messme</span>
             </div>
-            <span className="font-semibold text-black dark:text-white">Messme</span>
+            <div className="flex items-center gap-2">
+              <button
+                className="relative h-8 w-8 rounded-lg text-black/50 dark:text-white/70 hover:text-black/90 dark:hover:text-white hover:bg-black/[0.05] dark:hover:bg-white/[0.08] flex items-center justify-center transition-colors"
+                onClick={() => setNotificationCenterOpen(v => !v)}
+                title="Уведомления"
+              >
+                <Bell className="h-4 w-4" />
+                {notificationsCount > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#5d6cf5] px-1 text-[9px] font-bold text-white leading-none">
+                    {notificationsCount > 99 ? '99+' : notificationsCount}
+                  </span>
+                )}
+              </button>
+              <Button
+                variant="ghost" size="icon"
+                onClick={() => setShowLogoutConfirm(true)}
+                className="h-8 w-8 text-black/40 dark:text-white/40 hover:text-black/80 dark:hover:text-white/80 hover:bg-black/[0.05] dark:hover:bg-white/[0.08] rounded-lg"
+                title="Выйти"
+              >
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            {isConnected ? (
-              <Wifi className="h-4 w-4 text-[#0ed221]" title="Подключено" />
-            ) : (
-              <WifiOff className="h-4 w-4 text-black/20 dark:text-white/20" title="Отключено" />
-            )}
-            <Button
-              variant="ghost" size="icon"
-              onClick={() => setShowLogoutConfirm(true)}
-              className="h-8 w-8 text-black/40 dark:text-white/40 hover:text-black/80 dark:hover:text-white/80 hover:bg-black/[0.05] dark:hover:bg-white/[0.08] rounded-lg"
-              title="Выйти"
-            >
-              <LogOut className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
+        )}
 
         {/* Chat list */}
         <ChatList onSelectChat={handleSelectChat} activeChatId={activeChatId} onLogout={handleLogout}
@@ -376,21 +385,8 @@ export default function MessengerPage() {
       {/* Global notification center */}
       {isAuthenticated && (
         <>
-          <button
-            className="fixed right-4 top-4 z-40 h-11 w-11 rounded-full bg-white dark:bg-[#1f1f22] border border-black/[0.08] dark:border-white/[0.12] shadow-lg flex items-center justify-center"
-            onClick={() => setNotificationCenterOpen(v => !v)}
-            title="Уведомления"
-          >
-            <Bell className="h-5 w-5 text-black/70 dark:text-white/80" />
-            {notificationsCount > 0 && (
-              <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#5d6cf5] px-1 text-[10px] font-bold text-white leading-none">
-                {notificationsCount > 99 ? '99+' : notificationsCount}
-              </span>
-            )}
-          </button>
-
           {notificationCenterOpen && (
-            <div className="fixed right-4 top-[72px] z-40 w-[min(360px,calc(100vw-2rem))] max-h-[60vh] overflow-hidden rounded-2xl border border-black/[0.08] dark:border-white/[0.12] bg-white/95 dark:bg-[#1a1a1d]/95 backdrop-blur shadow-2xl">
+            <div className="fixed right-4 top-[72px] z-40 w-[min(360px,calc(100vw-2rem))] max-h-[60vh] overflow-hidden rounded-2xl border border-black/[0.08] dark:border-white/[0.12] bg-white/95 dark:bg-[#1a1a1d]/95 backdrop-blur shadow-2xl animate-in fade-in-0 zoom-in-95 duration-200">
               <div className="h-11 px-3 flex items-center justify-between border-b border-black/[0.06] dark:border-white/[0.08]">
                 <p className="text-sm font-semibold text-black dark:text-white">Уведомления</p>
                 <button
