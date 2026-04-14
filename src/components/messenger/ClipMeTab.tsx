@@ -638,7 +638,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
                 ref={node => { videoRefs.current[video.id] = node }}
                 data-video-id={video.id}
                 className="relative snap-start bg-black"
-                // Use dvh when available; keep vh fallback for browsers without dvh support.
+                // Prefer dvh; minHeight keeps a 100vh fallback only in browsers that don't understand dvh.
                 style={{ height: '100dvh', minHeight: '100vh' }}
               >
                 <CustomVideoPlayer
