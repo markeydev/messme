@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { randomUUID } from 'crypto'
+import { hasAdminAccess } from '@/lib/admin'
 
 export async function POST(request: NextRequest) {
   try {
@@ -29,6 +30,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Пользователь не найден' }, { status: 404 })
     }
 
+    if (user.isBlocked) {
+      return NextResponse.json({ error: 'Ваш аккаунт заблокирован' }, { status: 403 })
+    }
+
     await db.user.update({ where: { id: user.id }, data: { isVerified: true } })
     await db.verificationCode.deleteMany({ where: { email, type: 'email_verify' } })
 
@@ -44,7 +49,15 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      user: { id: user.id, username: user.username, email: user.email, avatarUrl: user.avatarUrl ?? null },
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        avatarUrl: user.avatarUrl ?? null,
+        isBadgeVerified: user.isBadgeVerified,
+        isAdmin: hasAdminAccess(user),
+        isBlocked: user.isBlocked,
+      },
       token,
     })
   } catch (error) {

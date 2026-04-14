@@ -48,6 +48,7 @@ export async function GET(request: NextRequest) {
       select: {
         id: true,
         username: true,
+        isBadgeVerified: true,
       },
       take: 10
     })
@@ -56,6 +57,7 @@ export async function GET(request: NextRequest) {
       users: users.map(u => ({
         id: u.id,
         username: u.username,
+        isBadgeVerified: u.isBadgeVerified,
       }))
     })
   } catch (error) {

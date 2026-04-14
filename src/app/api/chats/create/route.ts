@@ -59,6 +59,7 @@ export async function POST(request: NextRequest) {
                 select: {
                   id: true,
                   username: true,
+                  isBadgeVerified: true,
                 }
               }
             }
@@ -84,6 +85,7 @@ export async function POST(request: NextRequest) {
             members: existingChat.members.map(m => ({
               id: m.user.id,
               username: m.user.username,
+              isBadgeVerified: (m.user as any).isBadgeVerified ?? false,
             })),
             memberIds: existingChat.members.map(m => m.userId)
           },
@@ -122,11 +124,12 @@ export async function POST(request: NextRequest) {
           include: {
             user: {
               select: {
-                id: true,
-                username: true,
+                  id: true,
+                  username: true,
+                  isBadgeVerified: true,
+                }
               }
             }
-          }
         }
       }
     })
@@ -170,6 +173,7 @@ export async function POST(request: NextRequest) {
         members: chat.members.map(m => ({
           id: m.user.id,
           username: m.user.username,
+          isBadgeVerified: (m.user as any).isBadgeVerified ?? false,
         })),
         memberIds: chat.members.map(m => m.userId)
       },

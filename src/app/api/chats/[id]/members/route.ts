@@ -95,6 +95,7 @@ export async function POST(
               select: {
                 id: true,
                 username: true,
+                isBadgeVerified: true,
               }
             }
           }
@@ -102,6 +103,7 @@ export async function POST(
         newMembers.push({
           id: member.user.id,
           username: member.user.username,
+          isBadgeVerified: (member.user as any).isBadgeVerified ?? false,
         })
         if (chat.gameMode) {
           await assignDefaultRole(chatId, userId)
@@ -159,7 +161,8 @@ export async function GET(
               select: {
                 id: true,
                 username: true,
-                publicKey: true
+                publicKey: true,
+                isBadgeVerified: true,
               }
             }
           }
@@ -178,7 +181,8 @@ export async function GET(
       members: chat.members.map(m => ({
         id: m.user.id,
         username: m.user.username,
-        publicKey: m.user.publicKey
+        publicKey: m.user.publicKey,
+        isBadgeVerified: (m.user as any).isBadgeVerified ?? false,
       }))
     })
   } catch (error) {

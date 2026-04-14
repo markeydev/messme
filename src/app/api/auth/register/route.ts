@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { randomUUID } from 'crypto'
 import { sendMail, generateCode } from '@/lib/mail'
+import { isPrimaryAdminEmail } from '@/lib/admin'
 
 async function hashPassword(password: string): Promise<string> {
   const encoder = new TextEncoder()
@@ -40,7 +41,14 @@ export async function POST(request: NextRequest) {
     const passwordHash = await hashPassword(password)
 
     await db.user.create({
-      data: { id: randomUUID(), username, email, passwordHash, isVerified: false }
+      data: {
+        id: randomUUID(),
+        username,
+        email,
+        passwordHash,
+        isVerified: false,
+        isAdmin: isPrimaryAdminEmail(email),
+      }
     })
 
     // Delete old codes for this email
