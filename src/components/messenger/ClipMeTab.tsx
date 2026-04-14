@@ -98,7 +98,6 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
   const [channelBioDraft, setChannelBioDraft] = useState('')
   const [isSavingChannelBio, setIsSavingChannelBio] = useState(false)
   const [channelError, setChannelError] = useState<string | null>(null)
-  const [, setChannelPreviewVideo] = useState<ClipMeVideo | null>(null)
   const [feedPausedForOverlay, setFeedPausedForOverlay] = useState(false)
 
   const [uploadPickerOpen, setUploadPickerOpen] = useState(false)
@@ -242,7 +241,6 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
             reposts: prev.reposts?.map(video => video.id === videoIdForRegister ? { ...video, viewsCount } : video),
           }
         })
-        setChannelPreviewVideo(prev => prev?.id === videoIdForRegister ? { ...prev, viewsCount } : prev)
       })
     }, VIEW_REGISTER_DELAY_MS)
     return () => {
@@ -263,7 +261,6 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
         videos: prev.videos.map(v => v.id === video.id ? { ...v, likedByMe: nextLiked, likesCount: optimisticLikes } : v),
       }
     })
-    setChannelPreviewVideo(prev => prev?.id === video.id ? { ...prev, likedByMe: nextLiked, likesCount: optimisticLikes } : prev)
     const result = await clipMeAPI.toggleLike(video.id)
     if (result.liked === undefined || result.likesCount === undefined) {
       setVideos(prev => prev.map(v => v.id === video.id ? video : v))
@@ -277,7 +274,6 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
         videos: prev.videos.map(v => v.id === video.id ? { ...v, likedByMe: result.liked, likesCount: result.likesCount } : v),
       }
     })
-    setChannelPreviewVideo(prev => prev?.id === video.id ? { ...prev, likedByMe: result.liked, likesCount: result.likesCount } : prev)
     if (result.liked) {
       window.dispatchEvent(new CustomEvent('messme:notify', {
         detail: {
@@ -300,7 +296,6 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
         videos: prev.videos.map(v => v.id === video.id ? { ...v, repostedByMe: result.reposted!, repostsCount: result.repostsCount! } : v),
       }
     })
-    setChannelPreviewVideo(prev => prev?.id === video.id ? { ...prev, repostedByMe: result.reposted!, repostsCount: result.repostsCount! } : prev)
     if (result.reposted) {
       window.dispatchEvent(new CustomEvent('messme:notify', {
         detail: {
@@ -365,7 +360,6 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
         videos: prev.videos.map(v => v.id === videoId ? { ...v, commentsCount: result.commentsCount ?? v.commentsCount + 1 } : v),
       }
     })
-    setChannelPreviewVideo(prev => prev?.id === videoId ? { ...prev, commentsCount: result.commentsCount ?? prev.commentsCount + 1 } : prev)
     window.dispatchEvent(new CustomEvent('messme:notify', {
       detail: {
         title: 'ClipMe',
@@ -440,7 +434,6 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
 
   const closeChannel = () => {
     setActiveChannelUserId(null)
-    setChannelPreviewVideo(null)
     setFeedPausedForOverlay(false)
     const previousActive = previousActiveVideoIdRef.current
     if (previousActive) {
@@ -454,7 +447,6 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
     setVideos(prev => prev.some(item => item.id === video.id) ? prev : [video, ...prev])
     setActiveChannelUserId(null)
     setFeedPausedForOverlay(false)
-    setChannelPreviewVideo(null)
     setActiveVideoId(video.id)
     requestAnimationFrame(() => {
       const node = videoRefs.current[video.id]

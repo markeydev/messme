@@ -150,11 +150,11 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
     container.scrollBy({ left: e.deltaY, behavior: 'auto' })
   }, [])
 
-  const getChatActivityTs = (chat: Chat) => {
+  const getChatActivityTs = useCallback((chat: Chat) => {
     const source = chat.lastMessage?.createdAt ?? chat.updatedAt
     const ts = source ? new Date(source).getTime() : 0
     return Number.isFinite(ts) ? ts : 0
-  }
+  }, [])
 
   const filteredChats = useMemo(
     () => chats
@@ -163,7 +163,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
         (chatGroupFilter === 'PLAYME' ? !!chat.gameMode : !chat.gameMode)
       )
       .sort((a, b) => getChatActivityTs(b) - getChatActivityTs(a)),
-    [chats, chatSearchQuery, chatGroupFilter]
+    [chats, chatSearchQuery, chatGroupFilter, getChatActivityTs]
   )
   const messmeChatsCount = chats.filter(chat => !chat.gameMode).length
   const playmeChatsCount = chats.filter(chat => !!chat.gameMode).length

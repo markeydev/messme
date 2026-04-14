@@ -732,6 +732,8 @@ export const clipMeAPI = {
     videoDuration?: number | null,
     onProgress?: (percent: number) => void
   ): Promise<{ url?: string; duration?: number | null; error?: string }> {
+    const toPercent = (loaded: number, total: number) =>
+      Math.max(0, Math.min(100, Math.round((loaded / total) * 100)))
     const token = getAuthToken()
     const form = new FormData()
     form.append('file', file, file.name)
@@ -743,7 +745,7 @@ export const clipMeAPI = {
       if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
       xhr.upload.onprogress = (event) => {
         if (!onProgress || !event.lengthComputable) return
-        const percent = Math.max(0, Math.min(100, Math.round((event.loaded / event.total) * 100)))
+        const percent = toPercent(event.loaded, event.total)
         onProgress(percent)
       }
       xhr.onerror = () => resolve({ error: 'Ошибка загрузки видео' })

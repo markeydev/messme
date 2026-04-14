@@ -279,7 +279,7 @@ export default function MessengerPage() {
     <div className="h-dvh flex overflow-hidden bg-white dark:bg-[#111112]">
       {/* Sidebar */}
       <div className={cn(
-        'flex-shrink-0 flex flex-col w-full md:w-[340px] md:min-w-[280px] md:max-w-[520px] md:resize-x md:overflow-x-auto',
+        'flex-shrink-0 flex flex-col w-full md:w-[340px] md:min-w-[280px] md:max-w-[520px] md:[resize:horizontal] md:overflow-x-auto',
         'bg-white dark:bg-[#111112] border-r border-black/[0.06] dark:border-white/[0.08]',
         activeChat?.gameMode
           ? 'hidden'
