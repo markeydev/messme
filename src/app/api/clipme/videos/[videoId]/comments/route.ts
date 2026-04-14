@@ -25,7 +25,7 @@ export async function GET(
       orderBy: { createdAt: 'desc' },
       take: 100,
       include: {
-        user: { select: { id: true, username: true, avatarUrl: true } },
+        user: { select: { id: true, username: true, avatarUrl: true, isBadgeVerified: true } },
         likes: { where: { userId: session.userId }, select: { id: true } },
         _count: { select: { replies: true, likes: true } },
       },
@@ -89,7 +89,7 @@ export async function POST(
         content: content.slice(0, 1000),
       },
       include: {
-        user: { select: { id: true, username: true, avatarUrl: true } },
+        user: { select: { id: true, username: true, avatarUrl: true, isBadgeVerified: true } },
       },
     })
 

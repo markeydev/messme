@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
         privacy,
       },
       include: {
-        user: { select: { id: true, username: true, avatarUrl: true } },
+        user: { select: { id: true, username: true, avatarUrl: true, isBadgeVerified: true } },
       },
     })
 

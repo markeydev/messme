@@ -9,6 +9,7 @@ export interface User {
   username: string
   email?: string
   avatarUrl?: string | null
+  bio?: string | null
   clipMeBio?: string | null
   isBadgeVerified?: boolean
   isAdmin?: boolean
@@ -96,7 +97,7 @@ export type ClipMePrivacy = 'PUBLIC' | 'FOLLOWERS' | 'PRIVATE'
 
 export interface ClipMeVideo {
   id: string
-  user: Pick<User, 'id' | 'username' | 'avatarUrl'>
+  user: Pick<User, 'id' | 'username' | 'avatarUrl' | 'isBadgeVerified'>
   videoUrl: string
   description: string
   privacy: ClipMePrivacy
@@ -117,7 +118,7 @@ export interface ClipMeComment {
   repliesCount: number
   likesCount: number
   likedByMe: boolean
-  user: Pick<User, 'id' | 'username' | 'avatarUrl'>
+  user: Pick<User, 'id' | 'username' | 'avatarUrl' | 'isBadgeVerified'>
 }
 
 // Token management
@@ -787,7 +788,7 @@ export const clipMeAPI = {
     return { error: result.error }
   },
   async getUserChannel(userId: string): Promise<{
-    user?: Pick<User, 'id' | 'username' | 'avatarUrl' | 'clipMeBio'>
+    user?: Pick<User, 'id' | 'username' | 'avatarUrl' | 'clipMeBio' | 'isBadgeVerified'>
     videos?: ClipMeVideo[]
     reposts?: ClipMeVideo[]
     followersCount?: number
@@ -796,7 +797,7 @@ export const clipMeAPI = {
     error?: string
   }> {
     const result = await fetchAPI<{
-      user: Pick<User, 'id' | 'username' | 'avatarUrl' | 'clipMeBio'>
+      user: Pick<User, 'id' | 'username' | 'avatarUrl' | 'clipMeBio' | 'isBadgeVerified'>
       videos: ClipMeVideo[]
       reposts: ClipMeVideo[]
       followersCount: number
@@ -818,8 +819,8 @@ export const clipMeAPI = {
   async updateChannelBio(
     userId: string,
     clipMeBio: string
-  ): Promise<{ user?: Pick<User, 'id' | 'username' | 'avatarUrl' | 'clipMeBio'>; error?: string }> {
-    const result = await fetchAPI<{ user: Pick<User, 'id' | 'username' | 'avatarUrl' | 'clipMeBio'> }>(
+  ): Promise<{ user?: Pick<User, 'id' | 'username' | 'avatarUrl' | 'clipMeBio' | 'isBadgeVerified'>; error?: string }> {
+    const result = await fetchAPI<{ user: Pick<User, 'id' | 'username' | 'avatarUrl' | 'clipMeBio' | 'isBadgeVerified'> }>(
       `/clipme/users/${encodeURIComponent(userId)}`,
       {
         method: 'PATCH',

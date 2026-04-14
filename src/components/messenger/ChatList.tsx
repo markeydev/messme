@@ -623,10 +623,12 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                     </span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold truncate text-[14px] text-black dark:text-white">
-                          {chat.title}
-                        </span>
-                        {peer?.isBadgeVerified && <VerifiedBadge className="flex-shrink-0" />}
+                        <div className="min-w-0 flex items-center gap-1.5">
+                          <span className="font-semibold truncate text-[14px] text-black dark:text-white">
+                            {chat.title}
+                          </span>
+                          {peer?.isBadgeVerified && <VerifiedBadge className="flex-shrink-0" />}
+                        </div>
                         {chat.lastMessage?.createdAt && (
                           <span className={cn('text-[11px] flex-shrink-0',
                             (unreadCounts[chat.id] ?? 0) > 0 ? 'text-[#152cff]' : 'text-black/40 dark:text-white/40')}>

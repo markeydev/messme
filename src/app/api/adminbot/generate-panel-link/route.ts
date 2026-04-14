@@ -46,7 +46,10 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    const panelUrl = `${request.nextUrl.origin}/admin/panel?token=${encodeURIComponent(panelToken)}`
+    const explicitBaseUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_PUBLIC_URL ?? ''
+    const normalizedBaseUrl = explicitBaseUrl.trim().replace(/\/+$/, '')
+    const baseUrl = normalizedBaseUrl || request.nextUrl.origin
+    const panelUrl = `${baseUrl}/admin/panel?token=${encodeURIComponent(panelToken)}`
     return NextResponse.json({
       url: panelUrl,
       expiresAt: expiresAt.toISOString(),
