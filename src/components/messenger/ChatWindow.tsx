@@ -16,6 +16,7 @@ import { VerifiedBadge } from './VerifiedBadge'
 import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
 import { chatsAPI, usersAPI, storiesAPI, type Chat, type Message, type StoryFeedItem, type User } from '@/lib/api'
+import { CHAT_MESSAGE_CONTEXT_REACTIONS_MENU_EXTRA_HEIGHT, REACTION_EMOJIS } from '@/lib/product-config'
 import { ArrowDown, ArrowLeft, Users, Loader2, UserPlus, Check, X, Reply, Forward, Trash2, Pencil, FileText, Download, ZoomIn, Copy, Bell, BellOff, Phone, Clock, AlertCircle, ShieldCheck, Smile } from 'lucide-react'
 import { cn, openExternalUrl } from '@/lib/utils'
 
@@ -63,7 +64,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
   const [storyInfo, setStoryInfo] = useState<StoryFeedItem | null>(null)
 
   const { user, addMessage, deleteMessage, chats, mutedChats, toggleMuteChat, removeChat, setActiveChat, prependMessages, updateChatMembers, updateMessageReactions } = useMessengerStore()
-  const baseReactions = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥']
+  const baseReactions = REACTION_EMOJIS
   const isReadOnlyPersonalChannel = !!chat.isPersonalChannel && chat.ownerId !== user?.id
 
   // Infinite scroll state
@@ -852,8 +853,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
         const isText = !(m as any).type || (m as any).type === 'TEXT'
         const menuW = 196
         const itemCount = 2 + (isText ? 1 : 0) + (menuIsOwn && isText ? 1 : 0) + 1 // +1 delete
-        // Extra vertical room includes reaction-row height above action items.
-        const menuH = itemCount * 44 + 64
+        const menuH = itemCount * 44 + CHAT_MESSAGE_CONTEXT_REACTIONS_MENU_EXTRA_HEIGHT
         const vw = typeof window !== 'undefined' ? window.innerWidth : 400
         const vh = typeof window !== 'undefined' ? window.innerHeight : 800
         const rx = Math.min(contextMenu.x, vw - menuW - 8)

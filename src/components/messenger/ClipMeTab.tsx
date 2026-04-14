@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 import { CustomVideoPlayer } from '@/components/messenger/CustomVideoPlayer'
 import { VerifiedBadge } from '@/components/messenger/VerifiedBadge'
+import { CLIPME_CHANNEL_SEARCH_DEBOUNCE_MS } from '@/lib/product-config'
 
 interface ClipMeTabProps {
   onClose?: () => void
@@ -182,7 +183,7 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
       const result = await usersAPI.search(q)
       setChannelSearchResults(result.users ?? [])
       setIsChannelSearchLoading(false)
-    }, 220)
+    }, CLIPME_CHANNEL_SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(id)
   }, [channelSearchQuery])
 

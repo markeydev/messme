@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { REACTION_EMOJIS } from '@/lib/product-config'
 
-const ALLOWED_EMOJIS = new Set(['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥'])
+const ALLOWED_EMOJIS = new Set(REACTION_EMOJIS)
 
 export async function POST(
   request: NextRequest,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hasAdminAccess } from '@/lib/admin'
 import { getAdminByPanelToken } from '@/lib/admin-panel-auth'
+import { ADMIN_PANEL_TREND_DAYS } from '@/lib/product-config'
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,7 +14,7 @@ export async function GET(request: NextRequest) {
 
     const now = new Date()
     const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000)
-    const trendDays = 7
+    const trendDays = ADMIN_PANEL_TREND_DAYS
     const trendStart = new Date(Date.now() - (trendDays - 1) * 24 * 60 * 60 * 1000)
 
     const [
