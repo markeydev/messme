@@ -209,6 +209,7 @@ export async function GET(
     }
 
     return NextResponse.json({
+      subscribersCount: chat.members.length,
       members: chat.members.map(m => ({
         id: m.user.id,
         username: m.user.username,
