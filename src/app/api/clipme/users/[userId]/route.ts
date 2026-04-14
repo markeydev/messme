@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { canAccessClipVideo, getSession } from '@/lib/clipme'
+import { decryptText } from '@/lib/serverCrypto'
 
 export async function GET(
   request: NextRequest,
@@ -25,6 +26,26 @@ export async function GET(
         select: { id: true },
       }),
     ])
+
+    const linkedMessmeChannel = user.linkedMessmeChannelId
+      ? await db.chat.findFirst({
+          where: { id: user.linkedMessmeChannelId, isPersonalChannel: true },
+          select: {
+            id: true,
+            title: true,
+            _count: { select: { members: true } },
+            messages: {
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+              select: {
+                type: true,
+                encryptedContent: true,
+                fileName: true,
+              },
+            },
+          },
+        })
+      : null
 
     const videosRaw = await db.clipMeVideo.findMany({
       where: { userId },
@@ -94,6 +115,21 @@ export async function GET(
 
     return NextResponse.json({
       user,
+      linkedMessmeChannel: linkedMessmeChannel ? {
+        id: linkedMessmeChannel.id,
+        title: linkedMessmeChannel.title ?? 'Канал',
+        subscribersCount: linkedMessmeChannel._count.members,
+        lastMessageText: (() => {
+          const msg = linkedMessmeChannel.messages[0]
+          if (!msg) return null
+          if (msg.type === 'TEXT') return decryptText(msg.encryptedContent)
+          if (msg.type === 'AUDIO') return '🎤 Голосовое сообщение'
+          if (msg.type === 'IMAGE') return '🖼 Фото'
+          if (msg.type === 'FILE') return `📎 ${msg.fileName ?? 'Файл'}`
+          if (msg.type === 'VIDEO_NOTE') return '🎥 Видеосообщение'
+          return null
+        })(),
+      } : null,
       followersCount,
       followingCount,
       subscribedByMe: !!mySub,

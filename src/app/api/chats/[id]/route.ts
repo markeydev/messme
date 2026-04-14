@@ -120,6 +120,7 @@ export async function GET(
           isEdited: (msg as any).isEdited ?? false,
           isForwarded: (msg as any).isForwarded ?? false,
           forwardedFromUsername: (msg as any).forwardedFromUsername ?? null,
+          forwardedFromChatId: (msg as any).forwardedFromChatId ?? null,
           replyToId: (msg as any).replyToId ?? null,
           replyTo: (msg as any).replyTo ? {
             id: (msg as any).replyTo.id,
