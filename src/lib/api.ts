@@ -67,6 +67,7 @@ export interface Message {
   isEdited?: boolean
   isForwarded?: boolean
   forwardedFromUsername?: string | null
+  forwardedFromChatId?: string | null
   createdAt: string | Date
   // Client-only optimistic status (never persisted / sent to server)
   pendingStatus?: 'sending' | 'failed'
@@ -315,7 +316,7 @@ export const chatsAPI = {
     return { error: result.error }
   },
 
-  async sendMessage(chatId: string, content: string, replyToId?: string, forwardMeta?: { isForwarded: boolean; forwardedFromUsername?: string }, audioMeta?: { audioUrl: string; audioDuration?: number | null }, fileMeta?: { fileUrl: string; fileName: string; fileSize: number; type: 'IMAGE' | 'FILE' }, videoNoteMeta?: { videoNoteUrl: string; videoNoteDuration?: number | null }): Promise<{ message?: Message; error?: string }> {
+  async sendMessage(chatId: string, content: string, replyToId?: string, forwardMeta?: { isForwarded: boolean; forwardedFromUsername?: string; forwardedFromChatId?: string }, audioMeta?: { audioUrl: string; audioDuration?: number | null }, fileMeta?: { fileUrl: string; fileName: string; fileSize: number; type: 'IMAGE' | 'FILE' }, videoNoteMeta?: { videoNoteUrl: string; videoNoteDuration?: number | null }): Promise<{ message?: Message; error?: string }> {
     const result = await fetchAPI<{ message: Message }>(`/chats/${chatId}/messages`, {
       method: 'POST',
       body: JSON.stringify({
@@ -830,6 +831,12 @@ export const clipMeAPI = {
   },
   async getUserChannel(userId: string): Promise<{
     user?: Pick<User, 'id' | 'username' | 'avatarUrl' | 'clipMeBio' | 'linkedMessmeChannelId' | 'isBadgeVerified'>
+    linkedMessmeChannel?: {
+      id: string
+      title: string
+      subscribersCount: number
+      lastMessageText?: string | null
+    } | null
     videos?: ClipMeVideo[]
     reposts?: ClipMeVideo[]
     followersCount?: number
@@ -839,6 +846,12 @@ export const clipMeAPI = {
   }> {
     const result = await fetchAPI<{
       user: Pick<User, 'id' | 'username' | 'avatarUrl' | 'clipMeBio' | 'linkedMessmeChannelId' | 'isBadgeVerified'>
+      linkedMessmeChannel?: {
+        id: string
+        title: string
+        subscribersCount: number
+        lastMessageText?: string | null
+      } | null
       videos: ClipMeVideo[]
       reposts: ClipMeVideo[]
       followersCount: number
@@ -848,6 +861,7 @@ export const clipMeAPI = {
     if (result.data) {
       return {
         user: result.data.user,
+        linkedMessmeChannel: result.data.linkedMessmeChannel ?? null,
         videos: result.data.videos,
         reposts: result.data.reposts,
         followersCount: result.data.followersCount,

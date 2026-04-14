@@ -1,14 +1,15 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
-import { clipMeAPI, storiesAPI, type Story } from '@/lib/api'
+import { storiesAPI, type Story } from '@/lib/api'
 import { useMessengerStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { Heart, Eye, X, ChevronUp, ChevronDown } from 'lucide-react'
 import { CustomVideoPlayer } from '@/components/messenger/CustomVideoPlayer'
+import { UserPublicProfileDialog } from '@/components/messenger/UserPublicProfileDialog'
 
 const IMAGE_STORY_DURATION_MS = 15_000
 
@@ -27,10 +28,8 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
   const [isLoading, setIsLoading] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
   const [showViewers, setShowViewers] = useState(false)
-  const [showProfileCard, setShowProfileCard] = useState(false)
+  const [profileUserId, setProfileUserId] = useState<string | null>(null)
   const [profileAvatarLightbox, setProfileAvatarLightbox] = useState<string | null>(null)
-  const [profileDetails, setProfileDetails] = useState<{ clipMeBio?: string | null; linkedMessmeChannelId?: string | null } | null>(null)
-  const [profileLoading, setProfileLoading] = useState(false)
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
   const lastWheelTimeRef = useRef(0)
 
@@ -64,7 +63,7 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
       const startIndex = allStories.findIndex(s => s.user.id === userId)
       setActiveIndex(startIndex >= 0 ? startIndex : 0)
       setShowViewers(false)
-      setShowProfileCard(false)
+      setProfileUserId(null)
       setIsLoading(false)
     }
     load()
@@ -114,28 +113,8 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
 
   const openActiveStoryProfile = () => {
     if (!activeStory) return
-    setShowProfileCard(true)
+    setProfileUserId(activeStory.user.id)
   }
-
-  useEffect(() => {
-    if (!showProfileCard || !activeStory) return
-    let cancelled = false
-    setProfileLoading(true)
-    setProfileDetails(null)
-    clipMeAPI.getUserChannel(activeStory.user.id).then(result => {
-      if (cancelled) return
-      setProfileDetails({
-        clipMeBio: result.user?.clipMeBio ?? null,
-        linkedMessmeChannelId: result.user?.linkedMessmeChannelId ?? null,
-      })
-      setProfileLoading(false)
-    }).catch(error => {
-      console.error('Story profile load error:', error)
-      if (cancelled) return
-      setProfileLoading(false)
-    })
-    return () => { cancelled = true }
-  }, [showProfileCard, activeStory])
 
   const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 
@@ -304,61 +283,17 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
             </div>
           )}
 
-          <Dialog open={showProfileCard} onOpenChange={setShowProfileCard}>
-            <DialogContent className="max-w-sm bg-[#121212] border-white/10 text-white">
-              {activeStory && (
-                <>
-                  <DialogTitle>Профиль</DialogTitle>
-                  <div className="flex flex-col items-center gap-3 py-1">
-                    <Avatar
-                      className={cn('h-20 w-20 border border-white/20', activeStory.user.avatarUrl && 'cursor-zoom-in')}
-                      onClick={() => {
-                        if (activeStory.user.avatarUrl) setProfileAvatarLightbox(activeStory.user.avatarUrl)
-                      }}
-                    >
-                      {activeStory.user.avatarUrl && <AvatarImage src={activeStory.user.avatarUrl} alt={activeStory.user.username} />}
-                      <AvatarFallback className="bg-[#5d6cf5] text-white text-lg font-semibold">
-                        {getInitials(activeStory.user.username)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <p className="text-base font-semibold">{activeStory.user.username}</p>
-                    {profileLoading ? (
-                      <p className="text-sm text-white/60">Загрузка профиля...</p>
-                    ) : (
-                      <>
-                          {profileDetails?.clipMeBio && (
-                            <p className="text-sm text-white/80 text-center whitespace-pre-wrap">{profileDetails.clipMeBio}</p>
-                          )}
-                        {profileDetails?.linkedMessmeChannelId && (
-                          <Button
-                            variant="secondary"
-                            onClick={() => {
-                              if (profileDetails.linkedMessmeChannelId) {
-                                onOpenLinkedChannel?.(profileDetails.linkedMessmeChannelId)
-                              }
-                              setShowProfileCard(false)
-                              onOpenChange(false)
-                            }}
-                            className="bg-white/15 hover:bg-white/25 text-white"
-                          >
-                            Открыть прикреплённый канал
-                          </Button>
-                        )}
-                      </>
-                    )}
-                    {!!onOpenChatWithUser && (
-                      <Button
-                        onClick={() => handleViewerClick(activeStory.user)}
-                        className="bg-[#5d6cf5] hover:bg-[#4a5be0]"
-                      >
-                        Открыть чат
-                      </Button>
-                    )}
-                  </div>
-                </>
-              )}
-            </DialogContent>
-          </Dialog>
+          <UserPublicProfileDialog
+            open={!!profileUserId}
+            userId={profileUserId}
+            fallbackUser={activeStory ? { username: activeStory.user.username, avatarUrl: activeStory.user.avatarUrl } : undefined}
+            onOpenChange={open => { if (!open) setProfileUserId(null) }}
+            onOpenLinkedChannel={channelId => {
+              onOpenLinkedChannel?.(channelId)
+              setProfileUserId(null)
+              onOpenChange(false)
+            }}
+          />
           <Dialog open={!!profileAvatarLightbox} onOpenChange={open => { if (!open) setProfileAvatarLightbox(null) }}>
             <DialogContent className="bg-black/90 border-0 max-w-3xl p-2 flex items-center justify-center">
               {profileAvatarLightbox && (

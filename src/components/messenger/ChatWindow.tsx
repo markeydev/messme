@@ -12,6 +12,7 @@ import { VideoNote } from './VideoNote'
 import { GroupSettingsDialog } from './GroupSettingsDialog'
 import { CallWindow } from './CallWindow'
 import { StoryViewer } from './StoryViewer'
+import { UserPublicProfileDialog } from './UserPublicProfileDialog'
 import { VerifiedBadge } from './VerifiedBadge'
 import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
@@ -47,7 +48,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
   const [isForwarding, setIsForwarding] = useState(false)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [isGroupSettingsOpen, setIsGroupSettingsOpen] = useState(false)
-  const [isUserProfileOpen, setIsUserProfileOpen] = useState(false)
+  const [profileUserId, setProfileUserId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<{ msg: Message; x: number; y: number } | null>(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -258,12 +259,18 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
     setIsForwarding(true)
     try {
       const originalSender = getSender(forwardMessage.senderId)
-      const senderName = forwardMessage.senderUsername ?? originalSender?.username ?? 'Неизвестно'
+      const senderName = chat.isPersonalChannel
+        ? currentChat.title
+        : (forwardMessage.senderUsername ?? originalSender?.username ?? 'Неизвестно')
       const result = await chatsAPI.sendMessage(
         targetChatId,
         forwardMessage.content,
         undefined,
-        { isForwarded: true, forwardedFromUsername: senderName },
+        {
+          isForwarded: true,
+          forwardedFromUsername: senderName,
+          ...(chat.isPersonalChannel ? { forwardedFromChatId: chat.id } : {}),
+        },
       )
       if (result.message) messengerSocket.broadcastMessage(result.message)
     } catch (err) {
@@ -371,7 +378,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
           <button
             onClick={() => {
               if (peerUserId && storyInfo) setActiveStoryUserId(peerUserId)
-              else setIsUserProfileOpen(true)
+              else if (peerUserId) setProfileUserId(peerUserId)
             }}
             className="rounded-full hover:ring-2 hover:ring-[#5D6CF5]/50 transition-all flex-shrink-0"
             title={storyInfo ? 'Открыть сторис' : 'Профиль собеседника'}
@@ -511,13 +518,15 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                       >
                         {showAvatar ? (
                           <Avatar className="h-7 w-7 flex-shrink-0 mb-0.5">
-                            {isOwn
-                              ? (user?.avatarUrl && <AvatarImage src={user.avatarUrl} alt={user.username} />)
-                              : (sender?.avatarUrl && <AvatarImage src={sender.avatarUrl} alt={sender.username} />)
+                            {isChannelLayout
+                              ? (currentChat.avatarUrl && <AvatarImage src={currentChat.avatarUrl} alt={currentChat.title} />)
+                              : isOwn
+                                ? (user?.avatarUrl && <AvatarImage src={user.avatarUrl} alt={user.username} />)
+                                : (sender?.avatarUrl && <AvatarImage src={sender.avatarUrl} alt={sender.username} />)
                             }
                             <AvatarFallback className={cn('text-[10px] text-white font-medium',
                               isOwn ? 'bg-[#5D6CF5]' : 'bg-black/[0.25]')}>
-                              {sender ? getInitials(sender.username) : '?'}
+                              {isChannelLayout ? getInitials(currentChat.title || 'К') : sender ? getInitials(sender.username) : '?'}
                             </AvatarFallback>
                           </Avatar>
                         ) : <div className="w-7 flex-shrink-0" />}
@@ -536,7 +545,20 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                             <div className="flex items-center gap-1 mb-1.5">
                               <Forward className={cn('h-3 w-3', isOwn ? 'text-white/60' : 'text-black/40')} />
                               <span className={cn('text-[10px] italic', isOwn ? 'text-white/60' : 'text-black/40')}>
-                                Переслано от <span className="font-semibold not-italic">{(msg as any).forwardedFromUsername}</span>
+                                Переслано от{' '}
+                                {(msg as any).forwardedFromChatId ? (
+                                  <button
+                                    className="font-semibold not-italic underline underline-offset-2"
+                                    onClick={() => {
+                                      const target = chats.find(item => item.id === (msg as any).forwardedFromChatId)
+                                      if (target) setActiveChat(target)
+                                    }}
+                                  >
+                                    {(msg as any).forwardedFromUsername}
+                                  </button>
+                                ) : (
+                                  <span className="font-semibold not-italic">{(msg as any).forwardedFromUsername}</span>
+                                )}
                               </span>
                             </div>
                           )}
@@ -556,8 +578,8 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                           )}
                           {showName && (
                             <p className="text-[11px] text-[#5D6CF5] font-semibold mb-1 inline-flex items-center gap-1">
-                              {sender?.username}
-                              {sender?.isBadgeVerified && <VerifiedBadge className="h-3 w-3 min-h-3 min-w-3" />}
+                              {isChannelLayout ? currentChat.title : sender?.username}
+                              {!isChannelLayout && sender?.isBadgeVerified && <VerifiedBadge className="h-3 w-3 min-h-3 min-w-3" />}
                             </p>
                           )}
                           {/* Audio message */}
@@ -835,71 +857,16 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
         }}
       />
 
-      {/* User profile overlay (private chats) */}
-      {isUserProfileOpen && !chat.isGroup && (() => {
-        const remote = chatMembers.find(m => m.id !== user?.id)
-        const displayName = currentChat.title
-        const avatarUrl = currentChat.avatarUrl
-        const initials = getInitials(displayName)
-        const isMuted = !!mutedChats[chat.id]
-        return (
-          <div className="fixed inset-0 z-50 bg-white dark:bg-[#111112] flex flex-col">
-            {/* Header */}
-            <div className="flex items-center gap-3 px-4 py-3 border-b border-black/[0.06] dark:border-white/[0.06] flex-shrink-0">
-              <button
-                onClick={() => setIsUserProfileOpen(false)}
-                className="h-8 w-8 flex items-center justify-center rounded-xl text-black/50 dark:text-white/50 hover:bg-black/[0.05] dark:hover:bg-white/[0.07] transition-colors"
-              >
-                <ArrowLeft className="h-5 w-5" />
-              </button>
-              <h2 className="font-semibold text-[17px] text-black dark:text-white flex-1">Профиль</h2>
-            </div>
-
-            <div className="flex flex-col items-center gap-5 px-4 py-8">
-              {/* Avatar */}
-              <Avatar className={cn('h-24 w-24', avatarUrl && 'cursor-zoom-in')} onClick={() => avatarUrl && setLightboxUrl(avatarUrl)}>
-                {avatarUrl && <AvatarImage src={avatarUrl} alt={displayName} className="object-cover" />}
-                <AvatarFallback className="bg-[#5d6cf5] text-white text-2xl font-bold">
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
-
-              <div className="text-center">
-                <h3 className="text-xl font-semibold text-black dark:text-white">{displayName}</h3>
-                {remote?.id && (
-                  <p className="text-sm text-black/40 dark:text-white/40 mt-0.5">Участник</p>
-                )}
-              </div>
-
-              {/* Mute toggle */}
-              <div className="w-full flex items-center justify-between bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 h-14">
-                <div className="flex items-center gap-3">
-                  {isMuted
-                    ? <BellOff className="h-5 w-5 text-black/50 dark:text-white/50" />
-                    : <Bell className="h-5 w-5 text-black/50 dark:text-white/50" />
-                  }
-                  <div>
-                    <p className="text-[15px] font-medium text-black dark:text-white">Уведомления</p>
-                    <p className="text-xs text-black/40 dark:text-white/40">{isMuted ? 'Отключены' : 'Включены'}</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => toggleMuteChat(chat.id)}
-                  className={cn(
-                    'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none',
-                    !isMuted ? 'bg-[#5d6cf5]' : 'bg-black/[0.15] dark:bg-white/[0.15]'
-                  )}
-                >
-                  <span className={cn(
-                    'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
-                    !isMuted ? 'translate-x-6' : 'translate-x-1'
-                  )} />
-                </button>
-              </div>
-            </div>
-          </div>
-        )
-      })()}
+      <UserPublicProfileDialog
+        open={!!profileUserId}
+        userId={profileUserId}
+        fallbackUser={peerMember ? { username: peerMember.username, avatarUrl: peerMember.avatarUrl } : undefined}
+        onOpenChange={open => { if (!open) setProfileUserId(null) }}
+        onOpenLinkedChannel={channelId => {
+          const linked = chats.find(item => item.id === channelId)
+          if (linked) setActiveChat(linked)
+        }}
+      />
 
       {/* Floating context menu */}
       {contextMenu && (() => {

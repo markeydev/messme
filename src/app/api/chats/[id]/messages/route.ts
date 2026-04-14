@@ -50,7 +50,7 @@ export async function POST(
     }
 
     const body = await request.json()
-    const { content, replyToId, isForwarded, forwardedFromUsername, type, audioUrl, audioDuration, fileUrl, fileName, fileSize, videoNoteUrl, videoNoteDuration } = body
+    const { content, replyToId, isForwarded, forwardedFromUsername, forwardedFromChatId, type, audioUrl, audioDuration, fileUrl, fileName, fileSize, videoNoteUrl, videoNoteDuration } = body
     if (content === undefined || content === null || typeof content !== 'string') {
       return NextResponse.json({ error: 'Нет содержимого' }, { status: 400 })
     }
@@ -75,7 +75,13 @@ export async function POST(
         ...(videoNoteUrl ? { videoNoteUrl } : {}),
         ...(videoNoteDuration != null ? { videoNoteDuration: Math.round(videoNoteDuration) } : {}),
         ...(replyToId ? { replyToId } : {}),
-        ...(isForwarded ? { isForwarded: true, forwardedFromUsername: forwardedFromUsername ?? null } : {}),
+        ...(isForwarded
+          ? {
+              isForwarded: true,
+              forwardedFromUsername: forwardedFromUsername ?? null,
+              forwardedFromChatId: typeof forwardedFromChatId === 'string' ? forwardedFromChatId : null,
+            }
+          : {}),
       },
       include: {
         sender: { select: { id: true, username: true } },
@@ -175,6 +181,7 @@ export async function POST(
         isEdited: false,
         isForwarded: message.isForwarded,
         forwardedFromUsername: message.forwardedFromUsername ?? null,
+        forwardedFromChatId: (message as any).forwardedFromChatId ?? null,
         createdAt: message.createdAt.toISOString(),
         reactions: [],
       }

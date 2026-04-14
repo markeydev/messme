@@ -111,6 +111,7 @@ model Message {
   isEdited              Boolean     @default(false)
   replyToId             String?
   forwardedFromUsername String?
+  forwardedFromChatId   String?
   isForwarded           Boolean     @default(false)
   audioDuration         Int?
   audioUrl              String?
