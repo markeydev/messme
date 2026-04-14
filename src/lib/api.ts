@@ -727,24 +727,41 @@ export const clipMeAPI = {
     if (result.data) return { videos: result.data.videos }
     return { error: result.error }
   },
-  async uploadClipVideo(file: File, videoDuration?: number | null): Promise<{ url?: string; duration?: number | null; error?: string }> {
+  async uploadClipVideo(
+    file: File,
+    videoDuration?: number | null,
+    onProgress?: (percent: number) => void
+  ): Promise<{ url?: string; duration?: number | null; error?: string }> {
     const token = getAuthToken()
     const form = new FormData()
     form.append('file', file, file.name)
     form.append('purpose', 'clipme')
     if (videoDuration !== undefined && videoDuration !== null) form.append('duration', String(videoDuration))
-    try {
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: form,
-      })
-      const data = await response.json()
-      if (!response.ok) return { error: data.error }
-      return { url: data.url, duration: data.duration }
-    } catch {
-      return { error: 'Ошибка загрузки видео' }
-    }
+    return await new Promise((resolve) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', '/api/upload')
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+      xhr.upload.onprogress = (event) => {
+        if (!onProgress || !event.lengthComputable) return
+        const percent = Math.max(0, Math.min(100, Math.round((event.loaded / event.total) * 100)))
+        onProgress(percent)
+      }
+      xhr.onerror = () => resolve({ error: 'Ошибка загрузки видео' })
+      xhr.onload = () => {
+        try {
+          const data = JSON.parse(xhr.responseText || '{}')
+          if (xhr.status < 200 || xhr.status >= 300) {
+            resolve({ error: data.error ?? 'Ошибка загрузки видео' })
+            return
+          }
+          onProgress?.(100)
+          resolve({ url: data.url, duration: data.duration })
+        } catch {
+          resolve({ error: 'Ошибка загрузки видео' })
+        }
+      }
+      xhr.send(form)
+    })
   },
   async createVideo(videoUrl: string, description: string, privacy: ClipMePrivacy): Promise<{ video?: ClipMeVideo; error?: string }> {
     const result = await fetchAPI<{ video: ClipMeVideo }>('/clipme/videos', {

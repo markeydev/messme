@@ -1577,8 +1577,8 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                   >
                     {showHeader ? (
                       <Avatar className="h-9 w-9 flex-shrink-0 mt-0.5">
-                        {getMemberAvatar(msg.senderId) && <AvatarImage src={getMemberAvatar(msg.senderId)!} />}
-                        <AvatarFallback className="bg-[#5d6cf5]/40 text-white text-xs font-bold">{getInitials(msg.senderUsername)}</AvatarFallback>
+                        {chat.avatarUrl && <AvatarImage src={chat.avatarUrl} />}
+                        <AvatarFallback className="bg-[#5d6cf5]/40 text-white text-xs font-bold">{getInitials(chat.title || '#')}</AvatarFallback>
                       </Avatar>
                     ) : (
                       <div className="w-9 flex-shrink-0" />

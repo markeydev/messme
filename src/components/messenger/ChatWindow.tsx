@@ -406,10 +406,6 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
               <span>{isPeerOnline ? 'в сети' : formatLastSeen(peerLastSeenAt)}</span>
             </div>
           )}
-          <div className="flex items-center gap-1 text-black/30 dark:text-white/30 text-[11px]">
-            <ShieldCheck className="h-2.5 w-2.5" />
-            <span>Encrypted</span>
-          </div>
         </div>
         {chat.isGroup && (
           <Button variant="ghost" size="icon" onClick={() => setIsAddMemberOpen(true)}

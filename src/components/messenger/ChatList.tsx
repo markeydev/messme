@@ -52,6 +52,12 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
   const [isStoriesLoading, setIsStoriesLoading] = useState(false)
   const [activeStoryUserId, setActiveStoryUserId] = useState<string | null>(null)
   const [isUploadingStory, setIsUploadingStory] = useState(false)
+  const [pendingStoryUpload, setPendingStoryUpload] = useState<{
+    file: File
+    duration: number | null
+    previewUrl: string
+    isVideo: boolean
+  } | null>(null)
   const storyFileInputRef = useRef<HTMLInputElement>(null)
   const storiesScrollRef = useRef<HTMLDivElement>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -117,6 +123,12 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
   }, [user?.username, user?.bio, user?.clipMeBio, user?.linkedMessmeChannelId])
 
   useEffect(() => {
+    return () => {
+      if (pendingStoryUpload?.previewUrl) URL.revokeObjectURL(pendingStoryUpload.previewUrl)
+    }
+  }, [pendingStoryUpload?.previewUrl])
+
+  useEffect(() => {
     const loadDevices = async () => {
       if (!navigator?.mediaDevices?.enumerateDevices) return
       try {
@@ -138,15 +150,30 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
     container.scrollBy({ left: e.deltaY, behavior: 'auto' })
   }, [])
 
-  const filteredChats = chats.filter(chat =>
-    chat.title.toLowerCase().includes(chatSearchQuery.toLowerCase()) &&
-    (chatGroupFilter === 'PLAYME' ? !!chat.gameMode : !chat.gameMode)
+  const getChatActivityTs = (chat: Chat) => {
+    const source = chat.lastMessage?.createdAt ?? chat.updatedAt
+    const ts = source ? new Date(source).getTime() : 0
+    return Number.isFinite(ts) ? ts : 0
+  }
+
+  const filteredChats = useMemo(
+    () => chats
+      .filter(chat =>
+        chat.title.toLowerCase().includes(chatSearchQuery.toLowerCase()) &&
+        (chatGroupFilter === 'PLAYME' ? !!chat.gameMode : !chat.gameMode)
+      )
+      .sort((a, b) => getChatActivityTs(b) - getChatActivityTs(a)),
+    [chats, chatSearchQuery, chatGroupFilter]
   )
   const messmeChatsCount = chats.filter(chat => !chat.gameMode).length
   const playmeChatsCount = chats.filter(chat => !!chat.gameMode).length
   const ownedPersonalChannels = useMemo(
     () => chats.filter(chat => chat.isPersonalChannel && chat.ownerId === user?.id),
     [chats, user?.id]
+  )
+  const linkedChannelPreview = useMemo(
+    () => chats.find(chat => chat.id === linkedMessmeChannelId && chat.isPersonalChannel),
+    [chats, linkedMessmeChannelId]
   )
   const storiesByUser = new Map(storyFeed.map(item => [item.user.id, item]))
   const isAdminUser = Boolean(user?.isAdmin)
@@ -274,25 +301,13 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
     return new File([blob], outputName, { type: 'image/jpeg' })
   }
 
-  const handleStoryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
+  const uploadPreparedStory = async (storyFile: File, duration: number | null) => {
     setProfileError(null)
     setIsUploadingStory(true)
     try {
-      const isVideo = file.type.startsWith('video/')
-      const storyFile = isVideo ? file : await compressStoryImage(file)
-      const duration = isVideo ? await readVideoDuration(storyFile) : null
-      if (isVideo && (duration ?? 0) > STORY_MAX_VIDEO_DURATION_SECONDS) {
-        setProfileError(`Видео для сторис должно быть до ${STORY_MAX_VIDEO_DURATION_SECONDS} секунд`)
-        setIsUploadingStory(false)
-        return
-      }
       const uploaded = await storiesAPI.uploadStoryMedia(storyFile, duration)
       if (uploaded.error || !uploaded.url || !uploaded.mediaType) {
         setProfileError(uploaded.error ?? 'Ошибка загрузки сторис')
-        setIsUploadingStory(false)
         return
       }
       const created = await storiesAPI.createStory(uploaded.url, uploaded.mediaType, uploaded.duration)
@@ -306,6 +321,26 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
       setProfileError('Ошибка загрузки сторис')
     } finally {
       setIsUploadingStory(false)
+    }
+  }
+
+  const handleStoryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setProfileError(null)
+    try {
+      const isVideo = file.type.startsWith('video/')
+      const storyFile = isVideo ? file : await compressStoryImage(file)
+      const duration = isVideo ? await readVideoDuration(storyFile) : null
+      if (isVideo && (duration ?? 0) > STORY_MAX_VIDEO_DURATION_SECONDS) {
+        setProfileError(`Видео для сторис должно быть до ${STORY_MAX_VIDEO_DURATION_SECONDS} секунд`)
+        return
+      }
+      const previewUrl = URL.createObjectURL(storyFile)
+      setPendingStoryUpload({ file: storyFile, duration, previewUrl, isVideo })
+    } catch {
+      setProfileError('Ошибка загрузки сторис')
     }
   }
 
@@ -903,7 +938,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
               </div>
             )}
 
-            <Accordion type="multiple" defaultValue={['general', 'notifications', 'appearance', 'audio', 'media']} className="w-full rounded-xl bg-black/[0.04] dark:bg-white/[0.06] px-3">
+            <Accordion type="multiple" defaultValue={[]} className="w-full rounded-xl bg-black/[0.04] dark:bg-white/[0.06] px-3">
               <AccordionItem value="general" className="border-black/10 dark:border-white/10">
                 <AccordionTrigger className="text-black dark:text-white">Общие</AccordionTrigger>
                 <AccordionContent className="space-y-3">
@@ -941,6 +976,21 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                         </option>
                       ))}
                     </select>
+                    {linkedChannelPreview && (
+                      <div className="rounded-xl border border-black/[0.08] dark:border-white/[0.12] bg-white dark:bg-black/[0.2] px-3 py-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-black dark:text-white truncate">{linkedChannelPreview.title}</p>
+                            <p className="text-xs text-black/45 dark:text-white/45 truncate">
+                              {getPreview(linkedChannelPreview) || 'Пока нет сообщений'}
+                            </p>
+                          </div>
+                          <span className="text-xs text-black/50 dark:text-white/50 whitespace-nowrap">
+                            {linkedChannelPreview.members.length} подписч.
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </AccordionContent>
               </AccordionItem>
@@ -1193,6 +1243,56 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
           </button>
         </div>
       </div>
+
+      <AlertDialog
+        open={!!pendingStoryUpload}
+        onOpenChange={open => {
+          if (open) return
+          setPendingStoryUpload(prev => {
+            if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl)
+            return null
+          })
+        }}
+      >
+        <AlertDialogContent className="bg-white dark:bg-[#1c1c1e] border-black/[0.08] dark:border-white/[0.08] max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-black dark:text-white">Предпросмотр сторис</AlertDialogTitle>
+            <AlertDialogDescription className="text-black/50 dark:text-white/50">
+              Проверьте сторис перед публикацией.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {pendingStoryUpload && (
+            <div className="rounded-xl overflow-hidden bg-black max-h-[52vh]">
+              {pendingStoryUpload.isVideo ? (
+                <video src={pendingStoryUpload.previewUrl} controls className="w-full max-h-[52vh] object-contain" />
+              ) : (
+                <img src={pendingStoryUpload.previewUrl} alt="Story preview" className="w-full max-h-[52vh] object-contain" />
+              )}
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-black/[0.08] dark:border-white/[0.08] text-black dark:text-white hover:bg-black/[0.05] dark:hover:bg-white/[0.08]">
+              Отмена
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!pendingStoryUpload || isUploadingStory}
+              onClick={async e => {
+                e.preventDefault()
+                const current = pendingStoryUpload
+                if (!current) return
+                await uploadPreparedStory(current.file, current.duration)
+                setPendingStoryUpload(prev => {
+                  if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl)
+                  return null
+                })
+              }}
+              className="bg-[#5d6cf5] hover:bg-[#4a5be0] text-white border-0"
+            >
+              {isUploadingStory ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Опубликовать'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* ── Chat context menu ──────────────────────────────────────────────── */}
       {chatMenu && (
