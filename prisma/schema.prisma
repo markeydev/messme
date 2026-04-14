@@ -13,7 +13,9 @@ model User {
   email           String             @unique
   passwordHash    String
   avatarUrl       String?
+  bio             String?
   clipMeBio       String?
+  linkedMessmeChannelId String?
   isVerified      Boolean            @default(false)
   isBadgeVerified Boolean            @default(false)
   isAdmin         Boolean            @default(false)
@@ -23,6 +25,7 @@ model User {
   chatMemberships ChatMember[]
   chats           Chat[]
   sentMessages    Message[]
+  messageReactions MessageReaction[]
   sessions        Session[]
   pushSubscriptions PushSubscription[]
   channelMessages  ChannelMessage[]
@@ -72,6 +75,7 @@ model Chat {
   id        String       @id @default(cuid())
   title     String?
   isGroup   Boolean      @default(false)
+  isPersonalChannel Boolean @default(false)
   gameMode  Boolean      @default(false)
   avatarUrl String?
   createdAt DateTime     @default(now())
@@ -120,10 +124,26 @@ model Message {
   replyTo               Message?    @relation("MessageReplies", fields: [replyToId], references: [id])
   replies               Message[]   @relation("MessageReplies")
   sender                User        @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  reactions             MessageReaction[]
 
   @@index([chatId])
   @@index([senderId])
   @@map("messages")
+}
+
+model MessageReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+  @@index([userId])
+  @@map("message_reactions")
 }
 
 model Session {

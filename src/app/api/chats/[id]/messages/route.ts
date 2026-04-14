@@ -38,6 +38,17 @@ export async function POST(
       return NextResponse.json({ error: 'Нет доступа' }, { status: 403 })
     }
 
+    const chat = await db.chat.findUnique({
+      where: { id: chatId },
+      select: { ownerId: true, isPersonalChannel: true },
+    })
+    if (!chat) {
+      return NextResponse.json({ error: 'Чат не найден' }, { status: 404 })
+    }
+    if (chat.isPersonalChannel && chat.ownerId !== session.userId) {
+      return NextResponse.json({ error: 'В личном канале может публиковать только создатель' }, { status: 403 })
+    }
+
     const body = await request.json()
     const { content, replyToId, isForwarded, forwardedFromUsername, type, audioUrl, audioDuration, fileUrl, fileName, fileSize, videoNoteUrl, videoNoteDuration } = body
     if (content === undefined || content === null || typeof content !== 'string') {
@@ -165,6 +176,7 @@ export async function POST(
         isForwarded: message.isForwarded,
         forwardedFromUsername: message.forwardedFromUsername ?? null,
         createdAt: message.createdAt.toISOString(),
+        reactions: [],
       }
     })
   } catch (error) {

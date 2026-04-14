@@ -3,9 +3,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
-import { chatsAPI, usersAPI, profileAPI, storiesAPI, type Chat, type StoryFeedItem, type User } from '@/lib/api'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
+import { chatsAPI, usersAPI, profileAPI, storiesAPI, clipMeAPI, type Chat, type StoryFeedItem, type User } from '@/lib/api'
 import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
 import { STORY_MAX_VIDEO_DURATION_SECONDS } from '@/lib/stories'
@@ -78,6 +80,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
     setChatToDelete(null)
   }
   const [isGameMode, setIsGameMode] = useState(false)
+  const [isPersonalChannel, setIsPersonalChannel] = useState(false)
 
   // Last message preview text per chat — content is already decrypted server-side
   const getPreview = (chat: Chat): string => {
@@ -97,6 +100,9 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
 
   // Profile state
   const [profileUsername, setProfileUsername] = useState(user?.username ?? '')
+  const [profileBio, setProfileBio] = useState(user?.bio ?? '')
+  const [profileClipMeBio, setProfileClipMeBio] = useState(user?.clipMeBio ?? '')
+  const [linkedMessmeChannelId, setLinkedMessmeChannelId] = useState(user?.linkedMessmeChannelId ?? '')
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -105,7 +111,10 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
 
   useEffect(() => {
     setProfileUsername(user?.username ?? '')
-  }, [user?.username])
+    setProfileBio(user?.bio ?? '')
+    setProfileClipMeBio(user?.clipMeBio ?? '')
+    setLinkedMessmeChannelId(user?.linkedMessmeChannelId ?? '')
+  }, [user?.username, user?.bio, user?.clipMeBio, user?.linkedMessmeChannelId])
 
   useEffect(() => {
     const loadDevices = async () => {
@@ -135,6 +144,10 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
   )
   const messmeChatsCount = chats.filter(chat => !chat.gameMode).length
   const playmeChatsCount = chats.filter(chat => !!chat.gameMode).length
+  const ownedPersonalChannels = useMemo(
+    () => chats.filter(chat => chat.isPersonalChannel && chat.ownerId === user?.id),
+    [chats, user?.id]
+  )
   const storiesByUser = new Map(storyFeed.map(item => [item.user.id, item]))
   const isAdminUser = Boolean(user?.isAdmin)
   const adminbotChat: Chat = {
@@ -319,7 +332,8 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
       selectedUsers.map(u => u.id),
       isGroupMode,
       isGroupMode ? groupTitle : undefined,
-      isGroupMode ? isGameMode : false
+      isGroupMode ? isGameMode : false,
+      isGroupMode ? isPersonalChannel : false
     )
     if (result.chat) {
       addChat(result.chat)
@@ -340,6 +354,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
     setGroupTitle('')
     setIsGroupMode(false)
     setIsGameMode(false)
+    setIsPersonalChannel(false)
   }
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -374,11 +389,17 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
       const trimmed = profileUsername.trim()
       const result = await profileAPI.updateProfile(
         trimmed || user.username,
-        newAvatarUrl !== undefined ? newAvatarUrl : undefined
+        newAvatarUrl !== undefined ? newAvatarUrl : undefined,
+        profileBio.trim(),
+        linkedMessmeChannelId || null
       )
       if (result.error || !result.user) {
         setProfileError(result.error ?? 'Ошибка сохранения')
         return
+      }
+      const clipMeResult = await clipMeAPI.updateChannelBio(user.id, profileClipMeBio)
+      if (!clipMeResult.error && clipMeResult.user) {
+        result.user.clipMeBio = clipMeResult.user.clipMeBio ?? null
       }
       updateUser(result.user)
       if (avatarPreview) URL.revokeObjectURL(avatarPreview)
@@ -623,10 +644,12 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                     </span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold truncate text-[14px] text-black dark:text-white">
-                          {chat.title}
-                        </span>
-                        {peer?.isBadgeVerified && <VerifiedBadge className="flex-shrink-0" />}
+                        <div className="min-w-0 flex items-center gap-1.5">
+                          <span className="font-semibold truncate text-[14px] text-black dark:text-white">
+                            {chat.title}
+                          </span>
+                          {peer?.isBadgeVerified && <VerifiedBadge className="flex-shrink-0" />}
+                        </div>
                         {chat.lastMessage?.createdAt && (
                           <span className={cn('text-[11px] flex-shrink-0',
                             (unreadCounts[chat.id] ?? 0) > 0 ? 'text-[#152cff]' : 'text-black/40 dark:text-white/40')}>
@@ -671,7 +694,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
           {/* Personal / Group toggle */}
           <div className="flex bg-black/[0.05] dark:bg-white/[0.07] rounded-xl p-1 gap-1 mb-3 flex-shrink-0">
             <button
-              onClick={() => setIsGroupMode(false)}
+              onClick={() => { setIsGroupMode(false); setIsPersonalChannel(false) }}
               className={cn('flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm transition-all font-medium',
                 !isGroupMode ? 'bg-white dark:bg-white/[0.12] text-black dark:text-white shadow-sm' : 'text-black/40 dark:text-white/40 hover:text-black/60 dark:hover:text-white/60')}
             >
@@ -689,19 +712,23 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
           {isGroupMode && (
             <>
               <Input
-                placeholder="Название группы"
+                placeholder={isPersonalChannel ? 'Название личного канала' : 'Название группы'}
                 value={groupTitle}
                 onChange={e => setGroupTitle(e.target.value)}
                 className="mb-2 bg-black/[0.05] dark:bg-white/[0.07] border-0 text-black dark:text-white placeholder:text-black/30 dark:placeholder:text-white/30 rounded-xl h-10 flex-shrink-0"
               />
               {/* Game mode toggle */}
               <button
-                onClick={() => setIsGameMode(g => !g)}
+                onClick={() => {
+                  if (isPersonalChannel) return
+                  setIsGameMode(g => !g)
+                }}
                 className={cn(
                   'mb-3 flex-shrink-0 w-full flex items-center gap-3 px-3 h-11 rounded-xl transition-all border',
                   isGameMode
                     ? 'bg-[#5d6cf5]/[0.12] border-[#5d6cf5]/30 text-[#5d6cf5]'
-                    : 'bg-black/[0.05] dark:bg-white/[0.07] border-transparent text-black/50 dark:text-white/50'
+                    : 'bg-black/[0.05] dark:bg-white/[0.07] border-transparent text-black/50 dark:text-white/50',
+                  isPersonalChannel && 'opacity-50'
                 )}
               >
                 <Gamepad2 className="h-4 w-4 flex-shrink-0" />
@@ -711,6 +738,28 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                   isGameMode ? 'bg-[#5d6cf5] text-white' : 'bg-black/[0.08] dark:bg-white/[0.10] text-black/40 dark:text-white/40'
                 )}>
                   {isGameMode ? 'ON' : 'OFF'}
+                </span>
+              </button>
+              <button
+                onClick={() => setIsPersonalChannel(v => {
+                  const next = !v
+                  if (next) setIsGameMode(false)
+                  return next
+                })}
+                className={cn(
+                  'mb-3 flex-shrink-0 w-full flex items-center gap-3 px-3 h-11 rounded-xl transition-all border',
+                  isPersonalChannel
+                    ? 'bg-[#5d6cf5]/[0.12] border-[#5d6cf5]/30 text-[#5d6cf5]'
+                    : 'bg-black/[0.05] dark:bg-white/[0.07] border-transparent text-black/50 dark:text-white/50'
+                )}
+              >
+                <Users className="h-4 w-4 flex-shrink-0" />
+                <span className="text-sm font-medium flex-1 text-left">Личный канал (пишет только создатель)</span>
+                <span className={cn(
+                  'text-[11px] px-2 py-0.5 rounded-full font-semibold',
+                  isPersonalChannel ? 'bg-[#5d6cf5] text-white' : 'bg-black/[0.08] dark:bg-white/[0.10] text-black/40 dark:text-white/40'
+                )}>
+                  {isPersonalChannel ? 'ON' : 'OFF'}
                 </span>
               </button>
             </>
@@ -854,184 +903,178 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
               </div>
             )}
 
-            {/* Notifications toggle */}
-            <div className="w-full flex items-center justify-between bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 h-14">
-              <div className="flex items-center gap-3">
-                {notificationsEnabled
-                  ? <Bell className="h-5 w-5 text-black/50 dark:text-white/50" />
-                  : <BellOff className="h-5 w-5 text-black/30 dark:text-white/30" />
-                }
-                <div>
-                  <p className="text-[15px] font-medium text-black dark:text-white">Уведомления</p>
-                  <p className="text-xs text-black/40 dark:text-white/40">{notificationsEnabled ? 'Включены' : 'Отключены'}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setNotificationsEnabled(!notificationsEnabled)}
-                className={cn(
-                  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none',
-                  notificationsEnabled ? 'bg-[#5d6cf5]' : 'bg-black/[0.15] dark:bg-white/[0.15]'
-                )}
-              >
-                <span className={cn(
-                  'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
-                  notificationsEnabled ? 'translate-x-6' : 'translate-x-1'
-                )} />
-              </button>
-            </div>
+            <Accordion type="multiple" defaultValue={['general', 'notifications', 'appearance', 'audio', 'media']} className="w-full rounded-xl bg-black/[0.04] dark:bg-white/[0.06] px-3">
+              <AccordionItem value="general" className="border-black/10 dark:border-white/10">
+                <AccordionTrigger className="text-black dark:text-white">Общие</AccordionTrigger>
+                <AccordionContent className="space-y-3">
+                  <div className="w-full space-y-1.5">
+                    <label className="text-xs text-black/40 dark:text-white/40 font-semibold uppercase tracking-wider px-1">О себе (Messme)</label>
+                    <Textarea
+                      value={profileBio}
+                      onChange={e => setProfileBio(e.target.value)}
+                      placeholder="Расскажите о себе"
+                      maxLength={240}
+                      className="bg-black/[0.05] dark:bg-white/[0.07] border-0 text-black dark:text-white placeholder:text-black/30 dark:placeholder:text-white/30 rounded-xl min-h-[88px]"
+                    />
+                  </div>
+                  <div className="w-full space-y-1.5">
+                    <label className="text-xs text-black/40 dark:text-white/40 font-semibold uppercase tracking-wider px-1">Описание канала ClipMe</label>
+                    <Textarea
+                      value={profileClipMeBio}
+                      onChange={e => setProfileClipMeBio(e.target.value)}
+                      placeholder="Описание вашего канала ClipMe"
+                      maxLength={240}
+                      className="bg-black/[0.05] dark:bg-white/[0.07] border-0 text-black dark:text-white placeholder:text-black/30 dark:placeholder:text-white/30 rounded-xl min-h-[88px]"
+                    />
+                  </div>
+                  <div className="w-full space-y-1.5">
+                    <label className="text-xs text-black/40 dark:text-white/40 font-semibold uppercase tracking-wider px-1">Привязанный Messme канал</label>
+                    <select
+                      value={linkedMessmeChannelId}
+                      onChange={e => setLinkedMessmeChannelId(e.target.value)}
+                      className="w-full h-10 bg-white dark:bg-black/[0.25] border border-black/[0.1] dark:border-white/[0.12] rounded-lg px-2 text-sm text-black dark:text-white"
+                    >
+                      <option value="">Не привязан</option>
+                      {ownedPersonalChannels.map(channel => (
+                        <option key={channel.id} value={channel.id}>
+                          {channel.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
 
-            {/* Dark mode toggle */}
-            <div className="w-full flex items-center justify-between bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 h-14">
-              <div className="flex items-center gap-3">
-                {darkMode
-                  ? <Moon className="h-5 w-5 text-black/50 dark:text-white/50" />
-                  : <Sun className="h-5 w-5 text-black/50" />
-                }
-                <div>
-                  <p className="text-[15px] font-medium text-black dark:text-white">Тёмная тема</p>
-                  <p className="text-xs text-black/40 dark:text-white/40">{darkMode ? 'Включена' : 'Выключена'}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setDarkMode(!darkMode)}
-                className={cn(
-                  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none',
-                  darkMode ? 'bg-[#5d6cf5]' : 'bg-black/[0.15] dark:bg-white/[0.15]'
-                )}
-              >
-                <span className={cn(
-                  'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
-                  darkMode ? 'translate-x-6' : 'translate-x-1'
-                )} />
-              </button>
-            </div>
+              <AccordionItem value="notifications" className="border-black/10 dark:border-white/10">
+                <AccordionTrigger className="text-black dark:text-white">Уведомления</AccordionTrigger>
+                <AccordionContent>
+                  <div className="w-full flex items-center justify-between bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 h-14">
+                    <div className="flex items-center gap-3">
+                      {notificationsEnabled
+                        ? <Bell className="h-5 w-5 text-black/50 dark:text-white/50" />
+                        : <BellOff className="h-5 w-5 text-black/30 dark:text-white/30" />
+                      }
+                      <div>
+                        <p className="text-[15px] font-medium text-black dark:text-white">Уведомления</p>
+                        <p className="text-xs text-black/40 dark:text-white/40">{notificationsEnabled ? 'Включены' : 'Отключены'}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setNotificationsEnabled(!notificationsEnabled)}
+                      className={cn(
+                        'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none',
+                        notificationsEnabled ? 'bg-[#5d6cf5]' : 'bg-black/[0.15] dark:bg-white/[0.15]'
+                      )}
+                    >
+                      <span className={cn('inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform', notificationsEnabled ? 'translate-x-6' : 'translate-x-1')} />
+                    </button>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
 
-            {/* Audio input device */}
-            <div className="w-full bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 py-3">
-              <div className="flex items-center gap-3 mb-2">
-                <Mic className="h-5 w-5 text-black/50 dark:text-white/50" />
-                <div>
-                  <p className="text-[15px] font-medium text-black dark:text-white">Устройство ввода</p>
-                  <p className="text-xs text-black/40 dark:text-white/40">Микрофон</p>
-                </div>
-              </div>
-              <select
-                value={audioInputDeviceId ?? ''}
-                onChange={e => setAudioInputDeviceId(e.target.value || null)}
-                className="w-full h-10 bg-white dark:bg-black/[0.25] border border-black/[0.1] dark:border-white/[0.12] rounded-lg px-2 text-sm text-black dark:text-white"
-              >
-                <option value="">Системный по умолчанию</option>
-                {audioInputs.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || `Микрофон ${d.deviceId.slice(0, 6)}`}</option>)}
-              </select>
-            </div>
+              <AccordionItem value="appearance" className="border-black/10 dark:border-white/10">
+                <AccordionTrigger className="text-black dark:text-white">Внешний вид</AccordionTrigger>
+                <AccordionContent>
+                  <div className="w-full flex items-center justify-between bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 h-14">
+                    <div className="flex items-center gap-3">
+                      {darkMode ? <Moon className="h-5 w-5 text-black/50 dark:text-white/50" /> : <Sun className="h-5 w-5 text-black/50" />}
+                      <div>
+                        <p className="text-[15px] font-medium text-black dark:text-white">Тёмная тема</p>
+                        <p className="text-xs text-black/40 dark:text-white/40">{darkMode ? 'Включена' : 'Выключена'}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setDarkMode(!darkMode)}
+                      className={cn('relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none', darkMode ? 'bg-[#5d6cf5]' : 'bg-black/[0.15] dark:bg-white/[0.15]')}
+                    >
+                      <span className={cn('inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform', darkMode ? 'translate-x-6' : 'translate-x-1')} />
+                    </button>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
 
-            {/* Audio output device */}
-            <div className="w-full bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 py-3">
-              <div className="flex items-center gap-3 mb-2">
-                <Headphones className="h-5 w-5 text-black/50 dark:text-white/50" />
-                <div>
-                  <p className="text-[15px] font-medium text-black dark:text-white">Устройство вывода</p>
-                  <p className="text-xs text-black/40 dark:text-white/40">Наушники / динамики</p>
-                </div>
-              </div>
-              <select
-                value={audioOutputDeviceId ?? ''}
-                onChange={e => setAudioOutputDeviceId(e.target.value || null)}
-                className="w-full h-10 bg-white dark:bg-black/[0.25] border border-black/[0.1] dark:border-white/[0.12] rounded-lg px-2 text-sm text-black dark:text-white"
-              >
-                <option value="">Системный по умолчанию</option>
-                {audioOutputs.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || `Output ${d.deviceId.slice(0, 6)}`}</option>)}
-              </select>
-            </div>
+              <AccordionItem value="audio" className="border-black/10 dark:border-white/10">
+                <AccordionTrigger className="text-black dark:text-white">Аудио</AccordionTrigger>
+                <AccordionContent className="space-y-3">
+                  <div className="w-full bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 py-3">
+                    <div className="flex items-center gap-3 mb-2">
+                      <Mic className="h-5 w-5 text-black/50 dark:text-white/50" />
+                      <div>
+                        <p className="text-[15px] font-medium text-black dark:text-white">Устройство ввода</p>
+                        <p className="text-xs text-black/40 dark:text-white/40">Микрофон</p>
+                      </div>
+                    </div>
+                    <select value={audioInputDeviceId ?? ''} onChange={e => setAudioInputDeviceId(e.target.value || null)} className="w-full h-10 bg-white dark:bg-black/[0.25] border border-black/[0.1] dark:border-white/[0.12] rounded-lg px-2 text-sm text-black dark:text-white">
+                      <option value="">Системный по умолчанию</option>
+                      {audioInputs.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || `Микрофон ${d.deviceId.slice(0, 6)}`}</option>)}
+                    </select>
+                  </div>
+                  <div className="w-full bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 py-3">
+                    <div className="flex items-center gap-3 mb-2">
+                      <Headphones className="h-5 w-5 text-black/50 dark:text-white/50" />
+                      <div>
+                        <p className="text-[15px] font-medium text-black dark:text-white">Устройство вывода</p>
+                        <p className="text-xs text-black/40 dark:text-white/40">Наушники / динамики</p>
+                      </div>
+                    </div>
+                    <select value={audioOutputDeviceId ?? ''} onChange={e => setAudioOutputDeviceId(e.target.value || null)} className="w-full h-10 bg-white dark:bg-black/[0.25] border border-black/[0.1] dark:border-white/[0.12] rounded-lg px-2 text-sm text-black dark:text-white">
+                      <option value="">Системный по умолчанию</option>
+                      {audioOutputs.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || `Output ${d.deviceId.slice(0, 6)}`}</option>)}
+                    </select>
+                  </div>
+                  <div className="w-full bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 py-3">
+                    <div className="flex items-center gap-3 mb-2">
+                      {microphoneVolume > 0 ? <Volume2 className="h-5 w-5 text-black/50 dark:text-white/50" /> : <VolumeX className="h-5 w-5 text-black/30 dark:text-white/30" />}
+                      <div>
+                        <p className="text-[15px] font-medium text-black dark:text-white">Громкость микрофона</p>
+                        <p className="text-xs text-black/40 dark:text-white/40">{microphoneVolume}%</p>
+                      </div>
+                    </div>
+                    <Slider min={0} max={100} step={1} value={[microphoneVolume]} onValueChange={(value) => setMicrophoneVolume(value[0] ?? 0)} className="w-full" />
+                  </div>
+                  <div className="w-full bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 py-3">
+                    <div className="flex items-center gap-3 mb-2">
+                      {outputVolume > 0 ? <Headphones className="h-5 w-5 text-black/50 dark:text-white/50" /> : <VolumeX className="h-5 w-5 text-black/30 dark:text-white/30" />}
+                      <div>
+                        <p className="text-[15px] font-medium text-black dark:text-white">Громкость выхода</p>
+                        <p className="text-xs text-black/40 dark:text-white/40">{outputVolume}%</p>
+                      </div>
+                    </div>
+                    <Slider min={0} max={200} step={1} value={[outputVolume]} onValueChange={(value) => setOutputVolume(value[0] ?? 0)} className="w-full" />
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
 
-            {/* Microphone volume */}
-            <div className="w-full bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 py-3">
-              <div className="flex items-center gap-3 mb-2">
-                {microphoneVolume > 0
-                  ? <Volume2 className="h-5 w-5 text-black/50 dark:text-white/50" />
-                  : <VolumeX className="h-5 w-5 text-black/30 dark:text-white/30" />
-                }
-                <div>
-                  <p className="text-[15px] font-medium text-black dark:text-white">Громкость микрофона</p>
-                  <p className="text-xs text-black/40 dark:text-white/40">{microphoneVolume}%</p>
-                </div>
-              </div>
-              <Slider
-                min={0}
-                max={100}
-                step={1}
-                value={[microphoneVolume]}
-                onValueChange={(value) => setMicrophoneVolume(value[0] ?? 0)}
-                className="w-full"
-              />
-            </div>
-
-            {/* Output volume */}
-            <div className="w-full bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 py-3">
-              <div className="flex items-center gap-3 mb-2">
-                {outputVolume > 0
-                  ? <Headphones className="h-5 w-5 text-black/50 dark:text-white/50" />
-                  : <VolumeX className="h-5 w-5 text-black/30 dark:text-white/30" />
-                }
-                <div>
-                  <p className="text-[15px] font-medium text-black dark:text-white">Громкость выхода</p>
-                  <p className="text-xs text-black/40 dark:text-white/40">{outputVolume}%</p>
-                </div>
-              </div>
-              <Slider
-                min={0}
-                max={200}
-                step={1}
-                value={[outputVolume]}
-                onValueChange={(value) => setOutputVolume(value[0] ?? 0)}
-                className="w-full"
-              />
-            </div>
-
-            {/* Extra useful settings */}
-            <div className="w-full flex items-center justify-between bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 h-14">
-              <div className="flex items-center gap-3">
-                <Bell className="h-5 w-5 text-black/50 dark:text-white/50" />
-                <div>
-                  <p className="text-[15px] font-medium text-black dark:text-white">Звуки интерфейса</p>
-                  <p className="text-xs text-black/40 dark:text-white/40">{soundEffectsEnabled ? 'Включены' : 'Отключены'}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setSoundEffectsEnabled(!soundEffectsEnabled)}
-                className={cn(
-                  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none',
-                  soundEffectsEnabled ? 'bg-[#5d6cf5]' : 'bg-black/[0.15] dark:bg-white/[0.15]'
-                )}
-              >
-                <span className={cn(
-                  'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
-                  soundEffectsEnabled ? 'translate-x-6' : 'translate-x-1'
-                )} />
-              </button>
-            </div>
-
-            <div className="w-full flex items-center justify-between bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 h-14">
-              <div className="flex items-center gap-3">
-                <Film className="h-5 w-5 text-black/50 dark:text-white/50" />
-                <div>
-                  <p className="text-[15px] font-medium text-black dark:text-white">Автовоспроизведение медиа</p>
-                  <p className="text-xs text-black/40 dark:text-white/40">{autoPlayMedia ? 'Включено' : 'Отключено'}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setAutoPlayMedia(!autoPlayMedia)}
-                className={cn(
-                  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none',
-                  autoPlayMedia ? 'bg-[#5d6cf5]' : 'bg-black/[0.15] dark:bg-white/[0.15]'
-                )}
-              >
-                <span className={cn(
-                  'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
-                  autoPlayMedia ? 'translate-x-6' : 'translate-x-1'
-                )} />
-              </button>
-            </div>
+              <AccordionItem value="media" className="border-black/10 dark:border-white/10">
+                <AccordionTrigger className="text-black dark:text-white">Медиа</AccordionTrigger>
+                <AccordionContent className="space-y-3">
+                  <div className="w-full flex items-center justify-between bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 h-14">
+                    <div className="flex items-center gap-3">
+                      <Bell className="h-5 w-5 text-black/50 dark:text-white/50" />
+                      <div>
+                        <p className="text-[15px] font-medium text-black dark:text-white">Звуки интерфейса</p>
+                        <p className="text-xs text-black/40 dark:text-white/40">{soundEffectsEnabled ? 'Включены' : 'Отключены'}</p>
+                      </div>
+                    </div>
+                    <button onClick={() => setSoundEffectsEnabled(!soundEffectsEnabled)} className={cn('relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none', soundEffectsEnabled ? 'bg-[#5d6cf5]' : 'bg-black/[0.15] dark:bg-white/[0.15]')}>
+                      <span className={cn('inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform', soundEffectsEnabled ? 'translate-x-6' : 'translate-x-1')} />
+                    </button>
+                  </div>
+                  <div className="w-full flex items-center justify-between bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 h-14">
+                    <div className="flex items-center gap-3">
+                      <Film className="h-5 w-5 text-black/50 dark:text-white/50" />
+                      <div>
+                        <p className="text-[15px] font-medium text-black dark:text-white">Автовоспроизведение медиа</p>
+                        <p className="text-xs text-black/40 dark:text-white/40">{autoPlayMedia ? 'Включено' : 'Отключено'}</p>
+                      </div>
+                    </div>
+                    <button onClick={() => setAutoPlayMedia(!autoPlayMedia)} className={cn('relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none', autoPlayMedia ? 'bg-[#5d6cf5]' : 'bg-black/[0.15] dark:bg-white/[0.15]')}>
+                      <span className={cn('inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform', autoPlayMedia ? 'translate-x-6' : 'translate-x-1')} />
+                    </button>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
 
             {profileError && <p className="text-red-500 text-sm text-center">{profileError}</p>}
 

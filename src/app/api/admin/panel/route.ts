@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hasAdminAccess } from '@/lib/admin'
 import { getAdminByPanelToken } from '@/lib/admin-panel-auth'
+import { ADMIN_PANEL_TREND_DAYS } from '@/lib/product-config'
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,6 +14,8 @@ export async function GET(request: NextRequest) {
 
     const now = new Date()
     const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    const trendDays = ADMIN_PANEL_TREND_DAYS
+    const trendStart = new Date(Date.now() - (trendDays - 1) * 24 * 60 * 60 * 1000)
 
     const [
       usersCount,
@@ -26,6 +29,10 @@ export async function GET(request: NextRequest) {
       newUsers24hCount,
       suspiciousAccounts,
       recentUsers,
+      recentMessages,
+      recentStories,
+      recentVideos,
+      recentRegistrations,
     ] = await Promise.all([
       db.user.count(),
       db.chat.count(),
@@ -72,6 +79,10 @@ export async function GET(request: NextRequest) {
           createdAt: true,
         },
       }),
+      db.message.findMany({ where: { createdAt: { gte: trendStart } }, select: { createdAt: true } }),
+      db.story.findMany({ where: { createdAt: { gte: trendStart } }, select: { createdAt: true } }),
+      db.clipMeVideo.findMany({ where: { createdAt: { gte: trendStart } }, select: { createdAt: true } }),
+      db.user.findMany({ where: { createdAt: { gte: trendStart } }, select: { createdAt: true } }),
     ])
 
     const normalizeUser = (u: {
@@ -89,6 +100,23 @@ export async function GET(request: NextRequest) {
       isAdmin: hasAdminAccess(u),
     })
 
+    const dayLabels = Array.from({ length: trendDays }, (_, dayOffset) =>
+      new Date(trendStart.getTime() + dayOffset * 24 * 60 * 60 * 1000).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
+    )
+    const toLabel = (value: Date) => value.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
+    const countByDay = (items: Date[]) => {
+      const grouped = new Map<string, number>()
+      for (const value of items) {
+        const label = toLabel(value)
+        grouped.set(label, (grouped.get(label) ?? 0) + 1)
+      }
+      return dayLabels.map(label => grouped.get(label) ?? 0)
+    }
+    const usersTrend = countByDay(recentRegistrations.map(item => item.createdAt))
+    const messagesTrend = countByDay(recentMessages.map(item => item.createdAt))
+    const storiesTrend = countByDay(recentStories.map(item => item.createdAt))
+    const clipmeVideosTrend = countByDay(recentVideos.map(item => item.createdAt))
+
     return NextResponse.json({
       stats: {
         usersCount,
@@ -100,7 +128,23 @@ export async function GET(request: NextRequest) {
         blockedUsersCount,
         badgeVerifiedCount,
         newUsers24hCount,
+        messme: {
+          chatsCount,
+          messagesCount,
+          storiesCount,
+          activeSessionsCount,
+        },
+        clipme: {
+          clipMeVideosCount,
+        },
       },
+      trends: dayLabels.map((label, dayIndex) => ({
+        day: label,
+        users: usersTrend[dayIndex],
+        messages: messagesTrend[dayIndex],
+        stories: storiesTrend[dayIndex],
+        clipmeVideos: clipmeVideosTrend[dayIndex],
+      })),
       suspiciousAccounts: suspiciousAccounts.map(normalizeUser),
       users: recentUsers.map(normalizeUser),
     })

@@ -77,6 +77,7 @@ export async function GET(
           ...(cursorCreatedAt ? { where: { createdAt: { lt: cursorCreatedAt } } } : {}),
           include: {
             sender: { select: { username: true } },
+            reactions: { select: { emoji: true, userId: true } },
             replyTo: {
               select: {
                 id: true,
@@ -126,6 +127,17 @@ export async function GET(
             senderUsername: (msg as any).replyTo.sender?.username,
             content: decryptText((msg as any).replyTo.encryptedContent),
           } : null,
+          reactions: Object.entries(
+            ((msg as any).reactions ?? []).reduce((acc: Record<string, string[]>, reaction: { emoji: string; userId: string }) => {
+              if (!acc[reaction.emoji]) acc[reaction.emoji] = []
+              acc[reaction.emoji].push(reaction.userId)
+              return acc
+            }, {})
+          ).map(([emoji, userIds]) => ({
+            emoji,
+            count: userIds.length,
+            reactedByMe: userIds.includes(session.userId),
+          })),
           createdAt: msg.createdAt
         }))
 
@@ -142,6 +154,7 @@ export async function GET(
         id: chat.id,
         title,
         isGroup: chat.isGroup,
+        isPersonalChannel: (chat as any).isPersonalChannel ?? false,
         gameMode: (chat as any).gameMode ?? false,
         avatarUrl: (chat as any).avatarUrl ?? null,
         ownerId: (chat as any).ownerId ?? null,

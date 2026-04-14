@@ -14,7 +14,7 @@ export async function GET(
     const video = await db.clipMeVideo.findUnique({
       where: { id: videoId },
       include: {
-        user: { select: { id: true, username: true, avatarUrl: true } },
+        user: { select: { id: true, username: true, avatarUrl: true, isBadgeVerified: true } },
         likes: { where: { userId: session.userId }, select: { id: true } },
         reposts: { where: { userId: session.userId }, select: { id: true } },
         _count: { select: { likes: true, reposts: true, comments: true, views: true } },

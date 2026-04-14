@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { storiesAPI, type Story } from '@/lib/api'
@@ -26,6 +26,7 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
   const [isLoading, setIsLoading] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
   const [showViewers, setShowViewers] = useState(false)
+  const [showProfileCard, setShowProfileCard] = useState(false)
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
   const lastWheelTimeRef = useRef(0)
 
@@ -59,6 +60,7 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
       const startIndex = allStories.findIndex(s => s.user.id === userId)
       setActiveIndex(startIndex >= 0 ? startIndex : 0)
       setShowViewers(false)
+      setShowProfileCard(false)
       setIsLoading(false)
     }
     load()
@@ -104,6 +106,11 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
     await onOpenChatWithUser(viewer)
     setShowViewers(false)
     onOpenChange(false)
+  }
+
+  const openActiveStoryProfile = () => {
+    if (!activeStory) return
+    setShowProfileCard(true)
   }
 
   const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
@@ -183,7 +190,10 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
                 ))}
               </div>
 
-              <div className="absolute left-3 top-8 right-14 z-10 flex items-center gap-2">
+              <button
+                className="absolute left-3 top-8 right-14 z-10 flex items-center gap-2 text-left"
+                onClick={openActiveStoryProfile}
+              >
                 <Avatar className="h-8 w-8 border border-white/50">
                   {activeStory.user.avatarUrl && <AvatarImage src={activeStory.user.avatarUrl} />}
                   <AvatarFallback className="bg-[#5d6cf5] text-white text-[10px] font-semibold">
@@ -191,7 +201,7 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
                   </AvatarFallback>
                 </Avatar>
                 <span className="text-sm font-semibold drop-shadow">{activeStory.user.username}</span>
-              </div>
+              </button>
 
               <button
                 onClick={goPrev}
@@ -273,6 +283,33 @@ export function StoryViewer({ open, onOpenChange, userId, storyUserIds, onOpenCh
               </div>
             </div>
           )}
+
+          <Dialog open={showProfileCard} onOpenChange={setShowProfileCard}>
+            <DialogContent className="max-w-sm bg-[#121212] border-white/10 text-white">
+              {activeStory && (
+                <>
+                  <DialogTitle>Профиль</DialogTitle>
+                  <div className="flex flex-col items-center gap-3 py-1">
+                    <Avatar className="h-20 w-20 border border-white/20">
+                      {activeStory.user.avatarUrl && <AvatarImage src={activeStory.user.avatarUrl} alt={activeStory.user.username} />}
+                      <AvatarFallback className="bg-[#5d6cf5] text-white text-lg font-semibold">
+                        {getInitials(activeStory.user.username)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <p className="text-base font-semibold">{activeStory.user.username}</p>
+                    {!!onOpenChatWithUser && (
+                      <Button
+                        onClick={() => handleViewerClick(activeStory.user)}
+                        className="bg-[#5d6cf5] hover:bg-[#4a5be0]"
+                      >
+                        Открыть чат
+                      </Button>
+                    )}
+                  </div>
+                </>
+              )}
+            </DialogContent>
+          </Dialog>
         </div>
       </DialogContent>
     </Dialog>
