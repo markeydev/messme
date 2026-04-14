@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { chatsAPI, usersAPI, profileAPI, storiesAPI, clipMeAPI, type Chat, type StoryFeedItem, type User } from '@/lib/api'
 import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
@@ -39,7 +40,7 @@ interface ChatListProps {
 
 export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout, activeTab, onTabChange, initialClipVideoId }: ChatListProps) {
   const {
-    chats, addChat, user, unreadCounts, mutedChats, updateUser, notificationsEnabled, setNotificationsEnabled,
+    chats, addChat, user, unreadCounts, mutedChats, toggleMuteChat, updateUser, notificationsEnabled, setNotificationsEnabled,
     darkMode, setDarkMode, removeChat, setActiveChat, microphoneVolume, outputVolume,
     audioInputDeviceId, audioOutputDeviceId, soundEffectsEnabled, autoPlayMedia,
     setMicrophoneVolume, setOutputVolume, setAudioInputDeviceId, setAudioOutputDeviceId, setSoundEffectsEnabled, setAutoPlayMedia
@@ -113,6 +114,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [profileError, setProfileError] = useState<string | null>(null)
+  const [isProfileAvatarPreviewOpen, setIsProfileAvatarPreviewOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -174,6 +176,20 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
   const linkedChannelPreview = useMemo(
     () => chats.find(chat => chat.id === linkedMessmeChannelId && chat.isPersonalChannel),
     [chats, linkedMessmeChannelId]
+  )
+  const channelSearchResults = useMemo(() => {
+    const query = userSearchQuery.trim().toLowerCase()
+    if (query.length < 2) return []
+    return chats
+      .filter(chat => chat.isPersonalChannel && chat.title.toLowerCase().includes(query))
+      .sort((a, b) => getChatActivityTs(b) - getChatActivityTs(a))
+      .slice(0, 15)
+  }, [chats, getChatActivityTs, userSearchQuery])
+  const notificationTargetChats = useMemo(
+    () => chats
+      .filter(chat => chat.isGroup)
+      .sort((a, b) => getChatActivityTs(b) - getChatActivityTs(a)),
+    [chats, getChatActivityTs]
   )
   const handleToggleNotifications = useCallback(() => {
     setNotificationsEnabled(!notificationsEnabled)
@@ -409,6 +425,12 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
     if (avatarPreview) URL.revokeObjectURL(avatarPreview)
     setAvatarPreview(null)
     setAvatarFile(null)
+  }
+
+  const openChannelFromSearch = (channel: Chat) => {
+    resetSearch()
+    onTabChange('chats')
+    onSelectChat?.(channel)
   }
 
   const handleProfileSave = async () => {
@@ -831,27 +853,58 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
           )}
 
           <div className="flex-1 min-h-0 overflow-y-auto">
-            {searchResults.length > 0 && (
-              <div className="space-y-0.5 pb-[128px] md:pb-2">
-                {searchResults.map(u => (
-                  <button key={u.id} onClick={() => toggleUserSelection(u)}
-                    className="w-full flex items-center gap-3 px-2 py-2.5 rounded-xl hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors">
-                    <Avatar className="h-9 w-9 flex-shrink-0">
-                      {u.avatarUrl && <AvatarImage src={u.avatarUrl} alt={u.username} />}
-                      <AvatarFallback className="bg-[#152cff] text-white text-xs font-medium">
-                        {getInitials(u.username)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="text-sm flex-1 text-left text-black dark:text-white">{u.username}</span>
-                    {u.isBadgeVerified && <VerifiedBadge className="flex-shrink-0" />}
-                    {selectedUsers.some(x => x.id === u.id) && (
-                      <Check className="h-4 w-4 text-[#152cff]" />
-                    )}
-                  </button>
-                ))}
+            {(channelSearchResults.length > 0 || searchResults.length > 0) && (
+              <div className="space-y-3 pb-[128px] md:pb-2">
+                {channelSearchResults.length > 0 && (
+                  <div className="space-y-0.5">
+                    <p className="px-2 text-[11px] font-bold uppercase tracking-wider text-black/35 dark:text-white/35">Каналы</p>
+                    {channelSearchResults.map(channel => (
+                      <button
+                        key={channel.id}
+                        onClick={() => openChannelFromSearch(channel)}
+                        className="w-full flex items-center gap-3 px-2 py-2.5 rounded-xl hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
+                      >
+                        <Avatar className="h-9 w-9 flex-shrink-0">
+                          {channel.avatarUrl && <AvatarImage src={channel.avatarUrl} alt={channel.title} />}
+                          <AvatarFallback className="bg-[#5d6cf5] text-white text-xs font-semibold">
+                            {getInitials(channel.title)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0 flex-1 text-left">
+                          <p className="text-sm text-black dark:text-white truncate">{channel.title}</p>
+                          <p className="text-xs text-black/40 dark:text-white/40">
+                            {channel.members.length} подписч.
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {searchResults.length > 0 && (
+                  <div className="space-y-0.5">
+                    <p className="px-2 text-[11px] font-bold uppercase tracking-wider text-black/35 dark:text-white/35">Пользователи</p>
+                    {searchResults.map(u => (
+                      <button key={u.id} onClick={() => toggleUserSelection(u)}
+                        className="w-full flex items-center gap-3 px-2 py-2.5 rounded-xl hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors">
+                        <Avatar className="h-9 w-9 flex-shrink-0">
+                          {u.avatarUrl && <AvatarImage src={u.avatarUrl} alt={u.username} />}
+                          <AvatarFallback className="bg-[#152cff] text-white text-xs font-medium">
+                            {getInitials(u.username)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="text-sm flex-1 text-left text-black dark:text-white">{u.username}</span>
+                        {u.isBadgeVerified && <VerifiedBadge className="flex-shrink-0" />}
+                        {selectedUsers.some(x => x.id === u.id) && (
+                          <Check className="h-4 w-4 text-[#152cff]" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
-            {userSearchQuery.length >= 2 && searchResults.length === 0 && (
+            {userSearchQuery.length >= 2 && searchResults.length === 0 && channelSearchResults.length === 0 && (
               <p className="text-center text-sm text-black/40 dark:text-white/40 py-8 pb-[128px] md:pb-8">Пользователи не найдены</p>
             )}
             {!userSearchQuery && (
@@ -881,7 +934,12 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
           <div className="px-4 pb-[128px] md:pb-6 flex flex-col items-center gap-5 pt-2">
             {/* Avatar */}
             <div className="relative mt-2">
-              <Avatar className="h-24 w-24 cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+              <Avatar
+                className="h-24 w-24 cursor-pointer"
+                onClick={() => {
+                  if (avatarPreview ?? user?.avatarUrl) setIsProfileAvatarPreviewOpen(true)
+                }}
+              >
                 {(avatarPreview ?? user?.avatarUrl) && <AvatarImage src={avatarPreview ?? user?.avatarUrl!} className="object-cover" />}
                 <AvatarFallback className="bg-[#5d6cf5] text-white text-2xl font-bold">
                   {getInitials(profileUsername || user?.username || '?')}
@@ -1040,6 +1098,32 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                     >
                       {notificationsEnabled ? 'Выключить уведомления' : 'Включить уведомления'}
                     </Button>
+
+                    <div className="rounded-xl bg-black/[0.05] dark:bg-white/[0.07] px-3 py-2.5 space-y-1.5">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-black/40 dark:text-white/40">Чаты и каналы</p>
+                      {notificationTargetChats.length === 0 ? (
+                        <p className="text-xs text-black/40 dark:text-white/40 py-1">Нет доступных чатов</p>
+                      ) : notificationTargetChats.map(chat => (
+                        <div key={chat.id} className="flex items-center justify-between gap-2 py-1">
+                          <span className="text-sm text-black dark:text-white truncate">{chat.title}</span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => toggleMuteChat(chat.id)}
+                            className={cn(
+                              'h-8 rounded-lg px-2.5 text-xs',
+                              mutedChats[chat.id]
+                                ? 'text-red-500 dark:text-red-300 hover:bg-red-500/10'
+                                : 'text-[#5d6cf5] hover:bg-[#5d6cf5]/10'
+                            )}
+                          >
+                            {mutedChats[chat.id] ? <BellOff className="h-3.5 w-3.5 mr-1.5" /> : <Bell className="h-3.5 w-3.5 mr-1.5" />}
+                            {mutedChats[chat.id] ? 'Выкл' : 'Вкл'}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </AccordionContent>
               </AccordionItem>
@@ -1386,6 +1470,18 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
           }
         }}
       />
+
+      <Dialog open={isProfileAvatarPreviewOpen} onOpenChange={setIsProfileAvatarPreviewOpen}>
+        <DialogContent className="bg-black/90 border-0 max-w-4xl p-2 flex items-center justify-center">
+          {(avatarPreview ?? user?.avatarUrl) && (
+            <img
+              src={avatarPreview ?? user?.avatarUrl!}
+              alt="Аватар профиля"
+              className="max-w-full max-h-[85vh] object-contain rounded-lg"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
