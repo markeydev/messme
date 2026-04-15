@@ -862,6 +862,8 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
         open={!!profileUserId}
         userId={profileUserId}
         fallbackUser={peerMember ? { username: peerMember.username, avatarUrl: peerMember.avatarUrl } : undefined}
+        notificationChatId={!chat.isGroup ? chat.id : null}
+        notificationChatTitle={!chat.isGroup ? currentChat.title : undefined}
         onOpenChange={open => { if (!open) setProfileUserId(null) }}
         onOpenLinkedChannel={channelId => {
           const linked = chats.find(item => item.id === channelId)

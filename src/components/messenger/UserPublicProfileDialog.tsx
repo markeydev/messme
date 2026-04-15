@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { clipMeAPI } from '@/lib/api'
-import { getSafeImageUrl } from '@/lib/utils'
+import { useMessengerStore } from '@/lib/store'
+import { cn, getSafeImageUrl } from '@/lib/utils'
+import { Bell, BellOff } from 'lucide-react'
 
 interface UserPublicProfileDialogProps {
   open: boolean
@@ -15,6 +17,8 @@ interface UserPublicProfileDialogProps {
     avatarUrl?: string | null
   }
   onOpenLinkedChannel?: (channelId: string) => void
+  notificationChatId?: string | null
+  notificationChatTitle?: string
 }
 
 export function UserPublicProfileDialog({
@@ -23,7 +27,10 @@ export function UserPublicProfileDialog({
   userId,
   fallbackUser,
   onOpenLinkedChannel,
+  notificationChatId,
+  notificationChatTitle,
 }: UserPublicProfileDialogProps) {
+  const { mutedChats, toggleMuteChat } = useMessengerStore()
   const [isLoading, setIsLoading] = useState(false)
   const [isAvatarPreviewOpen, setIsAvatarPreviewOpen] = useState(false)
   const [profile, setProfile] = useState<{
@@ -72,6 +79,7 @@ export function UserPublicProfileDialog({
   const displayName = profile?.username ?? fallbackUser?.username ?? 'Пользователь'
   const displayAvatar = getSafeImageUrl(profile?.avatarUrl || fallbackUser?.avatarUrl || null)
   const channel = profile?.linkedMessmeChannel ?? null
+  const notificationsMuted = notificationChatId ? !!mutedChats[notificationChatId] : false
 
   const initials = useMemo(
     () => displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2),
@@ -115,6 +123,28 @@ export function UserPublicProfileDialog({
                   {profile?.bio?.trim() ? profile.bio : 'Не указано'}
                 </p>
               </div>
+              {notificationChatId && (
+                <div className="rounded-xl bg-white/5 border border-white/10 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs uppercase tracking-wide text-white/50 mb-1">Уведомления</p>
+                      <p className="text-sm text-white/85 truncate">{notificationChatTitle ?? 'Переписка'}</p>
+                    </div>
+                    <button
+                      onClick={() => toggleMuteChat(notificationChatId)}
+                      className={cn(
+                        'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors',
+                        notificationsMuted
+                          ? 'bg-red-500/15 text-red-300 hover:bg-red-500/25'
+                          : 'bg-[#5d6cf5]/20 text-white hover:bg-[#5d6cf5]/30'
+                      )}
+                    >
+                      {notificationsMuted ? <BellOff className="h-3.5 w-3.5" /> : <Bell className="h-3.5 w-3.5" />}
+                      {notificationsMuted ? 'Выкл' : 'Вкл'}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {channel && (
                 <button

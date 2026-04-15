@@ -266,45 +266,37 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
     }
   }, [activeVideoId, feedPausedForOverlay])
 
+  const patchVideoEverywhere = (videoId: string, patch: Partial<ClipMeVideo>) => {
+    setVideos(prev => prev.map(video => video.id === videoId ? { ...video, ...patch } : video))
+    setChannelData(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        videos: prev.videos?.map(video => video.id === videoId ? { ...video, ...patch } : video),
+        reposts: prev.reposts?.map(video => video.id === videoId ? { ...video, ...patch } : video),
+      }
+    })
+    setChannelOverlayVideo(prev => prev?.id === videoId ? { ...prev, ...patch } : prev)
+  }
+
   const toggleLike = async (video: ClipMeVideo) => {
     const nextLiked = !video.likedByMe
     const optimisticLikes = Math.max(0, video.likesCount + (nextLiked ? 1 : -1))
     setVideoLikePulseId(video.id)
     setTimeout(() => setVideoLikePulseId(prev => (prev === video.id ? null : prev)), VIDEO_LIKE_PULSE_DURATION_MS)
-    setVideos(prev => prev.map(v => v.id === video.id ? { ...v, likedByMe: nextLiked, likesCount: optimisticLikes } : v))
-    setChannelData(prev => {
-      if (!prev?.videos?.length) return prev
-      return {
-        ...prev,
-        videos: prev.videos.map(v => v.id === video.id ? { ...v, likedByMe: nextLiked, likesCount: optimisticLikes } : v),
-      }
-    })
+    patchVideoEverywhere(video.id, { likedByMe: nextLiked, likesCount: optimisticLikes })
     const result = await clipMeAPI.toggleLike(video.id)
     if (result.liked === undefined || result.likesCount === undefined) {
-      setVideos(prev => prev.map(v => v.id === video.id ? video : v))
+      patchVideoEverywhere(video.id, { likedByMe: video.likedByMe, likesCount: video.likesCount })
       return
     }
-    setVideos(prev => prev.map(v => v.id === video.id ? { ...v, likedByMe: result.liked, likesCount: result.likesCount } : v))
-    setChannelData(prev => {
-      if (!prev?.videos?.length) return prev
-      return {
-        ...prev,
-        videos: prev.videos.map(v => v.id === video.id ? { ...v, likedByMe: result.liked, likesCount: result.likesCount } : v),
-      }
-    })
+    patchVideoEverywhere(video.id, { likedByMe: result.liked, likesCount: result.likesCount })
   }
 
   const toggleRepost = async (video: ClipMeVideo) => {
     const result = await clipMeAPI.toggleRepost(video.id)
     if (result.reposted === undefined || result.repostsCount === undefined) return
-    setVideos(prev => prev.map(v => v.id === video.id ? { ...v, repostedByMe: result.reposted!, repostsCount: result.repostsCount! } : v))
-    setChannelData(prev => {
-      if (!prev?.videos?.length) return prev
-      return {
-        ...prev,
-        videos: prev.videos.map(v => v.id === video.id ? { ...v, repostedByMe: result.reposted!, repostsCount: result.repostsCount! } : v),
-      }
-    })
+    patchVideoEverywhere(video.id, { repostedByMe: result.reposted, repostsCount: result.repostsCount })
   }
 
   const openComments = async (videoId: string) => {
@@ -352,14 +344,12 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
     if (replyTarget) {
       setExpandedReplies(prev => ({ ...prev, [replyTarget.id]: true }))
     }
-    setVideos(prev => prev.map(v => v.id === videoId ? { ...v, commentsCount: result.commentsCount ?? v.commentsCount + 1 } : v))
-    setChannelData(prev => {
-      if (!prev?.videos?.length) return prev
-      return {
-        ...prev,
-        videos: prev.videos.map(v => v.id === videoId ? { ...v, commentsCount: result.commentsCount ?? v.commentsCount + 1 } : v),
-      }
-    })
+    const currentVideo = videos.find(item => item.id === videoId)
+      ?? channelOverlayVideo
+      ?? channelData?.videos?.find(item => item.id === videoId)
+      ?? channelData?.reposts?.find(item => item.id === videoId)
+      ?? null
+    patchVideoEverywhere(videoId, { commentsCount: result.commentsCount ?? ((currentVideo?.commentsCount ?? 0) + 1) })
   }
 
   const toggleCommentLike = async (videoId: string, commentId: string) => {
@@ -963,11 +953,58 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
                       loop
                       fit="contain"
                     />
+                    <div className="absolute right-3 top-1/2 z-20 -translate-y-1/2 flex flex-col items-center gap-2 pointer-events-auto">
+                      <button
+                        onClick={() => toggleLike(channelOverlayVideo)}
+                        className={cn(
+                          'h-11 w-11 rounded-full text-sm flex items-center justify-center shadow-lg backdrop-blur transition-transform',
+                          channelOverlayVideo.likedByMe ? 'bg-red-500/85 text-white' : 'bg-black/35 text-white',
+                          videoLikePulseId === channelOverlayVideo.id && 'scale-110'
+                        )}
+                        title="Лайк"
+                      >
+                        <Heart className={cn('h-5 w-5', channelOverlayVideo.likedByMe && 'fill-current')} />
+                      </button>
+                      <span className="text-[10px] text-white/90">{channelOverlayVideo.likesCount}</span>
+
+                      <button
+                        onClick={() => openComments(channelOverlayVideo.id)}
+                        className="h-11 w-11 rounded-full text-sm flex items-center justify-center bg-black/35 text-white shadow-lg backdrop-blur"
+                        title="Комментарии"
+                      >
+                        <MessageCircle className="h-5 w-5" />
+                      </button>
+                      <span className="text-[10px] text-white/90">{channelOverlayVideo.commentsCount}</span>
+
+                      <button
+                        onClick={() => toggleRepost(channelOverlayVideo)}
+                        className={cn('h-11 w-11 rounded-full text-sm flex items-center justify-center shadow-lg backdrop-blur', channelOverlayVideo.repostedByMe ? 'bg-[#5d6cf5] text-white' : 'bg-black/35 text-white')}
+                        title="Репост"
+                      >
+                        <Repeat2 className="h-5 w-5" />
+                      </button>
+                      <span className="text-[10px] text-white/90">{channelOverlayVideo.repostsCount}</span>
+
+                      <button
+                        onClick={() => setShareVideo(channelOverlayVideo)}
+                        className="h-11 w-11 rounded-full text-sm flex items-center justify-center bg-black/35 text-white shadow-lg backdrop-blur"
+                        title="Поделиться"
+                      >
+                        <Send className="h-5 w-5" />
+                      </button>
+                    </div>
                     {channelOverlayVideo.description ? (
                       <div className="absolute left-3 right-3 bottom-3 z-10 rounded-xl bg-black/55 px-3 py-2 text-sm text-white/90">
-                        {channelOverlayVideo.description}
+                        <p className="whitespace-pre-wrap">{channelOverlayVideo.description}</p>
+                        <p className="mt-1 text-[10px] text-white/80 inline-flex items-center gap-1">
+                          <Eye className="h-3 w-3" /> {channelOverlayVideo.viewsCount}
+                        </p>
                       </div>
-                    ) : null}
+                    ) : (
+                      <div className="absolute left-3 bottom-3 z-10 rounded-xl bg-black/55 px-3 py-2 text-[10px] text-white/80 inline-flex items-center gap-1">
+                        <Eye className="h-3 w-3" /> {channelOverlayVideo.viewsCount}
+                      </div>
+                    )}
                   </div>
                 )}
               </DialogContent>
