@@ -1,0 +1,2 @@
+ALTER TABLE "chats" ADD COLUMN "isVerified" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "chat_members" ADD COLUMN "isAdmin" BOOLEAN NOT NULL DEFAULT false;

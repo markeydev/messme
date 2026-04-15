@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
       recentStories,
       recentVideos,
       recentRegistrations,
+      personalChannels,
     ] = await Promise.all([
       db.user.count(),
       db.chat.count(),
@@ -83,6 +84,21 @@ export async function GET(request: NextRequest) {
       db.story.findMany({ where: { createdAt: { gte: trendStart } }, select: { createdAt: true } }),
       db.clipMeVideo.findMany({ where: { createdAt: { gte: trendStart } }, select: { createdAt: true } }),
       db.user.findMany({ where: { createdAt: { gte: trendStart } }, select: { createdAt: true } }),
+      db.chat.findMany({
+        where: { isPersonalChannel: true },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+        select: {
+          id: true,
+          title: true,
+          isVerified: true,
+          avatarUrl: true,
+          createdAt: true,
+          ownerId: true,
+          owner: { select: { id: true, username: true } },
+          _count: { select: { members: true } },
+        },
+      }),
     ])
 
     const normalizeUser = (u: {
@@ -147,6 +163,16 @@ export async function GET(request: NextRequest) {
       })),
       suspiciousAccounts: suspiciousAccounts.map(normalizeUser),
       users: recentUsers.map(normalizeUser),
+      personalChannels: personalChannels.map(c => ({
+        id: c.id,
+        title: c.title,
+        isVerified: c.isVerified,
+        avatarUrl: c.avatarUrl,
+        createdAt: c.createdAt,
+        ownerId: c.ownerId,
+        ownerUsername: c.owner?.username ?? null,
+        subscribersCount: c._count.members,
+      })),
     })
   } catch (error) {
     console.error('Admin panel stats error:', error)

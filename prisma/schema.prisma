@@ -76,6 +76,7 @@ model Chat {
   title     String?
   isGroup   Boolean      @default(false)
   isPersonalChannel Boolean @default(false)
+  isVerified Boolean     @default(false)
   gameMode  Boolean      @default(false)
   avatarUrl String?
   createdAt DateTime     @default(now())
@@ -94,6 +95,7 @@ model ChatMember {
   id       String   @id @default(cuid())
   chatId   String
   userId   String
+  isAdmin  Boolean  @default(false)
   joinedAt DateTime @default(now())
   chat     Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)

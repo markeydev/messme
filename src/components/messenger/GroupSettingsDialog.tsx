@@ -10,7 +10,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
-import { Loader2, Camera, X, Check, ArrowLeft, Users, LogOut, UserMinus } from 'lucide-react'
+import { Loader2, Camera, X, Check, ArrowLeft, Users, LogOut, UserMinus, ShieldCheck, Shield } from 'lucide-react'
 import { chatsAPI, profileAPI, type Chat } from '@/lib/api'
 import { useMessengerStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -20,6 +20,7 @@ interface Member {
   username: string
   avatarUrl?: string | null
   publicKey?: string | null
+  isAdmin?: boolean
 }
 
 interface GroupSettingsDialogProps {
@@ -43,6 +44,7 @@ export function GroupSettingsDialog({ chat, open, onOpenChange, members, current
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
   const [kickTarget, setKickTarget] = useState<{ id: string; username: string } | null>(null)
   const [isKicking, setIsKicking] = useState(false)
+  const [adminTogglingId, setAdminTogglingId] = useState<string | null>(null)
   const [avatarLightboxUrl, setAvatarLightboxUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -139,6 +141,22 @@ export function GroupSettingsDialog({ chat, open, onOpenChange, members, current
     } finally {
       setIsKicking(false)
       setKickTarget(null)
+    }
+  }
+
+  const handleToggleAdmin = async (memberId: string, currentIsAdmin: boolean) => {
+    setAdminTogglingId(memberId)
+    try {
+      const result = await chatsAPI.setChannelMemberAdmin(chat.id, memberId, !currentIsAdmin)
+      if (result.error) {
+        setError(result.error)
+        return
+      }
+      updateChatMembers(chat.id, members.map(m => m.id === memberId ? { ...m, isAdmin: !currentIsAdmin } : m))
+    } catch {
+      setError('Ошибка соединения')
+    } finally {
+      setAdminTogglingId(null)
     }
   }
 
@@ -256,17 +274,42 @@ export function GroupSettingsDialog({ chat, open, onOpenChange, members, current
                     {member.id === chat.ownerId && (
                       <span className="text-xs text-[#5d6cf5] font-medium">Создатель</span>
                     )}
-                    {member.id === currentUserId && member.id !== chat.ownerId && (
+                    {member.isAdmin && member.id !== chat.ownerId && (
+                      <span className="text-xs text-[#5d6cf5]/70 font-medium flex items-center gap-0.5">
+                        <ShieldCheck className="h-3 w-3" /> Админ
+                      </span>
+                    )}
+                    {member.id === currentUserId && member.id !== chat.ownerId && !member.isAdmin && (
                       <span className="text-xs text-black/30 dark:text-white/30">Вы</span>
                     )}
                     {isOwner && member.id !== currentUserId && member.id !== chat.ownerId && (
-                      <button
-                        onClick={() => setKickTarget({ id: member.id, username: member.username })}
-                        className="opacity-0 group-hover:opacity-100 h-7 w-7 flex items-center justify-center rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all"
-                        title="Исключить"
-                      >
-                        <UserMinus className="h-4 w-4" />
-                      </button>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                        {chat.isPersonalChannel && (
+                          <button
+                            onClick={() => handleToggleAdmin(member.id, !!member.isAdmin)}
+                            disabled={adminTogglingId === member.id}
+                            className={cn(
+                              'h-7 w-7 flex items-center justify-center rounded-lg transition-all',
+                              member.isAdmin
+                                ? 'text-[#5d6cf5] hover:bg-[#5d6cf5]/10'
+                                : 'text-black/30 dark:text-white/30 hover:bg-black/[0.05] dark:hover:bg-white/[0.07]'
+                            )}
+                            title={member.isAdmin ? 'Снять права администратора' : 'Назначить администратором'}
+                          >
+                            {adminTogglingId === member.id
+                              ? <Loader2 className="h-4 w-4 animate-spin" />
+                              : member.isAdmin ? <ShieldCheck className="h-4 w-4" /> : <Shield className="h-4 w-4" />
+                            }
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setKickTarget({ id: member.id, username: member.username })}
+                          className="h-7 w-7 flex items-center justify-center rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all"
+                          title="Исключить"
+                        >
+                          <UserMinus className="h-4 w-4" />
+                        </button>
+                      </div>
                     )}
                   </div>
                 ))}

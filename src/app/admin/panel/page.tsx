@@ -15,6 +15,17 @@ type AdminUser = {
   createdAt: string
 }
 
+type AdminChannel = {
+  id: string
+  title: string | null
+  isVerified: boolean
+  avatarUrl: string | null
+  createdAt: string
+  ownerId: string | null
+  ownerUsername: string | null
+  subscribersCount: number
+}
+
 type Stats = {
   usersCount: number
   chatsCount: number
@@ -54,6 +65,7 @@ export default function AdminPanelPage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [users, setUsers] = useState<AdminUser[]>([])
   const [suspiciousAccounts, setSuspiciousAccounts] = useState<AdminUser[]>([])
+  const [personalChannels, setPersonalChannels] = useState<AdminChannel[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [trends, setTrends] = useState<TrendPoint[]>([])
@@ -78,6 +90,7 @@ export default function AdminPanelPage() {
     setTrends(data.trends ?? [])
     setUsers(data.users ?? [])
     setSuspiciousAccounts(data.suspiciousAccounts ?? [])
+    setPersonalChannels(data.personalChannels ?? [])
     setLoading(false)
   }, [token])
 
@@ -140,6 +153,20 @@ export default function AdminPanelPage() {
     setSuspiciousAccounts(prev => prev.filter(user => user.id !== userId))
     setDeletingUserId(null)
     void loadPanel()
+  }
+
+  const setChannelVerified = async (channelId: string, verified: boolean) => {
+    const response = await fetch(`/api/admin/panel/chats/${encodeURIComponent(channelId)}/verify`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, verified }),
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      setError(data.error ?? 'Ошибка верификации канала')
+      return
+    }
+    setPersonalChannels(prev => prev.map(c => c.id === channelId ? { ...c, isVerified: verified } : c))
   }
 
   if (loading) return <div className="min-h-screen bg-[#0f1014] text-white p-6">Загрузка панели…</div>
@@ -220,6 +247,11 @@ export default function AdminPanelPage() {
       <section className="mb-8">
         <h2 className="text-lg font-semibold mb-3">Подозрительные аккаунты</h2>
         <UsersTable users={suspiciousAccounts} onBlock={setBlocked} onVerify={setBadgeVerified} onDelete={deleteUser} deletingUserId={deletingUserId} />
+      </section>
+
+      <section className="mb-8">
+        <h2 className="text-lg font-semibold mb-3">Личные каналы</h2>
+        <ChannelsTable channels={personalChannels} onVerify={setChannelVerified} />
       </section>
 
       <section>
@@ -303,6 +335,61 @@ function UsersTable({
                       className="px-2.5 py-1 rounded-lg bg-rose-700 hover:bg-rose-600 disabled:opacity-60"
                     >
                       {deletingUserId === user.id ? 'Удаление…' : 'Удалить профиль'}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function ChannelsTable({
+  channels,
+  onVerify,
+}: {
+  channels: AdminChannel[]
+  onVerify: (channelId: string, verified: boolean) => void
+}) {
+  if (!channels.length) {
+    return <div className="rounded-xl bg-white/[0.04] border border-white/[0.08] p-4 text-white/60">Нет личных каналов</div>
+  }
+  return (
+    <div className="rounded-xl border border-white/[0.08] overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-white/[0.06]">
+            <tr>
+              <th className="text-left px-3 py-2">Канал</th>
+              <th className="text-left px-3 py-2">Статус</th>
+              <th className="text-left px-3 py-2">Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            {channels.map(channel => (
+              <tr key={channel.id} className="border-t border-white/[0.06]">
+                <td className="px-3 py-2">
+                  <div className="font-medium">{channel.title ?? '(без названия)'}</div>
+                  <div className="text-white/55 text-xs">Владелец: {channel.ownerUsername ?? '—'} · {channel.subscribersCount} подписчиков</div>
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex flex-wrap gap-1.5 text-xs">
+                    {channel.isVerified
+                      ? <span className="px-2 py-0.5 rounded-full bg-[#4e7bff]/35">✔ Верифицирован</span>
+                      : <span className="px-2 py-0.5 rounded-full bg-white/[0.08]">Не верифицирован</span>
+                    }
+                  </div>
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => onVerify(channel.id, !channel.isVerified)}
+                      className="px-2.5 py-1 rounded-lg bg-[#4e7bff] hover:bg-[#3d67e0]"
+                    >
+                      {channel.isVerified ? 'Снять верификацию' : 'Верифицировать канал'}
                     </button>
                   </div>
                 </td>
