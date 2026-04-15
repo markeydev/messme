@@ -18,7 +18,7 @@ import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
 import { chatsAPI, usersAPI, storiesAPI, type Chat, type Message, type StoryFeedItem, type User } from '@/lib/api'
 import { CHAT_MESSAGE_CONTEXT_MENU_ITEM_HEIGHT, CHAT_MESSAGE_CONTEXT_REACTIONS_MENU_EXTRA_HEIGHT, REACTION_EMOJIS } from '@/lib/product-config'
-import { ArrowDown, ArrowLeft, Users, Loader2, UserPlus, Check, X, Reply, Forward, Trash2, Pencil, FileText, Download, ZoomIn, Copy, Bell, BellOff, Phone, Clock, AlertCircle, ShieldCheck, Smile, Circle } from 'lucide-react'
+import { ArrowDown, ArrowLeft, Users, Loader2, UserPlus, Check, X, Reply, Forward, Trash2, Pencil, FileText, Download, ZoomIn, Copy, Phone, Clock, AlertCircle, ShieldCheck, Smile, Circle } from 'lucide-react'
 import { cn, openExternalUrl } from '@/lib/utils'
 
 interface ChatWindowProps {
@@ -66,7 +66,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
   const [isPeerOnline, setIsPeerOnline] = useState(false)
   const [peerLastSeenAt, setPeerLastSeenAt] = useState<string | null>(null)
 
-  const { user, addMessage, deleteMessage, chats, mutedChats, toggleMuteChat, removeChat, setActiveChat, prependMessages, updateChatMembers, updateMessageReactions } = useMessengerStore()
+  const { user, addMessage, deleteMessage, chats, removeChat, setActiveChat, prependMessages, updateChatMembers, updateMessageReactions } = useMessengerStore()
   const baseReactions = REACTION_EMOJIS
   const isReadOnlyPersonalChannel = !!chat.isPersonalChannel && chat.ownerId !== user?.id
   const canManageChannelMembers = !!chat.isGroup && (!chat.isPersonalChannel || chat.ownerId === user?.id)
@@ -428,17 +428,6 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
           <Button variant="ghost" size="icon" onClick={() => setIsAddMemberOpen(true)}
               className="h-8 w-8 text-black/40 dark:text-white/40 hover:text-black/80 dark:hover:text-white/80 hover:bg-black/[0.05] dark:hover:bg-white/[0.08] rounded-lg">
             <UserPlus className="h-4 w-4" />
-          </Button>
-        )}
-        {chat.isGroup && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => toggleMuteChat(chat.id)}
-            className="h-8 w-8 text-black/40 dark:text-white/40 hover:text-black/80 dark:hover:text-white/80 hover:bg-black/[0.05] dark:hover:bg-white/[0.08] rounded-lg"
-            title={mutedChats[chat.id] ? 'Включить уведомления' : 'Отключить уведомления'}
-          >
-            {mutedChats[chat.id] ? <BellOff className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
           </Button>
         )}
         {/* Call buttons — only for 1-on-1 chats */}

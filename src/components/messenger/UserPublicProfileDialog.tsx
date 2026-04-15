@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { clipMeAPI } from '@/lib/api'
+import { getSafeImageUrl } from '@/lib/utils'
 
 interface UserPublicProfileDialogProps {
   open: boolean
@@ -24,6 +25,7 @@ export function UserPublicProfileDialog({
   onOpenLinkedChannel,
 }: UserPublicProfileDialogProps) {
   const [isLoading, setIsLoading] = useState(false)
+  const [isAvatarPreviewOpen, setIsAvatarPreviewOpen] = useState(false)
   const [profile, setProfile] = useState<{
     username: string
     avatarUrl?: string | null
@@ -66,20 +68,34 @@ export function UserPublicProfileDialog({
   }, [open, userId])
 
   const displayName = profile?.username ?? fallbackUser?.username ?? 'Пользователь'
-  const displayAvatar = profile?.avatarUrl ?? fallbackUser?.avatarUrl ?? null
+  const displayAvatar = getSafeImageUrl(profile?.avatarUrl || fallbackUser?.avatarUrl || null)
   const channel = profile?.linkedMessmeChannel ?? null
 
   const initials = useMemo(
     () => displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2),
     [displayName]
   )
+  const handleOpenAvatarPreview = useCallback(() => {
+    if (displayAvatar) setIsAvatarPreviewOpen(true)
+  }, [displayAvatar])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm bg-[#121212] border-white/10 text-white">
         <DialogTitle>Профиль</DialogTitle>
         <div className="flex flex-col items-center gap-4 py-1">
-          <Avatar className="h-20 w-20 border border-white/20">
+          <Avatar
+            className="h-20 w-20 border border-white/20 cursor-zoom-in"
+            onClick={handleOpenAvatarPreview}
+            role="button"
+            tabIndex={0}
+            onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                handleOpenAvatarPreview()
+              }
+            }}
+          >
             {displayAvatar && <AvatarImage src={displayAvatar} alt={displayName} />}
             <AvatarFallback className="bg-[#5d6cf5] text-white text-lg font-semibold">
               {initials}
@@ -119,6 +135,17 @@ export function UserPublicProfileDialog({
           )}
         </div>
       </DialogContent>
+      <Dialog open={isAvatarPreviewOpen} onOpenChange={setIsAvatarPreviewOpen}>
+        <DialogContent className="bg-black/90 border-0 max-w-3xl p-2 flex items-center justify-center">
+          {displayAvatar && (
+            <img
+              src={displayAvatar}
+              alt={displayName}
+              className="max-w-full max-h-[85vh] object-contain rounded-lg"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </Dialog>
   )
 }
