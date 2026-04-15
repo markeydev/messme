@@ -14,7 +14,7 @@ export async function GET(
 
     const user = await db.user.findUnique({
       where: { id: userId },
-      select: { id: true, username: true, avatarUrl: true, clipMeBio: true, linkedMessmeChannelId: true, isBadgeVerified: true },
+      select: { id: true, username: true, avatarUrl: true, bio: true, clipMeBio: true, linkedMessmeChannelId: true, isBadgeVerified: true },
     })
     if (!user) return NextResponse.json({ error: 'Пользователь не найден' }, { status: 404 })
 
