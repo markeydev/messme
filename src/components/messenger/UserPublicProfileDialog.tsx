@@ -30,6 +30,7 @@ export function UserPublicProfileDialog({
     username: string
     avatarUrl?: string | null
     clipMeBio?: string | null
+    bio?: string | null
     linkedMessmeChannelId?: string | null
     linkedMessmeChannel?: {
       id: string
@@ -55,6 +56,7 @@ export function UserPublicProfileDialog({
         username: user.username,
         avatarUrl: user.avatarUrl ?? null,
         clipMeBio: user.clipMeBio ?? null,
+        bio: user.bio ?? null,
         linkedMessmeChannelId: user.linkedMessmeChannelId ?? null,
         linkedMessmeChannel: result.linkedMessmeChannel ?? null,
       })
@@ -110,7 +112,7 @@ export function UserPublicProfileDialog({
               <div className="rounded-xl bg-white/5 border border-white/10 p-3">
                 <p className="text-xs uppercase tracking-wide text-white/50 mb-1">О себе</p>
                 <p className="text-sm text-white/85 whitespace-pre-wrap break-words">
-                  {profile?.clipMeBio?.trim() ? profile.clipMeBio : 'Не указано'}
+                  {profile?.bio?.trim() ? profile.bio : 'Не указано'}
                 </p>
               </div>
 
