@@ -40,7 +40,7 @@ interface ChatListProps {
 
 export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout, activeTab, onTabChange, initialClipVideoId }: ChatListProps) {
   const {
-    chats, addChat, user, unreadCounts, mutedChats, toggleMuteChat, updateUser, notificationsEnabled, setNotificationsEnabled,
+    chats, addChat, user, unreadCounts, mutedChats, updateUser, notificationsEnabled, setNotificationsEnabled,
     darkMode, setDarkMode, removeChat, setActiveChat, microphoneVolume, outputVolume,
     audioInputDeviceId, audioOutputDeviceId, soundEffectsEnabled, autoPlayMedia,
     setMicrophoneVolume, setOutputVolume, setAudioInputDeviceId, setAudioOutputDeviceId, setSoundEffectsEnabled, setAutoPlayMedia
@@ -88,6 +88,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
   }
   const [isGameMode, setIsGameMode] = useState(false)
   const [isPersonalChannel, setIsPersonalChannel] = useState(false)
+  const [onlinePeersByChatId, setOnlinePeersByChatId] = useState<Record<string, boolean>>({})
 
   // Last message preview text per chat — content is already decrypted server-side
   const getPreview = (chat: Chat): string => {
@@ -186,17 +187,58 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
       .sort((a, b) => getChatActivityTs(b) - getChatActivityTs(a))
       .slice(0, 15)
   }, [chats, getChatActivityTs, userSearchQuery])
-  const notificationTargetChats = useMemo(
-    () => chats
-      .filter(chat => chat.isGroup)
-      .sort((a, b) => getChatActivityTs(b) - getChatActivityTs(a)),
-    [chats, getChatActivityTs]
-  )
   const handleToggleNotifications = useCallback(() => {
     setNotificationsEnabled(!notificationsEnabled)
   }, [notificationsEnabled, setNotificationsEnabled])
   const storiesByUser = new Map(storyFeed.map(item => [item.user.id, item]))
   const isAdminUser = Boolean(user?.isAdmin)
+
+  useEffect(() => {
+    if (!user?.id) {
+      setOnlinePeersByChatId({})
+      return
+    }
+    const personalChats = chats.filter(chat => !chat.isGroup)
+    const peerByChatId = new Map<string, string>()
+    personalChats.forEach(chat => {
+      const peerId = chat.members.find(member => member.id !== user.id)?.id
+      if (peerId) peerByChatId.set(chat.id, peerId)
+    })
+    if (peerByChatId.size === 0) {
+      setOnlinePeersByChatId({})
+      return
+    }
+    setOnlinePeersByChatId(prev => {
+      const next: Record<string, boolean> = {}
+      peerByChatId.forEach((_, chatId) => {
+        next[chatId] = !!prev[chatId]
+      })
+      return next
+    })
+    const refreshOnline = () => {
+      peerByChatId.forEach((_, chatId) => messengerSocket.getOnlineUsers(chatId))
+    }
+    const handleOnline = (data: { chatId: string; users: Array<{ id: string; username: string; isOnline: boolean }> }) => {
+      const peerId = peerByChatId.get(data.chatId)
+      if (!peerId) return
+      const isOnline = data.users.some(item => item.id === peerId && item.isOnline)
+      setOnlinePeersByChatId(prev => prev[data.chatId] === isOnline ? prev : { ...prev, [data.chatId]: isOnline })
+    }
+    const handleOffline = (data: { chatId: string; userId: string }) => {
+      const peerId = peerByChatId.get(data.chatId)
+      if (!peerId || data.userId !== peerId) return
+      setOnlinePeersByChatId(prev => prev[data.chatId] ? { ...prev, [data.chatId]: false } : prev)
+    }
+    messengerSocket.on('online-users', handleOnline)
+    messengerSocket.on('user-offline', handleOffline)
+    refreshOnline()
+    const interval = window.setInterval(refreshOnline, 30000)
+    return () => {
+      messengerSocket.off('online-users', handleOnline)
+      messengerSocket.off('user-offline', handleOffline)
+      window.clearInterval(interval)
+    }
+  }, [chats, user?.id])
   const adminbotChat: Chat = {
     id: 'adminbot',
     title: 'adminbot',
@@ -688,24 +730,27 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                       title={hasStory ? 'Открыть сторис' : undefined}
                     >
                       <span className={cn(
-                        'inline-flex rounded-full p-[2px]',
+                        'inline-flex rounded-full p-[2px] relative',
                         hasStory
                           ? chatStory?.hasUnseen
                             ? 'bg-gradient-to-br from-[#ff4d67] via-[#f7b142] to-[#5d6cf5]'
                             : 'bg-black/15 dark:bg-white/15'
                           : ''
                       )}>
-                        <Avatar className="h-12 w-12">
-                          {chat.avatarUrl && <AvatarImage src={chat.avatarUrl} alt={chat.title} />}
-                          <AvatarFallback className={cn(
-                            'font-semibold text-white text-sm',
-                            chat.isGroup ? 'bg-violet-500' : 'bg-[#152cff]'
-                          )}>
-                            {chat.isGroup ? <Users className="h-5 w-5" /> : getInitials(chat.title)}
-                          </AvatarFallback>
-                        </Avatar>
+                          <Avatar className="h-12 w-12">
+                            {chat.avatarUrl && <AvatarImage src={chat.avatarUrl} alt={chat.title} />}
+                            <AvatarFallback className={cn(
+                              'font-semibold text-white text-sm',
+                              chat.isGroup ? 'bg-violet-500' : 'bg-[#152cff]'
+                            )}>
+                              {chat.isGroup ? <Users className="h-5 w-5" /> : getInitials(chat.title)}
+                            </AvatarFallback>
+                          </Avatar>
+                          {!chat.isGroup && onlinePeersByChatId[chat.id] && (
+                            <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full bg-[#0ed221] border-2 border-white dark:border-[#111112]" />
+                          )}
+                        </span>
                       </span>
-                    </span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0 flex items-center gap-1.5">
@@ -1108,31 +1153,6 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                       {notificationsEnabled ? 'Выключить уведомления' : 'Включить уведомления'}
                     </Button>
 
-                    <div className="rounded-xl bg-black/[0.05] dark:bg-white/[0.07] px-3 py-2.5 space-y-1.5">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-black/40 dark:text-white/40">Чаты и каналы</p>
-                      {notificationTargetChats.length === 0 ? (
-                        <p className="text-xs text-black/40 dark:text-white/40 py-1">Нет доступных чатов</p>
-                      ) : notificationTargetChats.map(chat => (
-                        <div key={chat.id} className="flex items-center justify-between gap-2 py-1">
-                          <span className="text-sm text-black dark:text-white truncate">{chat.title}</span>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => toggleMuteChat(chat.id)}
-                            className={cn(
-                              'h-8 rounded-lg px-2.5 text-xs',
-                              mutedChats[chat.id]
-                                ? 'text-red-500 dark:text-red-300 hover:bg-red-500/10'
-                                : 'text-[#5d6cf5] hover:bg-[#5d6cf5]/10'
-                            )}
-                          >
-                            {mutedChats[chat.id] ? <BellOff className="h-3.5 w-3.5 mr-1.5" /> : <Bell className="h-3.5 w-3.5 mr-1.5" />}
-                            {mutedChats[chat.id] ? 'Выкл' : 'Вкл'}
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
                   </div>
                 </AccordionContent>
               </AccordionItem>
