@@ -186,8 +186,7 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
     const userId = initialUserIdRef.current
     initialUserIdRef.current = null
     void openChannel(userId)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [openChannel])
 
   useEffect(() => {
     if (!initialVideoId) return
