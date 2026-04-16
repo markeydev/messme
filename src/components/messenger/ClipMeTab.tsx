@@ -17,6 +17,7 @@ import { VerifiedBadge } from '@/components/messenger/VerifiedBadge'
 interface ClipMeTabProps {
   onClose?: () => void
   initialVideoId?: string | null
+  initialUserId?: string | null
 }
 
 const VIDEO_LIKE_PULSE_DURATION_MS = 420
@@ -65,7 +66,7 @@ const buildCommentsTree = (items: ClipMeComment[]) => {
   return roots
 }
 
-export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
+export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabProps) {
   const { user, chats, setActiveChat } = useMessengerStore()
   const [videos, setVideos] = useState<ClipMeVideo[]>([])
   const [clipSearchQuery, setClipSearchQuery] = useState('')
@@ -178,6 +179,14 @@ export function ClipMeTab({ onClose, initialVideoId }: ClipMeTabProps) {
   }
 
   useEffect(() => { void refreshFeed() }, [initialVideoId])
+
+  const initialUserIdRef = useRef(initialUserId)
+  useEffect(() => {
+    if (!initialUserIdRef.current) return
+    const userId = initialUserIdRef.current
+    initialUserIdRef.current = null
+    void openChannel(userId)
+  }, [openChannel])
 
   useEffect(() => {
     if (!initialVideoId) return

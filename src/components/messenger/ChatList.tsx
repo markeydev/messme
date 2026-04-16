@@ -116,6 +116,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
   const [isSaving, setIsSaving] = useState(false)
   const [profileError, setProfileError] = useState<string | null>(null)
   const [isProfileAvatarPreviewOpen, setIsProfileAvatarPreviewOpen] = useState(false)
+  const [clipMeInitialUserId, setClipMeInitialUserId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -863,7 +864,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                 )}
               >
                 <Users className="h-4 w-4 flex-shrink-0" />
-                <span className="text-sm font-medium flex-1 text-left">Личный канал (пишет только создатель)</span>
+                <span className="text-sm font-medium flex-1 text-left">Личный канал</span>
                 <span className={cn(
                   'text-[11px] px-2 py-0.5 rounded-full font-semibold',
                   isPersonalChannel ? 'bg-[#5d6cf5] text-white' : 'bg-black/[0.08] dark:bg-white/[0.10] text-black/40 dark:text-white/40'
@@ -1265,7 +1266,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
 
             <Button
               variant="ghost"
-              onClick={() => onTabChange('clipme')}
+              onClick={() => { setClipMeInitialUserId(user?.id ?? null); onTabChange('clipme') }}
               className="w-full h-10 rounded-xl bg-black/[0.05] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12]"
             >
               <Film className="h-4 w-4 mr-2" />
@@ -1294,7 +1295,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
       )}
 
       {activeTab === 'clipme' && (
-        <ClipMeTab onClose={() => onTabChange('chats')} initialVideoId={initialClipVideoId} />
+        <ClipMeTab onClose={() => { setClipMeInitialUserId(null); onTabChange('chats') }} initialVideoId={initialClipVideoId} initialUserId={clipMeInitialUserId} />
       )}
 
       {/* Bottom navigation — desktop only; mobile nav is rendered in the parent page */}

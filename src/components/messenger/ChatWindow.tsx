@@ -49,7 +49,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [isGroupSettingsOpen, setIsGroupSettingsOpen] = useState(false)
   const [profileUserId, setProfileUserId] = useState<string | null>(null)
-  const [contextMenu, setContextMenu] = useState<{ msg: Message; x: number; y: number } | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ msg: Message; x: number; y: number; selectedText?: string } | null>(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -68,7 +68,9 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
 
   const { user, addMessage, deleteMessage, chats, removeChat, setActiveChat, prependMessages, updateChatMembers, updateMessageReactions } = useMessengerStore()
   const baseReactions = REACTION_EMOJIS
-  const isReadOnlyPersonalChannel = !!chat.isPersonalChannel && chat.ownerId !== user?.id
+  const currentUserMember = chat.members.find(m => m.id === user?.id)
+  const isChannelAdmin = !!currentUserMember?.isAdmin
+  const isReadOnlyPersonalChannel = !!chat.isPersonalChannel && chat.ownerId !== user?.id && !isChannelAdmin
   const canManageChannelMembers = !!chat.isGroup && (!chat.isPersonalChannel || chat.ownerId === user?.id)
 
   // Infinite scroll state
@@ -244,9 +246,9 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
     if (result.reactions) updateMessageReactions(chat.id, messageId, result.reactions)
   }
 
-  const handleStartReply = (msg: Message) => {
+  const handleStartReply = (msg: Message, quotedText?: string) => {
     setReplyToMessage(msg)
-    setReplyToText(msg.content)
+    setReplyToText(quotedText ?? msg.content)
   }
 
   const handleStartEdit = (msg: Message) => {
@@ -476,7 +478,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
         )}
         {!hasMore && messages.length > 0 && (
           <div className="flex justify-center py-2">
-            <span className="text-xs text-black/20 dark:text-white/20">Начало переписки</span>
+            <span className="text-xs text-black/20 dark:text-white/20">{chat.isPersonalChannel ? 'Канал создан' : 'Начало переписки'}</span>
           </div>
         )}
         {Object.entries(groupedMessages).map(([date, msgs]) => (
@@ -504,14 +506,20 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                 return (
                   <div key={msg.id} className="animate-in fade-in slide-in-from-bottom-2 duration-150">
                       <div
-                        className={cn('flex gap-2 items-end select-none', alignOwnRight ? 'flex-row-reverse' : 'flex-row')}
-                        onContextMenu={e => { e.preventDefault(); setContextMenu({ msg, x: e.clientX, y: e.clientY }) }}
+                        className={cn('flex gap-2 items-end', alignOwnRight ? 'flex-row-reverse' : 'flex-row')}
+                        onContextMenu={e => {
+                          e.preventDefault()
+                          const selection = window.getSelection()
+                          const selectedText = selection && selection.toString().trim() ? selection.toString().trim() : undefined
+                          setContextMenu({ msg, x: e.clientX, y: e.clientY, selectedText })
+                        }}
                         onTouchStart={e => {
                           const touch = e.touches[0]
                           const tx = touch.clientX, ty = touch.clientY
                           longPressTimerRef.current = setTimeout(() => {
-                            window.getSelection()?.removeAllRanges()
-                            setContextMenu({ msg, x: tx, y: ty })
+                            const selection = window.getSelection()
+                            const selectedText = selection && selection.toString().trim() ? selection.toString().trim() : undefined
+                            setContextMenu({ msg, x: tx, y: ty, selectedText })
                           }, 500)
                         }}
                         onTouchEnd={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null } }}
@@ -876,9 +884,11 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
         const m = contextMenu.msg
         const menuIsOwn = m.senderId === user?.id
         const isText = !(m as any).type || (m as any).type === 'TEXT'
+        const hasSelection = !!contextMenu.selectedText
         const canReplyToMessages = !chat.isPersonalChannel
         const menuW = 196
-        const itemCount = (canReplyToMessages ? 1 : 0) + 1 + (isText ? 1 : 0) + (menuIsOwn && isText ? 1 : 0) + 1 // +1 delete
+        const selectionItems = hasSelection ? (canReplyToMessages ? 2 : 1) : 0
+        const itemCount = (canReplyToMessages ? 1 : 0) + 1 + (isText ? 1 : 0) + (menuIsOwn && isText ? 1 : 0) + 1 + selectionItems // +1 delete
         const menuH = itemCount * CHAT_MESSAGE_CONTEXT_MENU_ITEM_HEIGHT + CHAT_MESSAGE_CONTEXT_REACTIONS_MENU_EXTRA_HEIGHT
         const vw = typeof window !== 'undefined' ? window.innerWidth : 400
         const vh = typeof window !== 'undefined' ? window.innerHeight : 800
@@ -917,6 +927,24 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                   ))}
                 </div>
               </div>
+              {hasSelection && (
+                <button
+                  className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] active:bg-black/[0.06] dark:active:bg-white/[0.08] transition-colors text-left"
+                  onClick={() => { navigator.clipboard?.writeText(contextMenu.selectedText!); setContextMenu(null) }}
+                >
+                  <Copy className="h-4 w-4 text-black/40 dark:text-white/40 flex-shrink-0" />
+                  <span className="text-black dark:text-white text-sm">Копировать выделенное</span>
+                </button>
+              )}
+              {hasSelection && canReplyToMessages && (
+                <button
+                  className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] active:bg-black/[0.06] dark:active:bg-white/[0.08] transition-colors text-left"
+                  onClick={() => { handleStartReply(m, contextMenu.selectedText); setContextMenu(null) }}
+                >
+                  <Reply className="h-4 w-4 text-black/40 dark:text-white/40 flex-shrink-0" />
+                  <span className="text-black dark:text-white text-sm">Ответить на цитату</span>
+                </button>
+              )}
               {canReplyToMessages && (
                 <button
                   className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] active:bg-black/[0.06] dark:active:bg-white/[0.08] transition-colors text-left"

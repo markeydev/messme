@@ -22,6 +22,7 @@ export interface Chat {
   title: string
   isGroup: boolean
   isPersonalChannel?: boolean
+  isVerified?: boolean
   gameMode?: boolean
   avatarUrl?: string | null
   ownerId?: string | null
@@ -30,6 +31,7 @@ export interface Chat {
     username: string
     avatarUrl?: string | null
     isBadgeVerified?: boolean
+    isAdmin?: boolean
   }>
   lastMessage?: {
     id: string
@@ -454,6 +456,15 @@ export const chatsAPI = {
   async kickMember(chatId: string, targetUserId: string): Promise<{ success?: boolean; error?: string }> {
     const result = await fetchAPI<{ success: boolean }>(`/chats/${chatId}/members?targetUserId=${encodeURIComponent(targetUserId)}`, {
       method: 'DELETE',
+    })
+    if (result.data) return { success: true }
+    return { error: result.error }
+  },
+
+  async setChannelMemberAdmin(chatId: string, userId: string, isAdmin: boolean): Promise<{ success?: boolean; error?: string }> {
+    const result = await fetchAPI<{ success: boolean }>(`/chats/${chatId}/members/admin`, {
+      method: 'PATCH',
+      body: JSON.stringify({ userId, isAdmin }),
     })
     if (result.data) return { success: true }
     return { error: result.error }

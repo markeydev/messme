@@ -215,6 +215,7 @@ export async function GET(
         username: m.user.username,
         publicKey: m.user.publicKey,
         isBadgeVerified: (m.user as any).isBadgeVerified ?? false,
+        isAdmin: (m as any).isAdmin ?? false,
       }))
     })
   } catch (error) {
