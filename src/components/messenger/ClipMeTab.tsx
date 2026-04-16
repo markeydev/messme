@@ -401,7 +401,7 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
     setShareVideo(null)
   }
 
-  const openChannel = async (targetUserId: string) => {
+  async function openChannel(targetUserId: string) {
     const currentActive = activeVideoId
     previousActiveVideoIdRef.current = currentActive
     setFeedPausedForOverlay(true)
