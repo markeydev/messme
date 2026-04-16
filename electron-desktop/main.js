@@ -1,7 +1,7 @@
 const { app, BrowserWindow, shell, ipcMain, Notification, nativeImage, desktopCapturer } = require('electron')
 const path = require('path')
 
-const DEFAULT_START_URL = 'http://localhost:3000'
+const DEFAULT_START_URL = 'https://aty-market.ru'
 const APP_ICON_PATH = path.join(__dirname, 'build', 'icon.png')
 const APP_ICON = nativeImage.createFromPath(APP_ICON_PATH)
 let mainWindowRef = null

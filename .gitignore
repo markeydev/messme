@@ -2,3 +2,4 @@
 /electron-desktop/node_modules
 .env
 .next
+/electron-desktop
