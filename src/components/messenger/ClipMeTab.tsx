@@ -69,7 +69,6 @@ const buildCommentsTree = (items: ClipMeComment[]) => {
 export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabProps) {
   const { user, chats, setActiveChat } = useMessengerStore()
   const [videos, setVideos] = useState<ClipMeVideo[]>([])
-  const [clipSearchQuery, setClipSearchQuery] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null)
   const [isChannelSearchOpen, setIsChannelSearchOpen] = useState(false)
@@ -127,11 +126,7 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
   const deepLinkResolvedRef = useRef(false)
 
   const messmeChats = useMemo(() => chats.filter(c => !c.gameMode), [chats])
-  const filteredFeedVideos = useMemo(() => {
-    const q = clipSearchQuery.trim().toLowerCase()
-    if (!q) return videos
-    return videos.filter(video => video.user.username.toLowerCase().includes(q))
-  }, [videos, clipSearchQuery])
+  const filteredFeedVideos = useMemo(() => videos, [videos])
   const channelTotalViews = useMemo(
     () => (channelData?.videos ?? []).reduce((sum, video) => sum + (video.viewsCount ?? 0), 0),
     [channelData?.videos]
@@ -658,14 +653,14 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
               onClick={() => setIsChannelSearchOpen(true)}
               className="w-full text-left bg-transparent text-xs text-white/90 truncate"
             >
-              {clipSearchQuery.trim() ? `Поиск: ${clipSearchQuery.trim()}` : 'Поиск каналов'}
+              Поиск каналов
             </button>
           </div>
         </div>
 
         <div ref={feedRef} className="flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory scroll-smooth">
           {isLoading && <div className="h-full flex items-center justify-center text-sm text-white/70">Загрузка ленты...</div>}
-          {!isLoading && filteredFeedVideos.length === 0 && <div className="h-full flex items-center justify-center text-sm text-white/70">{clipSearchQuery.trim() ? 'Ничего не найдено' : 'Пока нет видео.'}</div>}
+          {!isLoading && filteredFeedVideos.length === 0 && <div className="h-full flex items-center justify-center text-sm text-white/70">Пока нет видео.</div>}
 
           {filteredFeedVideos.map(video => {
             const authorSubKey = video.user.id
@@ -788,10 +783,7 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
           <div className="space-y-3">
             <Input
               value={channelSearchQuery}
-              onChange={e => {
-                setChannelSearchQuery(e.target.value)
-                setClipSearchQuery(e.target.value)
-              }}
+              onChange={e => setChannelSearchQuery(e.target.value)}
               placeholder="Введите имя канала"
               className="h-10"
               autoFocus

@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 const FALLBACK_TYPE = 'application/octet-stream'
+const ALLOWED_S3_HOST = (() => {
+  try {
+    return process.env.S3_ENDPOINT ? new URL(process.env.S3_ENDPOINT).host : null
+  } catch {
+    return null
+  }
+})()
 
 function sanitizeFileName(input: string) {
   return input
@@ -11,8 +18,7 @@ function sanitizeFileName(input: string) {
 }
 
 function isAllowedHost(target: URL) {
-  const allowedHost = process.env.S3_ENDPOINT ? new URL(process.env.S3_ENDPOINT).host : null
-  return !!allowedHost && target.host === allowedHost
+  return !!ALLOWED_S3_HOST && target.host === ALLOWED_S3_HOST
 }
 
 export async function GET(request: NextRequest) {
@@ -34,12 +40,14 @@ export async function GET(request: NextRequest) {
     }
 
     const fileName = sanitizeFileName(sourceName)
+    // Keep both filename and filename* for better compatibility across old/new clients.
+    const fallbackFileName = fileName.replace(/"/g, '')
     const contentType = upstream.headers.get('content-type') || FALLBACK_TYPE
     return new NextResponse(upstream.body, {
       status: 200,
       headers: {
         'Content-Type': contentType,
-        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+        'Content-Disposition': `attachment; filename="${fallbackFileName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
       },
     })
   } catch (error) {

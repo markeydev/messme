@@ -260,6 +260,13 @@ export function MessageInput({
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`
     return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`
   }
+  const formatFilesCount = (count: number) => {
+    const mod10 = count % 10
+    const mod100 = count % 100
+    if (mod10 === 1 && mod100 !== 11) return `${count} файл`
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${count} файла`
+    return `${count} файлов`
+  }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
@@ -294,9 +301,14 @@ export function MessageInput({
     if (pendingAttachments.length === 0 || !user) return
     setIsUploading(true)
     try {
+      let failedUploads = 0
       for (const attachment of pendingAttachments) {
         const uploaded = await chatsAPI.uploadFile(attachment.file)
-        if (uploaded.error || !uploaded.url) { console.error(uploaded.error); continue }
+        if (uploaded.error || !uploaded.url) {
+          failedUploads += 1
+          console.error(uploaded.error)
+          continue
+        }
         const isImage = attachment.file.type.startsWith('image/')
         const type = isImage ? 'IMAGE' : 'FILE'
         const result = await chatsAPI.sendMessage(
@@ -304,6 +316,10 @@ export function MessageInput({
           { fileUrl: uploaded.url, fileName: uploaded.fileName!, fileSize: uploaded.fileSize!, type }
         )
         if (result.message) messengerSocket.broadcastMessage(result.message)
+        else failedUploads += 1
+      }
+      if (failedUploads > 0 && typeof window !== 'undefined') {
+        window.alert(`Не удалось отправить ${formatFilesCount(failedUploads)}. Проверьте подключение и попробуйте снова.`)
       }
       clearAllAttachments()
       justSentRef.current = true

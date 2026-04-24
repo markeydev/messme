@@ -31,8 +31,12 @@ export async function sendPushToUsers(userIds: string[], payload: { title: strin
         serializedPayload
       ).catch(async (err) => {
         if (err?.statusCode === 410) {
-          await db.pushSubscription.delete({ where: { endpoint: sub.endpoint } }).catch(() => {})
+          await db.pushSubscription.delete({ where: { endpoint: sub.endpoint } }).catch((dbErr) => {
+            console.error('Failed to delete expired push subscription:', dbErr)
+          })
+          return
         }
+        console.error('Push send failed:', err)
       })
     )
   )
