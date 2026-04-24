@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { canAccessClipVideo, getSession } from '@/lib/clipme'
+import { sendPushToUsers } from '@/lib/pushNotifications'
 
 export async function POST(
   request: NextRequest,
@@ -27,6 +28,20 @@ export async function POST(
       await db.clipMeRepost.delete({ where: { id: existing.id } })
     } else {
       await db.clipMeRepost.create({ data: { videoId, userId: session.userId } })
+      if (video.userId !== session.userId) {
+        const actor = await db.user.findUnique({
+          where: { id: session.userId },
+          select: { username: true },
+        })
+        await sendPushToUsers(
+          [video.userId],
+          {
+            title: actor?.username ?? 'Новый репост',
+            body: 'Сделал(а) репост вашего ролика ClipMe',
+            url: '/',
+          }
+        )
+      }
     }
     const repostsCount = await db.clipMeRepost.count({ where: { videoId } })
     return NextResponse.json({ reposted: !existing, repostsCount })

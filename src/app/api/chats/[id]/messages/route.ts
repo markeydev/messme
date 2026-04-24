@@ -45,7 +45,7 @@ export async function POST(
     if (!chat) {
       return NextResponse.json({ error: 'Чат не найден' }, { status: 404 })
     }
-    if (chat.isPersonalChannel && chat.ownerId !== session.userId) {
+    if (chat.isPersonalChannel && chat.ownerId !== session.userId && !membership.isAdmin) {
       return NextResponse.json({ error: 'В личном канале может публиковать только создатель' }, { status: 403 })
     }
 

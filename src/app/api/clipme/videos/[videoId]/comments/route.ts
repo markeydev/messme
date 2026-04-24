@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { canAccessClipVideo, getSession } from '@/lib/clipme'
+import { sendPushToUsers } from '@/lib/pushNotifications'
 
 export async function GET(
   request: NextRequest,
@@ -92,6 +93,30 @@ export async function POST(
         user: { select: { id: true, username: true, avatarUrl: true, isBadgeVerified: true } },
       },
     })
+
+    const actor = await db.user.findUnique({
+      where: { id: session.userId },
+      select: { username: true },
+    })
+    const notifyUserIds = new Set<string>()
+    if (video.userId !== session.userId) notifyUserIds.add(video.userId)
+    if (comment.parentId) {
+      const parent = await db.clipMeComment.findUnique({
+        where: { id: comment.parentId },
+        select: { userId: true },
+      })
+      if (parent?.userId && parent.userId !== session.userId) notifyUserIds.add(parent.userId)
+    }
+    if (notifyUserIds.size > 0) {
+      await sendPushToUsers(
+        Array.from(notifyUserIds),
+        {
+          title: actor?.username ?? 'Новый комментарий',
+          body: comment.parentId ? 'Ответил(а) на комментарий в ClipMe' : 'Оставил(а) комментарий к ролику ClipMe',
+          url: '/',
+        }
+      )
+    }
 
     const commentsCount = await db.clipMeComment.count({ where: { videoId } })
     return NextResponse.json({

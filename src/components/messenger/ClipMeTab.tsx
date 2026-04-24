@@ -69,9 +69,12 @@ const buildCommentsTree = (items: ClipMeComment[]) => {
 export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabProps) {
   const { user, chats, setActiveChat } = useMessengerStore()
   const [videos, setVideos] = useState<ClipMeVideo[]>([])
-  const [clipSearchQuery, setClipSearchQuery] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null)
+  const [isChannelSearchOpen, setIsChannelSearchOpen] = useState(false)
+  const [channelSearchQuery, setChannelSearchQuery] = useState('')
+  const [channelSearchResults, setChannelSearchResults] = useState<Array<{ id: string; username: string; avatarUrl?: string | null; isBadgeVerified?: boolean }>>([])
+  const [isChannelSearchLoading, setIsChannelSearchLoading] = useState(false)
 
   const [commentsOpenFor, setCommentsOpenFor] = useState<string | null>(null)
   const [comments, setComments] = useState<Record<string, ClipMeComment[]>>({})
@@ -123,11 +126,7 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
   const deepLinkResolvedRef = useRef(false)
 
   const messmeChats = useMemo(() => chats.filter(c => !c.gameMode), [chats])
-  const filteredFeedVideos = useMemo(() => {
-    const q = clipSearchQuery.trim().toLowerCase()
-    if (!q) return videos
-    return videos.filter(video => video.user.username.toLowerCase().includes(q))
-  }, [videos, clipSearchQuery])
+  const filteredFeedVideos = useMemo(() => videos, [videos])
   const channelTotalViews = useMemo(
     () => (channelData?.videos ?? []).reduce((sum, video) => sum + (video.viewsCount ?? 0), 0),
     [channelData?.videos]
@@ -179,6 +178,33 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
   }
 
   useEffect(() => { void refreshFeed() }, [initialVideoId])
+
+  useEffect(() => {
+    if (!isChannelSearchOpen) return
+    const q = channelSearchQuery.trim()
+    if (q.length < 1) {
+      setChannelSearchResults([])
+      setIsChannelSearchLoading(false)
+      return
+    }
+    let cancelled = false
+    setIsChannelSearchLoading(true)
+    const timer = window.setTimeout(() => {
+      clipMeAPI.searchChannels(q).then(result => {
+        if (cancelled) return
+        setChannelSearchResults(result.channels ?? [])
+        setIsChannelSearchLoading(false)
+      }).catch(() => {
+        if (cancelled) return
+        setChannelSearchResults([])
+        setIsChannelSearchLoading(false)
+      })
+    }, 180)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [channelSearchQuery, isChannelSearchOpen])
 
   const initialUserIdRef = useRef(initialUserId)
   useEffect(() => {
@@ -402,6 +428,11 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
   }
 
   async function openChannel(targetUserId: string) {
+    if (typeof document !== 'undefined') {
+      document.querySelectorAll('video').forEach(video => {
+        try { video.pause() } catch {}
+      })
+    }
     const currentActive = activeVideoId
     previousActiveVideoIdRef.current = currentActive
     setFeedPausedForOverlay(true)
@@ -422,6 +453,13 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
     setChannelBioDraft(channel.user?.clipMeBio ?? '')
     if (channel.error) setChannelError(channel.error)
     setChannelLoading(false)
+  }
+
+  const openChannelFromSearch = async (targetUserId: string) => {
+    setIsChannelSearchOpen(false)
+    setChannelSearchQuery('')
+    setChannelSearchResults([])
+    await openChannel(targetUserId)
   }
 
   const closeChannel = () => {
@@ -611,18 +649,18 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
           )}
           <div className="h-9 rounded-full bg-black/55 px-3 inline-flex items-center gap-2 max-w-[180px]">
             <Search className="h-3.5 w-3.5 text-white/70" />
-            <input
-              value={clipSearchQuery}
-              onChange={e => setClipSearchQuery(e.target.value)}
-              placeholder="Поиск каналов"
-              className="w-full bg-transparent text-xs text-white placeholder:text-white/60 outline-none"
-            />
+            <button
+              onClick={() => setIsChannelSearchOpen(true)}
+              className="w-full text-left bg-transparent text-xs text-white/90 truncate"
+            >
+              Поиск каналов
+            </button>
           </div>
         </div>
 
         <div ref={feedRef} className="flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory scroll-smooth">
           {isLoading && <div className="h-full flex items-center justify-center text-sm text-white/70">Загрузка ленты...</div>}
-          {!isLoading && filteredFeedVideos.length === 0 && <div className="h-full flex items-center justify-center text-sm text-white/70">{clipSearchQuery.trim() ? 'Ничего не найдено' : 'Пока нет видео.'}</div>}
+          {!isLoading && filteredFeedVideos.length === 0 && <div className="h-full flex items-center justify-center text-sm text-white/70">Пока нет видео.</div>}
 
           {filteredFeedVideos.map(video => {
             const authorSubKey = video.user.id
@@ -640,7 +678,7 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
                 <CustomVideoPlayer
                   src={video.videoUrl}
                   className="h-full w-full"
-                  shouldPlay={isActive}
+                  shouldPlay={!activeChannelUserId && !channelOverlayVideo && isActive}
                   loop
                   fit="contain"
                   onDoubleTap={() => {
@@ -738,6 +776,43 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
           <Plus className="h-7 w-7" />
         </button>
       </div>
+
+      <Dialog open={isChannelSearchOpen} onOpenChange={setIsChannelSearchOpen}>
+        <DialogContent className="max-w-md bg-white dark:bg-[#15151a] border-black/[0.08] dark:border-white/[0.08]">
+          <DialogTitle>Поиск каналов ClipMe</DialogTitle>
+          <div className="space-y-3">
+            <Input
+              value={channelSearchQuery}
+              onChange={e => setChannelSearchQuery(e.target.value)}
+              placeholder="Введите имя канала"
+              className="h-10"
+              autoFocus
+            />
+            <div className="max-h-[48vh] overflow-y-auto space-y-1">
+              {isChannelSearchLoading && <p className="text-sm text-black/60 dark:text-white/60 px-1 py-2">Поиск...</p>}
+              {!isChannelSearchLoading && channelSearchQuery.trim().length > 0 && channelSearchResults.length === 0 && (
+                <p className="text-sm text-black/60 dark:text-white/60 px-1 py-2">Каналы не найдены</p>
+              )}
+              {channelSearchResults.map(channel => (
+                <button
+                  key={channel.id}
+                  onClick={() => { void openChannelFromSearch(channel.id) }}
+                  className="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] text-left"
+                >
+                  <Avatar className="h-9 w-9">
+                    {channel.avatarUrl && <AvatarImage src={channel.avatarUrl} />}
+                    <AvatarFallback className="bg-[#5d6cf5] text-white text-xs font-semibold">{channel.username.slice(0, 2).toUpperCase()}</AvatarFallback>
+                  </Avatar>
+                  <span className="text-sm font-medium inline-flex items-center gap-1">
+                    @{channel.username}
+                    {channel.isBadgeVerified && <VerifiedBadge className="h-3.5 w-3.5 min-h-3.5 min-w-3.5" />}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Drawer open={!!commentsOpenFor} onOpenChange={open => !open && setCommentsOpenFor(null)}>
         <DrawerContent className="bg-white dark:bg-[#15151a] border-white/10 h-[80dvh] max-h-[80dvh] flex flex-col">
