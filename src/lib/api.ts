@@ -734,6 +734,13 @@ export const gameRolesAPI = {
 }
 
 export const clipMeAPI = {
+  async searchChannels(query: string): Promise<{ channels?: Array<Pick<User, 'id' | 'username' | 'avatarUrl' | 'isBadgeVerified'>>; error?: string }> {
+    const q = query.trim()
+    if (!q) return { channels: [] }
+    const result = await fetchAPI<{ channels: Array<Pick<User, 'id' | 'username' | 'avatarUrl' | 'isBadgeVerified'>> }>(`/clipme/channels/search?q=${encodeURIComponent(q)}`)
+    if (result.data) return { channels: result.data.channels }
+    return { error: result.error }
+  },
   async getFeed(limit = 20): Promise<{ videos?: ClipMeVideo[]; error?: string }> {
     const result = await fetchAPI<{ videos: ClipMeVideo[] }>(`/clipme/feed?limit=${Math.max(1, Math.min(50, limit))}`)
     if (result.data) return { videos: result.data.videos }

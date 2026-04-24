@@ -18,7 +18,7 @@ import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
 import { chatsAPI, usersAPI, storiesAPI, type Chat, type Message, type StoryFeedItem, type User } from '@/lib/api'
 import { CHAT_MESSAGE_CONTEXT_MENU_ITEM_HEIGHT, CHAT_MESSAGE_CONTEXT_REACTIONS_MENU_EXTRA_HEIGHT, REACTION_EMOJIS } from '@/lib/product-config'
-import { ArrowDown, ArrowLeft, Users, Loader2, UserPlus, Check, X, Reply, Forward, Trash2, Pencil, FileText, Download, ZoomIn, Copy, Phone, Clock, AlertCircle, ShieldCheck, Smile, Circle } from 'lucide-react'
+import { ArrowDown, ArrowLeft, Users, Loader2, UserPlus, Check, X, Reply, Forward, Trash2, Pencil, FileText, Download, ZoomIn, Copy, Phone, Clock, AlertCircle, ShieldCheck, Smile, Circle, Eye } from 'lucide-react'
 import { cn, openExternalUrl } from '@/lib/utils'
 
 interface ChatWindowProps {
@@ -52,6 +52,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
   const [contextMenu, setContextMenu] = useState<{ msg: Message; x: number; y: number; selectedText?: string } | null>(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const messageRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   // Call state
   const [activeCall, setActiveCall] = useState<{
@@ -317,8 +318,22 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`
     return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`
   }
+  const buildDownloadUrl = (fileUrl?: string | null, fileName?: string | null) => {
+    if (!fileUrl) return '#'
+    const name = (fileName || 'file').trim() || 'file'
+    return `/api/files/download?url=${encodeURIComponent(fileUrl)}&name=${encodeURIComponent(name)}`
+  }
 
   const getSender = (senderId: string) => chatMembers.find(m => m.id === senderId)
+  const channelViewsCount = chat.isPersonalChannel ? chatMembers.length : 0
+  const scrollToMessage = (messageId?: string | null) => {
+    if (!messageId) return
+    const node = messageRefs.current[messageId]
+    if (!node) return
+    node.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    node.classList.add('ring-2', 'ring-[#5D6CF5]/50')
+    window.setTimeout(() => node.classList.remove('ring-2', 'ring-[#5D6CF5]/50'), 900)
+  }
 
   const groupedMessages = messages.reduce((groups, msg) => {
     const key = formatDate(msg.createdAt) || 'Сегодня'
@@ -506,6 +521,8 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                 return (
                   <div key={msg.id} className="animate-in fade-in slide-in-from-bottom-2 duration-150">
                       <div
+                        id={`msg-${msg.id}`}
+                        ref={node => { messageRefs.current[msg.id] = node }}
                         className={cn('flex gap-2 items-end', alignOwnRight ? 'flex-row-reverse' : 'flex-row')}
                         onContextMenu={e => {
                           e.preventDefault()
@@ -573,17 +590,20 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                           )}
                           {/* Reply quote */}
                           {(msg as any).replyTo && (
-                            <div className={cn(
-                              'mb-2 px-2 py-1 rounded-lg border-l-2',
-                              isOwn ? 'bg-white/10 border-white/40' : 'bg-black/[0.06] dark:bg-white/[0.08] border-[#5D6CF5]/50'
-                            )}>
+                            <button
+                              onClick={() => scrollToMessage((msg as any).replyTo?.id)}
+                              className={cn(
+                                'mb-2 w-full text-left px-2 py-1 rounded-lg border-l-2 transition-colors',
+                                isOwn ? 'bg-white/10 border-white/40 hover:bg-white/15' : 'bg-black/[0.06] dark:bg-white/[0.08] border-[#5D6CF5]/50 hover:bg-black/[0.1] dark:hover:bg-white/[0.12]'
+                              )}
+                            >
                               <p className={cn('text-[10px] font-semibold mb-0.5', isOwn ? 'text-white/80' : 'text-[#5D6CF5]')}>
                                 {(msg as any).replyTo.senderUsername ?? getSender((msg as any).replyTo.senderId)?.username}
                               </p>
                               <p className="text-[11px] opacity-70 line-clamp-2 break-words">
                                 {(msg as any).replyTo.content}
                               </p>
-                            </div>
+                            </button>
                           )}
                           {showName && (
                             <p className="text-[11px] text-[#5D6CF5] font-semibold mb-1 inline-flex items-center gap-1">
@@ -632,15 +652,12 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                           ) : (msg as any).type === 'FILE' && (msg as any).fileUrl ? (
                             /* File message */
                             <a
-                              href={(msg as any).fileUrl}
+                              href={buildDownloadUrl((msg as any).fileUrl, (msg as any).fileName)}
                               download={(msg as any).fileName}
+                              rel="noopener noreferrer"
                               className={cn(
                                 'flex items-center gap-2.5 py-1 rounded-xl -mx-1 px-1 hover:bg-black/10 transition-colors group',
                               )}
-                              onClick={e => {
-                                e.preventDefault()
-                                openExternalUrl((msg as any).fileUrl)
-                              }}
                             >
                               <div className={cn('h-9 w-9 rounded-lg flex items-center justify-center flex-shrink-0', isOwn ? 'bg-white/20' : 'bg-black/[0.08]')}>
                                 <FileText className="h-4 w-4" />
@@ -688,6 +705,11 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                               isOwn ? 'text-white/60' : 'text-black/30 dark:text-white/40')}>
                               {formatTime(msg.createdAt)}
                             </p>
+                            {chat.isPersonalChannel && (
+                              <span className={cn('text-[10px] inline-flex items-center gap-0.5', isOwn ? 'text-white/60' : 'text-black/30 dark:text-white/40')}>
+                                <Eye className="h-2.5 w-2.5" /> {channelViewsCount}
+                              </span>
+                            )}
                             {isOwn && (msg as any).pendingStatus === 'sending' && (
                               <Clock className="h-2.5 w-2.5 text-white/50 animate-pulse" />
                             )}
@@ -885,7 +907,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
         const menuIsOwn = m.senderId === user?.id
         const isText = !(m as any).type || (m as any).type === 'TEXT'
         const hasSelection = !!contextMenu.selectedText
-        const canReplyToMessages = !chat.isPersonalChannel
+        const canReplyToMessages = true
         const menuW = 196
         const selectionItems = hasSelection ? (canReplyToMessages ? 2 : 1) : 0
         const itemCount = (canReplyToMessages ? 1 : 0) + 1 + (isText ? 1 : 0) + (menuIsOwn && isText ? 1 : 0) + 1 + selectionItems // +1 delete

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { sendPushToUsers } from '@/lib/pushNotifications'
 
 async function getSession(request: NextRequest) {
   const token = request.headers.get('Authorization')?.replace('Bearer ', '')
@@ -72,6 +73,18 @@ export async function POST(
         },
       })
       liked = true
+      const actor = await db.user.findUnique({
+        where: { id: session.userId },
+        select: { username: true },
+      })
+      await sendPushToUsers(
+        [story.userId],
+        {
+          title: actor?.username ?? 'Новый лайк',
+          body: 'Лайкнул(а) вашу сторис',
+          url: '/',
+        }
+      )
     }
 
     const likesCount = await db.storyLike.count({ where: { storyId: story.id } })

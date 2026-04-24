@@ -48,10 +48,10 @@ export function MessageInput({
 
   // File attachment state
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [pendingAttachment, setPendingAttachment] = useState<{
+  const [pendingAttachments, setPendingAttachments] = useState<Array<{
     file: File
     previewUrl?: string
-  } | null>(null)
+  }>>([])
 
   // Video note recording state
   const [isRecordingVideo, setIsRecordingVideo] = useState(false)
@@ -262,33 +262,50 @@ export function MessageInput({
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined
-    setPendingAttachment({ file, previewUrl })
+    const files = Array.from(e.target.files ?? [])
+    if (files.length === 0) return
+    const nextItems = files.map(file => ({
+      file,
+      previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
+    }))
+    setPendingAttachments(prev => [...prev, ...nextItems])
     // Reset input so the same file can be re-selected
     e.target.value = ''
   }
 
-  const clearAttachment = () => {
-    if (pendingAttachment?.previewUrl) URL.revokeObjectURL(pendingAttachment.previewUrl)
-    setPendingAttachment(null)
+  const clearAttachment = (index: number) => {
+    setPendingAttachments(prev => {
+      const item = prev[index]
+      if (item?.previewUrl) URL.revokeObjectURL(item.previewUrl)
+      return prev.filter((_, idx) => idx !== index)
+    })
+  }
+
+  const clearAllAttachments = () => {
+    setPendingAttachments(prev => {
+      prev.forEach(item => {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl)
+      })
+      return []
+    })
   }
 
   const handleSendFile = async () => {
-    if (!pendingAttachment || !user) return
+    if (pendingAttachments.length === 0 || !user) return
     setIsUploading(true)
     try {
-      const uploaded = await chatsAPI.uploadFile(pendingAttachment.file)
-      if (uploaded.error || !uploaded.url) { console.error(uploaded.error); setIsUploading(false); return }
-      const isImage = pendingAttachment.file.type.startsWith('image/')
-      const type = isImage ? 'IMAGE' : 'FILE'
-      const result = await chatsAPI.sendMessage(
-        chatId, pendingAttachment.file.name, replyTo?.message.id, undefined, undefined,
-        { fileUrl: uploaded.url, fileName: uploaded.fileName!, fileSize: uploaded.fileSize!, type }
-      )
-      if (result.message) messengerSocket.broadcastMessage(result.message)
-      clearAttachment()
+      for (const attachment of pendingAttachments) {
+        const uploaded = await chatsAPI.uploadFile(attachment.file)
+        if (uploaded.error || !uploaded.url) { console.error(uploaded.error); continue }
+        const isImage = attachment.file.type.startsWith('image/')
+        const type = isImage ? 'IMAGE' : 'FILE'
+        const result = await chatsAPI.sendMessage(
+          chatId, attachment.file.name, replyTo?.message.id, undefined, undefined,
+          { fileUrl: uploaded.url, fileName: uploaded.fileName!, fileSize: uploaded.fileSize!, type }
+        )
+        if (result.message) messengerSocket.broadcastMessage(result.message)
+      }
+      clearAllAttachments()
       justSentRef.current = true
       setTimeout(() => { justSentRef.current = false }, 500)
       onCancelReply?.()
@@ -424,7 +441,7 @@ export function MessageInput({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      if (pendingAttachment) { handleSendFile() }
+      if (pendingAttachments.length > 0) { handleSendFile() }
       else { handleSend() }
     }
     if (e.key === 'Escape') {
@@ -462,22 +479,26 @@ export function MessageInput({
             </div>
           )}
           {/* Attachment preview banner */}
-          {pendingAttachment && (
-            <div className="flex items-center gap-3 px-4 py-2 border-t border-black/[0.06] dark:border-white/[0.08] bg-black/[0.04] dark:bg-white/[0.05]">
-              {pendingAttachment.previewUrl ? (
-                <img src={pendingAttachment.previewUrl} alt="preview" className="h-12 w-12 rounded-lg object-cover flex-shrink-0 border border-black/[0.08] dark:border-white/[0.08]" />
-              ) : (
-                <div className="h-10 w-10 rounded-lg bg-black/[0.06] dark:bg-white/[0.08] flex items-center justify-center flex-shrink-0">
-                  <FileText className="h-5 w-5 text-black/40 dark:text-white/40" />
+          {pendingAttachments.length > 0 && (
+            <div className="px-4 py-2 border-t border-black/[0.06] dark:border-white/[0.08] bg-black/[0.04] dark:bg-white/[0.05] max-h-48 overflow-y-auto space-y-2">
+              {pendingAttachments.map((item, index) => (
+                <div key={`${item.file.name}-${index}`} className="flex items-center gap-3">
+                  {item.previewUrl ? (
+                    <img src={item.previewUrl} alt="preview" className="h-12 w-12 rounded-lg object-cover flex-shrink-0 border border-black/[0.08] dark:border-white/[0.08]" />
+                  ) : (
+                    <div className="h-10 w-10 rounded-lg bg-black/[0.06] dark:bg-white/[0.08] flex items-center justify-center flex-shrink-0">
+                      <FileText className="h-5 w-5 text-black/40 dark:text-white/40" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-black dark:text-white font-medium truncate">{item.file.name}</p>
+                    <p className="text-xs text-black/40 dark:text-white/40">{formatFileSize(item.file.size)}</p>
+                  </div>
+                  <button onClick={() => clearAttachment(index)} className="text-black/30 dark:text-white/30 hover:text-black/60 dark:hover:text-white/60 flex-shrink-0 p-0.5">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
                 </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-black dark:text-white font-medium truncate">{pendingAttachment.file.name}</p>
-                <p className="text-xs text-black/40 dark:text-white/40">{formatFileSize(pendingAttachment.file.size)}</p>
-              </div>
-              <button onClick={clearAttachment} className="text-black/30 dark:text-white/30 hover:text-black/60 dark:hover:text-white/60 flex-shrink-0 p-0.5">
-                <X className="h-3.5 w-3.5" />
-              </button>
+              ))}
             </div>
           )}
         </>
@@ -581,6 +602,7 @@ export function MessageInput({
               <input
                 ref={fileInputRef}
                 type="file"
+                multiple
                 accept="image/*,application/*,text/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar,.7z"
                 className="hidden"
                 onChange={handleFileChange}
@@ -619,26 +641,26 @@ export function MessageInput({
                 />
               </div>
               {/* Send / Mic button */}
-              {message.trim() || editingMessage || pendingAttachment ? (
+              {message.trim() || editingMessage || pendingAttachments.length > 0 ? (
                 <button
                   type="button"
                   onTouchStart={e => {
                     e.preventDefault() // fires before blur+layout shift; prevents synthesized mousedown
-                    if ((message.trim() || !!pendingAttachment) && !isSending && !isUploading) {
-                      if (pendingAttachment) handleSendFile()
+                    if ((message.trim() || pendingAttachments.length > 0) && !isSending && !isUploading) {
+                      if (pendingAttachments.length > 0) handleSendFile()
                       else handleSend()
                     }
                   }}
                   onMouseDown={e => {
                     e.preventDefault() // desktop: prevent textarea blur
-                    if ((message.trim() || !!pendingAttachment) && !isSending && !isUploading) {
-                      if (pendingAttachment) handleSendFile()
+                    if ((message.trim() || pendingAttachments.length > 0) && !isSending && !isUploading) {
+                      if (pendingAttachments.length > 0) handleSendFile()
                       else handleSend()
                     }
                   }}
                   className={cn(
                     'h-[42px] w-[42px] flex-shrink-0 rounded-xl transition-all active:scale-95 p-0 flex items-center justify-center',
-                    (message.trim() || pendingAttachment)
+                    (message.trim() || pendingAttachments.length > 0)
                       ? editingMessage
                         ? 'bg-[#22c55e] hover:bg-[#16a34a] text-white'
                         : 'bg-[#5D6CF5] hover:bg-[#4a5be0] text-white'

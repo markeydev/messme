@@ -255,7 +255,7 @@ export function GroupSettingsDialog({ chat, open, onOpenChange, members, current
                 Подписчиков: {members.length}
               </div>
             ) : (
-              <div className="bg-black/[0.03] dark:bg-white/[0.05] rounded-2xl overflow-hidden">
+              <div className="bg-black/[0.03] dark:bg-white/[0.05] rounded-2xl overflow-hidden max-h-72 overflow-y-auto">
                 {members.map((member, i) => (
                   <div
                     key={member.id}
