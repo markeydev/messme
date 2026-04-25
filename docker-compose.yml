@@ -35,11 +35,27 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:3003:3003"
+    environment:
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3003/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
       interval: 10s
       timeout: 5s
       start_period: 5s
+
+  # ── Redis for realtime presence/ephemeral state ──────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ── Migrations (one-shot: runs prisma migrate deploy then exits) ─────────────
   migrate:

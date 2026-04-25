@@ -8,7 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
-import { chatsAPI, usersAPI, profileAPI, storiesAPI, clipMeAPI, type Chat, type StoryFeedItem, type User } from '@/lib/api'
+import { chatsAPI, usersAPI, profileAPI, storiesAPI, clipMeAPI, sessionsAPI, type Chat, type StoryFeedItem, type User, type SessionInfo } from '@/lib/api'
 import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
 import { STORY_MAX_VIDEO_DURATION_SECONDS } from '@/lib/stories'
@@ -20,7 +20,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { PenSquare, Search, MessageSquare, Users, Check, X, BellOff, UserRound, Camera, Bell, Loader2, LogOut, Sun, Moon, Gamepad2, Trash2, Plus, Mic, Volume2, VolumeX, Film, Headphones, Bot } from 'lucide-react'
+import { PenSquare, Search, MessageSquare, Users, Check, X, BellOff, UserRound, Camera, Bell, Loader2, LogOut, Sun, Moon, Gamepad2, Trash2, Plus, Mic, Volume2, VolumeX, Film, Headphones, Bot, Pin, Archive, ArchiveRestore } from 'lucide-react'
 import { cn, getSafeImageUrl } from '@/lib/utils'
 
 const STORY_IMAGE_TARGET_BYTES = 380 * 1024
@@ -43,7 +43,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
     chats, addChat, user, unreadCounts, mutedChats, updateUser, notificationsEnabled, setNotificationsEnabled,
     darkMode, setDarkMode, removeChat, setActiveChat, microphoneVolume, outputVolume,
     audioInputDeviceId, audioOutputDeviceId, soundEffectsEnabled, autoPlayMedia,
-    setMicrophoneVolume, setOutputVolume, setAudioInputDeviceId, setAudioOutputDeviceId, setSoundEffectsEnabled, setAutoPlayMedia
+    setMicrophoneVolume, setOutputVolume, setAudioInputDeviceId, setAudioOutputDeviceId, setSoundEffectsEnabled, setAutoPlayMedia, updateChat
   } = useMessengerStore()
   const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([])
   const [audioOutputs, setAudioOutputs] = useState<MediaDeviceInfo[]>([])
@@ -69,6 +69,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
   const [chatMenu, setChatMenu] = useState<{ chat: Chat; x: number; y: number } | null>(null)
   const [chatToDelete, setChatToDelete] = useState<Chat | null>(null)
   const [isDeletingChat, setIsDeletingChat] = useState(false)
+  const [isArchiveExpanded, setIsArchiveExpanded] = useState(false)
 
   useEffect(() => {
     if (!chatMenu) return
@@ -85,6 +86,28 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
     setActiveChat(null)
     setIsDeletingChat(false)
     setChatToDelete(null)
+  }
+
+  const handleToggleChatPin = async (chat: Chat) => {
+    const nextPinned = !chat.isPinned
+    const result = await chatsAPI.togglePinChat(chat.id, nextPinned)
+    if (result.error) return
+    updateChat(chat.id, {
+      isPinned: result.pinned ?? nextPinned,
+      pinnedAt: (result.pinned ?? nextPinned) ? (result.pinnedAt ?? new Date().toISOString()) : null,
+    })
+    setChatMenu(null)
+  }
+
+  const handleToggleChatArchive = async (chat: Chat) => {
+    const nextArchived = !chat.isArchived
+    const result = await chatsAPI.toggleArchiveChat(chat.id, nextArchived)
+    if (result.error) return
+    updateChat(chat.id, {
+      isArchived: result.archived ?? nextArchived,
+      archivedAt: (result.archived ?? nextArchived) ? (result.archivedAt ?? new Date().toISOString()) : null,
+    })
+    setChatMenu(null)
   }
   const [isGameMode, setIsGameMode] = useState(false)
   const [isPersonalChannel, setIsPersonalChannel] = useState(false)
@@ -117,6 +140,10 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
   const [profileError, setProfileError] = useState<string | null>(null)
   const [isProfileAvatarPreviewOpen, setIsProfileAvatarPreviewOpen] = useState(false)
   const [clipMeInitialUserId, setClipMeInitialUserId] = useState<string | null>(null)
+  const [activeSessions, setActiveSessions] = useState<SessionInfo[]>([])
+  const [isSessionsLoading, setIsSessionsLoading] = useState(false)
+  const [terminatingSessionId, setTerminatingSessionId] = useState<string | null>(null)
+  const [isTerminatingOthers, setIsTerminatingOthers] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -160,17 +187,30 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
     return Number.isFinite(ts) ? ts : 0
   }, [])
 
+  const getChatPinnedTs = useCallback((chat: Chat) => {
+    const ts = chat.pinnedAt ? new Date(chat.pinnedAt).getTime() : 0
+    return Number.isFinite(ts) ? ts : 0
+  }, [])
+
   const filteredChats = useMemo(
     () => chats
       .filter(chat =>
         chat.title.toLowerCase().includes(chatSearchQuery.toLowerCase()) &&
         (chatGroupFilter === 'PLAYME' ? !!chat.gameMode : !chat.gameMode)
       )
-      .sort((a, b) => getChatActivityTs(b) - getChatActivityTs(a)),
-    [chats, chatSearchQuery, chatGroupFilter, getChatActivityTs]
+      .sort((a, b) => {
+        const aPinned = !!a.isPinned
+        const bPinned = !!b.isPinned
+        if (aPinned !== bPinned) return aPinned ? -1 : 1
+        if (aPinned && bPinned) return getChatPinnedTs(b) - getChatPinnedTs(a)
+        return getChatActivityTs(b) - getChatActivityTs(a)
+      }),
+    [chats, chatSearchQuery, chatGroupFilter, getChatActivityTs, getChatPinnedTs]
   )
   const messmeChatsCount = chats.filter(chat => !chat.gameMode).length
   const playmeChatsCount = chats.filter(chat => !!chat.gameMode).length
+  const activeChats = filteredChats.filter(chat => !chat.isArchived)
+  const archivedChats = filteredChats.filter(chat => !!chat.isArchived)
   const ownedPersonalChannels = useMemo(
     () => chats.filter(chat => chat.isPersonalChannel && chat.ownerId === user?.id),
     [chats, user?.id]
@@ -269,6 +309,22 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
     if (activeTab !== 'chats') return
     refreshStories()
   }, [activeTab, chats.length])
+
+  const loadSessions = useCallback(async () => {
+    setIsSessionsLoading(true)
+    const result = await sessionsAPI.list()
+    if (result.sessions) {
+      setActiveSessions(result.sessions)
+    } else {
+      setProfileError(result.error ?? 'Ошибка загрузки сессий')
+    }
+    setIsSessionsLoading(false)
+  }, [])
+
+  useEffect(() => {
+    if (activeTab !== 'profile') return
+    void loadSessions()
+  }, [activeTab, loadSessions])
 
   const openStory = (storyUserId: string) => {
     setActiveStoryUserId(storyUserId)
@@ -518,6 +574,29 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
     }
   }
 
+  const handleTerminateSession = async (sessionId: string) => {
+    setTerminatingSessionId(sessionId)
+    const result = await sessionsAPI.terminate(sessionId)
+    if (!result.error) {
+      setActiveSessions(prev => prev.filter(session => session.id !== sessionId))
+    } else {
+      setProfileError(result.error)
+    }
+    setTerminatingSessionId(null)
+  }
+
+  const handleTerminateOthers = async () => {
+    setIsTerminatingOthers(true)
+    const result = await sessionsAPI.terminateOthers()
+    if (result.error) {
+      setProfileError(result.error)
+      setIsTerminatingOthers(false)
+      return
+    }
+    setActiveSessions(prev => prev.filter(session => session.isCurrent))
+    setIsTerminatingOthers(false)
+  }
+
   const formatTime = (dateStr?: string | null) => {
     if (!dateStr) return ''
     try {
@@ -533,10 +612,121 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
     } catch { return '' }
   }
 
+  const formatSessionDateTime = (value: string) => {
+    try {
+      return new Date(value).toLocaleString('ru-RU')
+    } catch {
+      return value
+    }
+  }
+
   const getInitials = (name: string) =>
     name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 
   const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0)
+  const renderChatItem = (chat: Chat) => {
+    const peerUserId = !chat.isGroup ? chat.members.find(m => m.id !== user?.id)?.id ?? null : null
+    const peer = !chat.isGroup ? chat.members.find(m => m.id !== user?.id) : null
+    const chatStory = peerUserId ? storiesByUser.get(peerUserId) : null
+    const hasStory = !!chatStory
+
+    return (
+      <button
+        key={chat.id}
+        onClick={() => onSelectChat?.(chat)}
+        onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setChatMenu({ chat, x: e.clientX, y: e.clientY }) }}
+        className={cn(
+          'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 text-left',
+          activeChatId === chat.id
+            ? 'bg-[#152cff]/[0.08] dark:bg-[#5d6cf5]/[0.15]'
+            : 'hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+        )}>
+        <span
+          role={hasStory ? 'button' : undefined}
+          tabIndex={hasStory ? 0 : -1}
+          onClick={e => {
+            if (!hasStory || !peerUserId) return
+            e.preventDefault()
+            e.stopPropagation()
+            openStory(peerUserId)
+          }}
+          onKeyDown={e => {
+            if (!hasStory || !peerUserId) return
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              e.stopPropagation()
+              openStory(peerUserId)
+            }
+          }}
+          className={cn('flex-shrink-0 rounded-full', hasStory && 'cursor-pointer')}
+          title={hasStory ? 'Открыть сторис' : undefined}
+        >
+          <span className={cn(
+            'inline-flex rounded-full p-[2px] relative',
+            hasStory
+              ? chatStory?.hasUnseen
+                ? 'bg-gradient-to-br from-[#ff4d67] via-[#f7b142] to-[#5d6cf5]'
+                : 'bg-black/15 dark:bg-white/15'
+              : ''
+          )}>
+            <Avatar className="h-12 w-12">
+              {chat.avatarUrl && <AvatarImage src={chat.avatarUrl} alt={chat.title} />}
+              <AvatarFallback className={cn(
+                'font-semibold text-white text-sm',
+                chat.isGroup ? 'bg-violet-500' : 'bg-[#152cff]'
+              )}>
+                {chat.isGroup ? <Users className="h-5 w-5" /> : getInitials(chat.title)}
+              </AvatarFallback>
+            </Avatar>
+            {!chat.isGroup && onlinePeersByChatId[chat.id] && (
+              <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full bg-[#0ed221] border-2 border-white dark:border-[#111112]" />
+            )}
+          </span>
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0 flex items-center gap-1.5">
+              <span className="font-semibold truncate text-[14px] text-black dark:text-white">
+                {chat.title}
+              </span>
+              {peer?.isBadgeVerified && <VerifiedBadge className="flex-shrink-0" />}
+            </div>
+            {chat.lastMessage?.createdAt && (
+              <span className={cn('text-[11px] flex-shrink-0',
+                (unreadCounts[chat.id] ?? 0) > 0 ? 'text-[#152cff]' : 'text-black/40 dark:text-white/40')}>
+                {formatTime(chat.lastMessage.createdAt)}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            {chat.lastMessage ? (
+              <span className="text-[13px] text-black/50 dark:text-white/50 truncate leading-snug">{getPreview(chat) || '...'}</span>
+            ) : chat.gameMode ? (
+              <span className="text-[13px] text-[#5d6cf5]/70 dark:text-[#8b97ff]/70 truncate leading-snug">🎮 Игровая комната</span>
+            ) : (
+              <span className="text-[13px] text-black/30 dark:text-white/30">Нет сообщений</span>
+            )}
+            <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+              {chat.isPinned && (
+                <Pin className="h-3 w-3 text-[#5d6cf5]" />
+              )}
+              {mutedChats[chat.id] && (
+                <BellOff className="h-3 w-3 text-black/30 dark:text-white/30" />
+              )}
+              {(unreadCounts[chat.id] ?? 0) > 0 && (
+                <span className={cn(
+                  'flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white leading-none',
+                  mutedChats[chat.id] ? 'bg-black/20' : 'bg-[#152cff]'
+                )}>
+                  {(unreadCounts[chat.id] ?? 0) > 99 ? '99+' : unreadCounts[chat.id]}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </button>
+    )
+  }
 
   return (
     <div className="flex flex-col flex-1 min-h-0 bg-white dark:bg-[#111112]">
@@ -694,104 +884,26 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                     </div>
                   </button>
                 )}
-                {filteredChats.map(chat => {
-                  const peerUserId = !chat.isGroup ? chat.members.find(m => m.id !== user?.id)?.id ?? null : null
-                  const peer = !chat.isGroup ? chat.members.find(m => m.id !== user?.id) : null
-                  const chatStory = peerUserId ? storiesByUser.get(peerUserId) : null
-                  const hasStory = !!chatStory
-                  return (
-                  <button
-                    key={chat.id}
-                    onClick={() => onSelectChat?.(chat)}
-                    onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setChatMenu({ chat, x: e.clientX, y: e.clientY }) }}
-                    className={cn(
-                      'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 text-left',
-                      activeChatId === chat.id
-                        ? 'bg-[#152cff]/[0.08] dark:bg-[#5d6cf5]/[0.15]'
-                        : 'hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
-                    )}>
-                    <span
-                      role={hasStory ? 'button' : undefined}
-                      tabIndex={hasStory ? 0 : -1}
-                      onClick={e => {
-                        if (!hasStory || !peerUserId) return
-                        e.preventDefault()
-                        e.stopPropagation()
-                        openStory(peerUserId)
-                      }}
-                      onKeyDown={e => {
-                        if (!hasStory || !peerUserId) return
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          openStory(peerUserId)
-                        }
-                      }}
-                      className={cn('flex-shrink-0 rounded-full', hasStory && 'cursor-pointer')}
-                      title={hasStory ? 'Открыть сторис' : undefined}
+                {activeChats.map(renderChatItem)}
+                {archivedChats.length > 0 && (
+                  <div className="mt-2">
+                    <button
+                      onClick={() => setIsArchiveExpanded(v => !v)}
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm text-black/60 dark:text-white/65 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
                     >
-                      <span className={cn(
-                        'inline-flex rounded-full p-[2px] relative',
-                        hasStory
-                          ? chatStory?.hasUnseen
-                            ? 'bg-gradient-to-br from-[#ff4d67] via-[#f7b142] to-[#5d6cf5]'
-                            : 'bg-black/15 dark:bg-white/15'
-                          : ''
-                      )}>
-                          <Avatar className="h-12 w-12">
-                            {chat.avatarUrl && <AvatarImage src={chat.avatarUrl} alt={chat.title} />}
-                            <AvatarFallback className={cn(
-                              'font-semibold text-white text-sm',
-                              chat.isGroup ? 'bg-violet-500' : 'bg-[#152cff]'
-                            )}>
-                              {chat.isGroup ? <Users className="h-5 w-5" /> : getInitials(chat.title)}
-                            </AvatarFallback>
-                          </Avatar>
-                          {!chat.isGroup && onlinePeersByChatId[chat.id] && (
-                            <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full bg-[#0ed221] border-2 border-white dark:border-[#111112]" />
-                          )}
-                        </span>
+                      <span className="inline-flex items-center gap-2">
+                        <Archive className="h-4 w-4" />
+                        Архив
                       </span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0 flex items-center gap-1.5">
-                          <span className="font-semibold truncate text-[14px] text-black dark:text-white">
-                            {chat.title}
-                          </span>
-                          {peer?.isBadgeVerified && <VerifiedBadge className="flex-shrink-0" />}
-                        </div>
-                        {chat.lastMessage?.createdAt && (
-                          <span className={cn('text-[11px] flex-shrink-0',
-                            (unreadCounts[chat.id] ?? 0) > 0 ? 'text-[#152cff]' : 'text-black/40 dark:text-white/40')}>
-                            {formatTime(chat.lastMessage.createdAt)}
-                          </span>
-                        )}
+                      <span className="text-xs">{archivedChats.length}</span>
+                    </button>
+                    {isArchiveExpanded && (
+                      <div className="mt-1 space-y-0.5">
+                        {archivedChats.map(renderChatItem)}
                       </div>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        {chat.lastMessage ? (
-                          <span className="text-[13px] text-black/50 dark:text-white/50 truncate leading-snug">{getPreview(chat) || '...'}</span>
-                        ) : chat.gameMode ? (
-                          <span className="text-[13px] text-[#5d6cf5]/70 dark:text-[#8b97ff]/70 truncate leading-snug">🎮 Игровая комната</span>
-                        ) : (
-                          <span className="text-[13px] text-black/30 dark:text-white/30">Нет сообщений</span>
-                        )}
-                        <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
-                          {mutedChats[chat.id] && (
-                            <BellOff className="h-3 w-3 text-black/30 dark:text-white/30" />
-                          )}
-                          {(unreadCounts[chat.id] ?? 0) > 0 && (
-                            <span className={cn(
-                              'flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white leading-none',
-                              mutedChats[chat.id] ? 'bg-black/20' : 'bg-[#152cff]'
-                            )}>
-                              {(unreadCounts[chat.id] ?? 0) > 99 ? '99+' : unreadCounts[chat.id]}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-                )})}
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1116,6 +1228,60 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                 </AccordionContent>
               </AccordionItem>
 
+              <AccordionItem value="sessions" className="border-black/10 dark:border-white/10">
+                <AccordionTrigger className="text-black dark:text-white">Сессии</AccordionTrigger>
+                <AccordionContent className="space-y-3">
+                  {isSessionsLoading ? (
+                    <p className="text-sm text-black/45 dark:text-white/45">Загрузка активных сессий...</p>
+                  ) : (
+                    <>
+                      <div className="space-y-2">
+                        {activeSessions.length === 0 ? (
+                          <p className="text-sm text-black/45 dark:text-white/45">Активные сессии не найдены</p>
+                        ) : (
+                          activeSessions.map(session => (
+                            <div
+                              key={session.id}
+                              className="rounded-xl bg-black/[0.05] dark:bg-white/[0.07] px-3 py-2.5 flex items-start justify-between gap-3"
+                            >
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-black dark:text-white">
+                                  {session.isCurrent ? 'Текущее устройство' : 'Устройство'}
+                                </p>
+                                <p className="text-xs text-black/45 dark:text-white/45">
+                                  Вход: {formatSessionDateTime(session.createdAt)}
+                                </p>
+                                <p className="text-xs text-black/35 dark:text-white/35">
+                                  До: {formatSessionDateTime(session.expiresAt)}
+                                </p>
+                              </div>
+                              {!session.isCurrent && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={terminatingSessionId === session.id}
+                                  onClick={() => { void handleTerminateSession(session.id) }}
+                                  className="h-8 px-2.5 text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                                >
+                                  {terminatingSessionId === session.id ? '...' : 'Завершить'}
+                                </Button>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                      <Button
+                        onClick={() => { void handleTerminateOthers() }}
+                        disabled={isTerminatingOthers || activeSessions.filter(session => !session.isCurrent).length === 0}
+                        className="w-full h-10 rounded-xl bg-red-500/15 text-red-600 dark:text-red-300 hover:bg-red-500/25"
+                      >
+                        {isTerminatingOthers ? 'Завершение...' : 'Завершить все кроме текущей'}
+                      </Button>
+                    </>
+                  )}
+                </AccordionContent>
+              </AccordionItem>
+
               <AccordionItem value="notifications" className="border-black/10 dark:border-white/10">
                 <AccordionTrigger className="text-black dark:text-white">Уведомления</AccordionTrigger>
                 <AccordionContent>
@@ -1437,6 +1603,19 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
           style={{ left: chatMenu.x, top: chatMenu.y }}
           onClick={e => e.stopPropagation()}
         >
+          <button
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-black/75 dark:text-white/80 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
+            onClick={() => { void handleToggleChatPin(chatMenu.chat) }}
+          >
+            <Pin className="h-4 w-4" /> {chatMenu.chat.isPinned ? 'Открепить чат' : 'Закрепить чат'}
+          </button>
+          <button
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-black/75 dark:text-white/80 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
+            onClick={() => { void handleToggleChatArchive(chatMenu.chat) }}
+          >
+            {chatMenu.chat.isArchived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+            {chatMenu.chat.isArchived ? 'Разархивировать' : 'Архивировать'}
+          </button>
           {chatMenu.chat.isGroup && (
             <button
               className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"

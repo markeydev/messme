@@ -6,10 +6,15 @@
 
 - 🔐 Безопасный обмен сообщениями (клиентское шифрование + серверное AES-256-GCM хранение)
 - 💬 Личные и групповые чаты в real-time (Socket.IO)
+- 🔎 Поиск по сообщениям внутри чата (server API + UI)
+- 📌 Закреп чатов и сообщений
+- 🗂 Архив/разархивирование чатов
+- ⭐ Избранные сообщения (персонально)
 - 🎮 Game/Play mode: роли, каналы, голосовые комнаты и WebRTC-звонки
 - 📸 Stories (24 часа): просмотр, лайки, статистика
 - 🎬 ClipMe: короткие видео, лайки, комментарии, репосты, подписки
 - 🔔 Push-уведомления и desktop-интеграция (Electron)
+- 🧾 Управление сессиями: список, завершение одной, завершение всех кроме текущей
 
 ## 🧱 Технологический стек
 
@@ -38,6 +43,12 @@ cp .env.example .env
 ```
 
 Заполни обязательные значения в `.env` (минимум `DATABASE_URL`, `SECRET_KEY`, `MESSAGE_ENCRYPTION_KEY` и параметры S3).
+
+Для realtime presence через Redis (опционально в локальной разработке, используется в Docker):
+
+```env
+REDIS_URL=redis://localhost:6379
+```
 
 ### 3) Подними PostgreSQL
 
@@ -69,7 +80,7 @@ npm run dev --prefix mini-services/messenger-server
 
 ## 🐳 Запуск через Docker Compose
 
-Для production-окружения используется `docker-compose.yml` (app + ws + postgres + migrate + coturn).
+Для production-окружения используется `docker-compose.yml` (app + ws + postgres + redis + migrate + coturn).
 
 ```bash
 docker compose up -d --build

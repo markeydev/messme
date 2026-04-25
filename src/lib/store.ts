@@ -48,6 +48,7 @@ interface MessengerState {
   addMessage: (chatId: string, message: Message) => void
   deleteMessage: (chatId: string, messageId: string) => void
   updateMessage: (chatId: string, messageId: string, newContent: string, isEdited: boolean) => void
+  patchMessage: (chatId: string, messageId: string, patch: Partial<Message>) => void
   updateMessageReactions: (chatId: string, messageId: string, reactions: Array<{ emoji: string; count: number; reactedByMe: boolean }>) => void
   replaceMessage: (chatId: string, tempId: string, realMessage: Message) => void
   updateMessageStatus: (chatId: string, messageId: string, status: 'sending' | 'failed') => void
@@ -187,6 +188,17 @@ export const useMessengerStore = create<MessengerState>()(
         newMessages.set(chatId, existing.map(m =>
           m.id === messageId
             ? { ...m, content: newContent, isEdited }
+            : m
+        ))
+        return { messages: newMessages }
+      }),
+
+      patchMessage: (chatId, messageId, patch) => set((state) => {
+        const newMessages = new Map(state.messages)
+        const existing = newMessages.get(chatId) || []
+        newMessages.set(chatId, existing.map(m =>
+          m.id === messageId
+            ? { ...m, ...patch }
             : m
         ))
         return { messages: newMessages }

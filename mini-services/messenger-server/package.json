@@ -6,6 +6,7 @@
     "dev": "tsx watch index.ts"
   },
   "dependencies": {
+    "ioredis": "^5.8.1",
     "socket.io": "^4.7.2"
   },
   "devDependencies": {

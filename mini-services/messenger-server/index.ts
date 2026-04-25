@@ -1,5 +1,6 @@
 import { createServer } from 'http'
 import { Server, Socket } from 'socket.io'
+import Redis from 'ioredis'
 
 // Prevent process crash from unhandled errors — log and keep running
 process.on('uncaughtException', (err) => {
@@ -17,13 +18,31 @@ const httpServer = createServer((req, res) => {
     // Returns the set of userIds currently connected and joined to this chat
     const chatId = req.url.slice('/active-in-chat/'.length)
     const activeUserIds: string[] = []
-    socketUsers.forEach(({ userId, chatIds }) => {
-      if (chatIds.includes(chatId) && !activeUserIds.includes(userId)) {
-        activeUserIds.push(userId)
-      }
-    })
-    res.writeHead(200, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ activeUserIds }))
+    getActiveUsersInChat(chatId)
+      .then(redisUsers => {
+        if (redisUsers.length > 0) {
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ activeUserIds: redisUsers }))
+          return
+        }
+
+        socketUsers.forEach(({ userId, chatIds }) => {
+          if (chatIds.includes(chatId) && !activeUserIds.includes(userId)) {
+            activeUserIds.push(userId)
+          }
+        })
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ activeUserIds }))
+      })
+      .catch(() => {
+        socketUsers.forEach(({ userId, chatIds }) => {
+          if (chatIds.includes(chatId) && !activeUserIds.includes(userId)) {
+            activeUserIds.push(userId)
+          }
+        })
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ activeUserIds }))
+      })
   } else {
     res.writeHead(404)
     res.end()
@@ -38,6 +57,57 @@ const io = new Server(httpServer, {
   pingTimeout: 60000,
   pingInterval: 25000,
 })
+
+const REDIS_PRESENCE_TTL_SECONDS = 180
+const redisUrl = process.env.REDIS_URL?.trim()
+const redis = redisUrl
+  ? new Redis(redisUrl, {
+      maxRetriesPerRequest: 1,
+      enableOfflineQueue: false,
+      lazyConnect: true,
+    })
+  : null
+
+if (redis) {
+  redis.on('error', (error) => {
+    console.warn('[WS] Redis error:', error?.message ?? error)
+  })
+  redis.connect()
+    .then(() => console.log('[WS] Redis connected'))
+    .catch((error) => console.warn('[WS] Redis connect failed, fallback to memory:', error?.message ?? error))
+}
+
+const chatPresenceKey = (chatId: string) => `presence:chat:${chatId}`
+
+const markUserActiveInChat = async (chatId: string, userId: string) => {
+  if (!redis) return
+  try {
+    const key = chatPresenceKey(chatId)
+    await redis.sadd(key, userId)
+    await redis.expire(key, REDIS_PRESENCE_TTL_SECONDS)
+  } catch {}
+}
+
+const unmarkUserActiveInChat = async (chatId: string, userId: string) => {
+  if (!redis) return
+  try {
+    await redis.srem(chatPresenceKey(chatId), userId)
+  } catch {}
+}
+
+const getActiveUsersInChat = async (chatId: string): Promise<string[]> => {
+  if (!redis) return []
+  try {
+    const key = chatPresenceKey(chatId)
+    const userIds = await redis.smembers(key)
+    if (userIds.length > 0) {
+      await redis.expire(key, REDIS_PRESENCE_TTL_SECONDS)
+    }
+    return userIds
+  } catch {
+    return []
+  }
+}
 
 // Types
 interface User {
@@ -195,6 +265,7 @@ io.on('connection', (socket) => {
 
     // Add user to room
     room.members.add(userId)
+    void markUserActiveInChat(chatId, userId)
 
     // Update socket tracking
     const socketUser = socketUsers.get(socket.id)
@@ -223,6 +294,7 @@ io.on('connection', (socket) => {
     if (room) {
       room.members.delete(userId)
     }
+    void unmarkUserActiveInChat(chatId, userId)
 
     const socketUser = socketUsers.get(socket.id)
     if (socketUser) {
@@ -556,6 +628,7 @@ io.on('connection', (socket) => {
 
           // Notify all chats about user going offline
           chatIds.forEach(chatId => {
+            void unmarkUserActiveInChat(chatId, userId)
             broadcastToChat(chatId, 'user-offline', {
               chatId,
               userId,
@@ -583,16 +656,20 @@ httpServer.listen(PORT, () => {
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('[WS] Received SIGTERM signal, shutting down...')
-  httpServer.close(() => {
-    console.log('[WS] Server closed')
-    process.exit(0)
+  Promise.resolve(redis?.quit()).catch(() => {}).finally(() => {
+    httpServer.close(() => {
+      console.log('[WS] Server closed')
+      process.exit(0)
+    })
   })
 })
 
 process.on('SIGINT', () => {
   console.log('[WS] Received SIGINT signal, shutting down...')
-  httpServer.close(() => {
-    console.log('[WS] Server closed')
-    process.exit(0)
+  Promise.resolve(redis?.quit()).catch(() => {}).finally(() => {
+    httpServer.close(() => {
+      console.log('[WS] Server closed')
+      process.exit(0)
+    })
   })
 })

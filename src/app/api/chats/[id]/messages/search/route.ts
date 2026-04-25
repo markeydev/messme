@@ -68,6 +68,9 @@ export async function GET(
       videoNoteDuration: number | null
       replyToId: string | null
       isEdited: boolean
+      isPinned: boolean
+      pinnedAt: string | null
+      isSavedByMe: boolean
       isForwarded: boolean
       forwardedFromUsername: string | null
       forwardedFromChatId: string | null
@@ -97,6 +100,7 @@ export async function GET(
         include: {
           sender: { select: { username: true } },
           reactions: { select: { emoji: true, userId: true } },
+          saves: { where: { userId: session.userId }, select: { id: true } },
         },
       })
 
@@ -130,6 +134,9 @@ export async function GET(
           videoNoteDuration: (message as any).videoNoteDuration ?? null,
           replyToId: (message as any).replyToId ?? null,
           isEdited: (message as any).isEdited ?? false,
+          isPinned: (message as any).isPinned ?? false,
+          pinnedAt: (message as any).pinnedAt ? new Date((message as any).pinnedAt).toISOString() : null,
+          isSavedByMe: !!(message as any).saves?.length,
           isForwarded: (message as any).isForwarded ?? false,
           forwardedFromUsername: (message as any).forwardedFromUsername ?? null,
           forwardedFromChatId: (message as any).forwardedFromChatId ?? null,

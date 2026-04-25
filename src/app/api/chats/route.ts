@@ -64,11 +64,12 @@ export async function GET(request: NextRequest) {
           }
         }
       },
-      orderBy: {
-        chat: {
-          updatedAt: 'desc'
-        }
-      }
+      orderBy: [
+        { isArchived: 'asc' },
+        { isPinned: 'desc' },
+        { pinnedAt: 'desc' },
+        { chat: { updatedAt: 'desc' } }
+      ]
     })
 
     const chats = chatMembers.map(cm => {
@@ -98,6 +99,10 @@ export async function GET(request: NextRequest) {
           avatarUrl: m.user.avatarUrl ?? null,
           isBadgeVerified: m.user.isBadgeVerified,
         })),
+        isPinned: (cm as any).isPinned ?? false,
+        pinnedAt: (cm as any).pinnedAt ?? null,
+        isArchived: (cm as any).isArchived ?? false,
+        archivedAt: (cm as any).archivedAt ?? null,
         lastMessage: chat.messages[0]
           ? {
               id: chat.messages[0].id,

@@ -37,7 +37,14 @@ export async function GET(
           chatId,
           userId: session.userId
         }
-      }
+      },
+      select: {
+        id: true,
+        isPinned: true,
+        pinnedAt: true,
+        isArchived: true,
+        archivedAt: true,
+      },
     })
 
     if (!membership) {
@@ -78,6 +85,7 @@ export async function GET(
           include: {
             sender: { select: { username: true } },
             reactions: { select: { emoji: true, userId: true } },
+            saves: { where: { userId: session.userId }, select: { id: true } },
             replyTo: {
               select: {
                 id: true,
@@ -118,6 +126,9 @@ export async function GET(
           senderId: msg.senderId,
           senderUsername: (msg as any).sender?.username,
           isEdited: (msg as any).isEdited ?? false,
+          isPinned: (msg as any).isPinned ?? false,
+          pinnedAt: (msg as any).pinnedAt ?? null,
+          isSavedByMe: !!(msg as any).saves?.length,
           isForwarded: (msg as any).isForwarded ?? false,
           forwardedFromUsername: (msg as any).forwardedFromUsername ?? null,
           forwardedFromChatId: (msg as any).forwardedFromChatId ?? null,
@@ -160,6 +171,10 @@ export async function GET(
         gameMode: (chat as any).gameMode ?? false,
         avatarUrl: (chat as any).avatarUrl ?? null,
         ownerId: (chat as any).ownerId ?? null,
+        isPinned: membership.isPinned ?? false,
+        pinnedAt: membership.pinnedAt ?? null,
+        isArchived: membership.isArchived ?? false,
+        archivedAt: membership.archivedAt ?? null,
         members: chat.members.map(m => ({
           id: m.user.id,
           username: m.user.username,

@@ -88,6 +88,10 @@ export async function POST(request: NextRequest) {
             id: existingChat.id,
             title: existingChat.members.find(m => m.userId !== session.userId)?.user.username || 'Чат',
             isGroup: false,
+            isPinned: false,
+            pinnedAt: null,
+            isArchived: false,
+            archivedAt: null,
             members: existingChat.members.map(m => ({
               id: m.user.id,
               username: m.user.username,
@@ -180,6 +184,10 @@ export async function POST(request: NextRequest) {
         isPersonalChannel: (chat as any).isPersonalChannel ?? false,
         gameMode: chat.gameMode,
         ownerId: (chat as any).ownerId ?? null,
+        isPinned: false,
+        pinnedAt: null,
+        isArchived: false,
+        archivedAt: null,
         avatarUrl: (chat as any).avatarUrl ?? null,
         members: chat.members.map(m => ({
           id: m.user.id,

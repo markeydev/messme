@@ -18,7 +18,7 @@ import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
 import { chatsAPI, usersAPI, storiesAPI, type Chat, type Message, type StoryFeedItem, type User } from '@/lib/api'
 import { CHAT_MESSAGE_CONTEXT_MENU_ITEM_HEIGHT, CHAT_MESSAGE_CONTEXT_REACTIONS_MENU_EXTRA_HEIGHT, REACTION_EMOJIS } from '@/lib/product-config'
-import { ArrowDown, ArrowLeft, Users, Loader2, UserPlus, Check, X, Reply, Forward, Trash2, Pencil, FileText, Download, ZoomIn, Copy, Phone, Clock, AlertCircle, ShieldCheck, Smile, Circle, Search } from 'lucide-react'
+import { ArrowDown, ArrowLeft, Users, Loader2, UserPlus, Check, X, Reply, Forward, Trash2, Pencil, FileText, Download, ZoomIn, Copy, Phone, Clock, AlertCircle, ShieldCheck, Smile, Circle, Search, Pin, Star } from 'lucide-react'
 import { cn, openExternalUrl } from '@/lib/utils'
 
 interface ChatWindowProps {
@@ -75,7 +75,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
   const [isPeerOnline, setIsPeerOnline] = useState(false)
   const [peerLastSeenAt, setPeerLastSeenAt] = useState<string | null>(null)
 
-  const { user, addMessage, deleteMessage, chats, removeChat, setActiveChat, prependMessages, updateChatMembers, updateMessageReactions } = useMessengerStore()
+  const { user, addMessage, deleteMessage, chats, removeChat, setActiveChat, prependMessages, updateChatMembers, updateMessageReactions, patchMessage } = useMessengerStore()
   const baseReactions = REACTION_EMOJIS
   const currentUserMember = chat.members.find(m => m.id === user?.id)
   const isChannelAdmin = !!currentUserMember?.isAdmin
@@ -342,6 +342,24 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
     if (result.reactions) updateMessageReactions(chat.id, messageId, result.reactions)
   }
 
+  const togglePinMessage = async (message: Message) => {
+    const nextPinned = !message.isPinned
+    const result = await chatsAPI.togglePinMessage(chat.id, message.id, nextPinned)
+    if (result.error) return
+    patchMessage(chat.id, message.id, {
+      isPinned: result.isPinned ?? nextPinned,
+      pinnedAt: (result.isPinned ?? nextPinned) ? (result.pinnedAt ?? new Date().toISOString()) : null,
+    })
+  }
+
+  const toggleSavedMessage = async (message: Message) => {
+    const result = await chatsAPI.toggleSavedMessage(chat.id, message.id)
+    if (result.error) return
+    patchMessage(chat.id, message.id, {
+      isSavedByMe: result.saved ?? !message.isSavedByMe,
+    })
+  }
+
   const handleStartReply = (msg: Message, quotedText?: string) => {
     setReplyToMessage(msg)
     setReplyToText(quotedText ?? msg.content)
@@ -422,6 +440,13 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
     groups[key].push(msg)
     return groups
   }, {} as Record<string, Message[]>)
+  const pinnedMessages = messages
+    .filter(msg => !!msg.isPinned)
+    .sort((a, b) => {
+      const aTs = a.pinnedAt ? new Date(a.pinnedAt).getTime() : 0
+      const bTs = b.pinnedAt ? new Date(b.pinnedAt).getTime() : 0
+      return bTs - aTs
+    })
   const peerSeenAt = peerLastSeenAt ? new Date(peerLastSeenAt) : null
   const peerLatestActivityAt = (!chat.isGroup && peerUserId)
     ? messages.reduce<Date | null>((latest, msg) => {
@@ -615,6 +640,25 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
               Показана часть результатов. Уточните запрос.
             </p>
           )}
+        </div>
+      )}
+
+      {pinnedMessages.length > 0 && (
+        <div className="border-b border-black/[0.06] dark:border-white/[0.08] px-3 py-2 bg-[#5D6CF5]/[0.06] dark:bg-[#5D6CF5]/[0.12]">
+          <button
+            onClick={() => { void handleJumpToSearchMessage(pinnedMessages[0].id) }}
+            className="w-full text-left"
+          >
+            <div className="flex items-center gap-2">
+              <Pin className="h-3.5 w-3.5 text-[#5D6CF5] flex-shrink-0" />
+              <p className="text-xs font-semibold text-[#5D6CF5]">
+                Закреплено: {pinnedMessages.length}
+              </p>
+            </div>
+            <p className="text-sm text-black dark:text-white truncate mt-0.5">
+              {pinnedMessages[0].content || 'Сообщение без текста'}
+            </p>
+          </button>
         </div>
       )}
 
@@ -846,6 +890,14 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                             'flex items-center gap-1 justify-end mt-1',
                             (msg as any).type === 'VIDEO_NOTE' && 'hidden'
                           )}>
+                            {msg.isSavedByMe && (
+                              <Star className={cn('h-2.5 w-2.5',
+                                isOwn ? 'text-white/55' : 'text-[#f59e0b]')} />
+                            )}
+                            {msg.isPinned && (
+                              <Pin className={cn('h-2.5 w-2.5',
+                                isOwn ? 'text-white/55' : 'text-[#5D6CF5]')} />
+                            )}
                             {(msg as any).isEdited && (
                               <span className={cn('text-[10px] select-none italic',
                                 isOwn ? 'text-white/50' : 'text-black/30 dark:text-white/40')}>изм.</span>
@@ -1054,7 +1106,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
         const canReplyToMessages = !chat.isPersonalChannel
         const menuW = 196
         const selectionItems = hasSelection ? (canReplyToMessages ? 2 : 1) : 0
-        const itemCount = (canReplyToMessages ? 1 : 0) + 1 + (isText ? 1 : 0) + (menuIsOwn && isText ? 1 : 0) + 1 + selectionItems // +1 delete
+        const itemCount = (canReplyToMessages ? 1 : 0) + 1 + 1 + 1 + (isText ? 1 : 0) + (menuIsOwn && isText ? 1 : 0) + 1 + selectionItems // +1 pin +1 save +1 delete
         const menuH = itemCount * CHAT_MESSAGE_CONTEXT_MENU_ITEM_HEIGHT + CHAT_MESSAGE_CONTEXT_REACTIONS_MENU_EXTRA_HEIGHT
         const vw = typeof window !== 'undefined' ? window.innerWidth : 400
         const vh = typeof window !== 'undefined' ? window.innerHeight : 800
@@ -1126,6 +1178,20 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
               >
                 <Forward className="h-4 w-4 text-black/40 dark:text-white/40 flex-shrink-0" />
                 <span className="text-black dark:text-white text-sm">Переслать</span>
+              </button>
+              <button
+                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] active:bg-black/[0.06] dark:active:bg-white/[0.08] transition-colors text-left"
+                onClick={() => { void togglePinMessage(m); setContextMenu(null) }}
+              >
+                <Pin className="h-4 w-4 text-black/40 dark:text-white/40 flex-shrink-0" />
+                <span className="text-black dark:text-white text-sm">{m.isPinned ? 'Открепить' : 'Закрепить'}</span>
+              </button>
+              <button
+                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] active:bg-black/[0.06] dark:active:bg-white/[0.08] transition-colors text-left"
+                onClick={() => { void toggleSavedMessage(m); setContextMenu(null) }}
+              >
+                <Star className="h-4 w-4 text-black/40 dark:text-white/40 flex-shrink-0" />
+                <span className="text-black dark:text-white text-sm">{m.isSavedByMe ? 'Убрать из избранного' : 'В избранное'}</span>
               </button>
               {isText && (
                 <button

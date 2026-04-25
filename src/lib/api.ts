@@ -41,6 +41,10 @@ export interface Chat {
     createdAt: string
     senderId: string
   } | null
+  isPinned?: boolean
+  pinnedAt?: string | null
+  isArchived?: boolean
+  archivedAt?: string | null
   updatedAt?: string
   hasMore?: boolean
 }
@@ -67,6 +71,9 @@ export interface Message {
     content: string
   } | null
   isEdited?: boolean
+  isPinned?: boolean
+  pinnedAt?: string | null
+  isSavedByMe?: boolean
   isForwarded?: boolean
   forwardedFromUsername?: string | null
   forwardedFromChatId?: string | null
@@ -97,6 +104,13 @@ export interface StoryFeedItem {
   hasUnseen: boolean
   storiesCount: number
   latestStoryAt: string
+}
+
+export interface SessionInfo {
+  id: string
+  createdAt: string
+  expiresAt: string
+  isCurrent: boolean
 }
 
 export type ClipMePrivacy = 'PUBLIC' | 'FOLLOWERS' | 'PRIVATE'
@@ -253,6 +267,30 @@ export const authAPI = {
     }
     return { error: result.error, status: result.status }
   }
+}
+
+export const sessionsAPI = {
+  async list(): Promise<{ sessions?: SessionInfo[]; error?: string }> {
+    const result = await fetchAPI<{ sessions: SessionInfo[] }>('/auth/sessions')
+    if (result.data) return { sessions: result.data.sessions }
+    return { error: result.error }
+  },
+
+  async terminate(sessionId: string): Promise<{ success?: boolean; error?: string }> {
+    const result = await fetchAPI<{ success: boolean }>(`/auth/sessions/${encodeURIComponent(sessionId)}`, {
+      method: 'DELETE',
+    })
+    if (result.data) return { success: true }
+    return { error: result.error }
+  },
+
+  async terminateOthers(): Promise<{ deletedCount?: number; error?: string }> {
+    const result = await fetchAPI<{ success: boolean; deletedCount: number }>('/auth/sessions/others', {
+      method: 'DELETE',
+    })
+    if (result.data) return { deletedCount: result.data.deletedCount }
+    return { error: result.error }
+  },
 }
 
 export const adminbotAPI = {
@@ -428,6 +466,53 @@ export const chatsAPI = {
       }
     )
     if (result.data) return { reactions: result.data.reactions }
+    return { error: result.error }
+  },
+
+  async togglePinMessage(chatId: string, messageId: string, pinned: boolean): Promise<{ messageId?: string; isPinned?: boolean; pinnedAt?: string | null; error?: string }> {
+    const result = await fetchAPI<{ messageId: string; isPinned: boolean; pinnedAt: string | null }>(
+      `/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/pin`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ pinned }),
+      }
+    )
+    if (result.data) return result.data
+    return { error: result.error }
+  },
+
+  async toggleSavedMessage(chatId: string, messageId: string): Promise<{ messageId?: string; saved?: boolean; error?: string }> {
+    const result = await fetchAPI<{ messageId: string; saved: boolean }>(
+      `/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/saved`,
+      {
+        method: 'POST',
+      }
+    )
+    if (result.data) return result.data
+    return { error: result.error }
+  },
+
+  async togglePinChat(chatId: string, pinned: boolean): Promise<{ pinned?: boolean; pinnedAt?: string | null; error?: string }> {
+    const result = await fetchAPI<{ pinned: boolean; pinnedAt: string | null }>(
+      `/chats/${encodeURIComponent(chatId)}/pin`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ pinned }),
+      }
+    )
+    if (result.data) return result.data
+    return { error: result.error }
+  },
+
+  async toggleArchiveChat(chatId: string, archived: boolean): Promise<{ archived?: boolean; archivedAt?: string | null; error?: string }> {
+    const result = await fetchAPI<{ archived: boolean; archivedAt: string | null }>(
+      `/chats/${encodeURIComponent(chatId)}/archive`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ archived }),
+      }
+    )
+    if (result.data) return result.data
     return { error: result.error }
   },
 
