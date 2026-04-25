@@ -307,6 +307,17 @@ export const chatsAPI = {
     return { error: result.error }
   },
 
+  async searchMessages(chatId: string, query: string, limit: number = 20): Promise<{ messages?: Message[]; truncated?: boolean; error?: string }> {
+    const q = query.trim()
+    if (q.length < 2) return { messages: [] }
+    const safeLimit = Math.max(1, Math.min(50, Math.floor(limit)))
+    const result = await fetchAPI<{ messages: Message[]; truncated: boolean }>(
+      `/chats/${encodeURIComponent(chatId)}/messages/search?q=${encodeURIComponent(q)}&limit=${safeLimit}`
+    )
+    if (result.data) return { messages: result.data.messages, truncated: result.data.truncated }
+    return { error: result.error }
+  },
+
   async addMembers(chatId: string, userIds: string[]): Promise<{ newMembers?: User[]; memberIds?: string[]; error?: string }> {
     const result = await fetchAPI<{ success: boolean; newMembers: User[]; memberIds: string[] }>(`/chats/${chatId}/members`, {
       method: 'POST',

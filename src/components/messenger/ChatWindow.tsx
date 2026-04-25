@@ -18,7 +18,7 @@ import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
 import { chatsAPI, usersAPI, storiesAPI, type Chat, type Message, type StoryFeedItem, type User } from '@/lib/api'
 import { CHAT_MESSAGE_CONTEXT_MENU_ITEM_HEIGHT, CHAT_MESSAGE_CONTEXT_REACTIONS_MENU_EXTRA_HEIGHT, REACTION_EMOJIS } from '@/lib/product-config'
-import { ArrowDown, ArrowLeft, Users, Loader2, UserPlus, Check, X, Reply, Forward, Trash2, Pencil, FileText, Download, ZoomIn, Copy, Phone, Clock, AlertCircle, ShieldCheck, Smile, Circle } from 'lucide-react'
+import { ArrowDown, ArrowLeft, Users, Loader2, UserPlus, Check, X, Reply, Forward, Trash2, Pencil, FileText, Download, ZoomIn, Copy, Phone, Clock, AlertCircle, ShieldCheck, Smile, Circle, Search } from 'lucide-react'
 import { cn, openExternalUrl } from '@/lib/utils'
 
 interface ChatWindowProps {
@@ -33,7 +33,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
   const [typingUsers, setTypingUsers] = useState<Map<string, string>>(new Map())
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false)
   const [userSearchQuery, setUserSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<User[]>([])
+  const [memberSearchResults, setMemberSearchResults] = useState<User[]>([])
   const [selectedUsers, setSelectedUsers] = useState<User[]>([])
   const [isAddingMembers, setIsAddingMembers] = useState(false)
   const [chatMembers, setChatMembers] = useState(chat.members)
@@ -52,6 +52,15 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
   const [contextMenu, setContextMenu] = useState<{ msg: Message; x: number; y: number; selectedText?: string } | null>(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const messageRefs = useRef<Record<string, HTMLDivElement | null>>({})
+
+  const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<Message[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const [searchTruncated, setSearchTruncated] = useState(false)
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
 
   // Call state
   const [activeCall, setActiveCall] = useState<{
@@ -97,6 +106,47 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
     setIsLoadingMore(false)
   }
 
+  const scrollToMessage = (messageId: string) => {
+    const node = messageRefs.current[messageId]
+    if (!node) return false
+    node.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setHighlightedMessageId(messageId)
+    window.setTimeout(() => {
+      setHighlightedMessageId(prev => (prev === messageId ? null : prev))
+    }, 2000)
+    return true
+  }
+
+  const ensureMessageLoaded = async (messageId: string) => {
+    if (messages.some(msg => msg.id === messageId)) return true
+    let guard = 0
+    while (guard < 20) {
+      const state = useMessengerStore.getState()
+      const currentMessages = state.messages.get(chat.id) ?? []
+      if (currentMessages.some(msg => msg.id === messageId)) return true
+      const currentHasMore = (state.chats.find(c => c.id === chat.id) as any)?.hasMore ?? false
+      if (!currentHasMore || currentMessages.length === 0) return false
+      const oldest = currentMessages[0]
+      const result = await chatsAPI.getMessages(chat.id, oldest.id)
+      prependMessages(chat.id, result.messages ?? [], result.hasMore ?? false)
+      guard += 1
+    }
+    return useMessengerStore.getState().messages.get(chat.id)?.some(msg => msg.id === messageId) ?? false
+  }
+
+  const handleJumpToSearchMessage = async (messageId: string) => {
+    const foundImmediately = scrollToMessage(messageId)
+    if (foundImmediately) return
+    const foundAfterLoad = await ensureMessageLoaded(messageId)
+    if (foundAfterLoad) {
+      requestAnimationFrame(() => {
+        scrollToMessage(messageId)
+      })
+    } else {
+      setSearchError('Сообщение не удалось загрузить, попробуйте прокрутить историю выше')
+    }
+  }
+
   // On initial load, mark hasMore based on whether we received exactly 100 messages
   useEffect(() => {
     if (messages.length > 0) {
@@ -107,6 +157,52 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.id])
+
+  useEffect(() => {
+    setSearchQuery('')
+    setSearchResults([])
+    setSearchError(null)
+    setSearchTruncated(false)
+    setIsSearchOpen(false)
+  }, [chat.id])
+
+  useEffect(() => {
+    if (!isSearchOpen) return
+    const q = searchQuery.trim()
+    if (q.length === 0) {
+      setSearchResults([])
+      setSearchError(null)
+      setSearchTruncated(false)
+      setIsSearching(false)
+      return
+    }
+    if (q.length < 2) {
+      setSearchResults([])
+      setSearchError('Введите минимум 2 символа')
+      setSearchTruncated(false)
+      setIsSearching(false)
+      return
+    }
+
+    setIsSearching(true)
+    const timeout = window.setTimeout(async () => {
+      const result = await chatsAPI.searchMessages(chat.id, q, 20)
+      if (result.messages) {
+        setSearchResults(result.messages)
+        setSearchError(null)
+        setSearchTruncated(!!result.truncated)
+      } else {
+        setSearchResults([])
+        setSearchTruncated(false)
+        setSearchError(result.error ?? 'Ошибка поиска')
+      }
+      setIsSearching(false)
+    }, 250)
+
+    return () => {
+      window.clearTimeout(timeout)
+    }
+  }, [chat.id, isSearchOpen, searchQuery])
 
   // Reflect store updates for group title/avatar/members
   const currentChat = chats.find(c => c.id === chat.id) ?? chat
@@ -180,9 +276,9 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
       const result = await usersAPI.search(query)
       if (result.users) {
         const existingIds = new Set(chatMembers.map(m => m.id))
-        setSearchResults(result.users.filter(u => !existingIds.has(u.id)))
+        setMemberSearchResults(result.users.filter(u => !existingIds.has(u.id)))
       }
-    } else setSearchResults([])
+    } else setMemberSearchResults([])
   }
 
   const toggleUserSelection = (u: User) =>
@@ -205,7 +301,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
       setIsAddMemberOpen(false)
       setSelectedUsers([])
       setUserSearchQuery('')
-      setSearchResults([])
+      setMemberSearchResults([])
       setIsAddingMembers(false)
     }
   }
@@ -426,6 +522,20 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
             </div>
           )}
         </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setIsSearchOpen(open => !open)}
+          className={cn(
+            'h-8 w-8 rounded-lg',
+            isSearchOpen
+              ? 'text-[#5D6CF5] bg-[#5D6CF5]/10 hover:bg-[#5D6CF5]/15'
+              : 'text-black/40 dark:text-white/40 hover:text-black/80 dark:hover:text-white/80 hover:bg-black/[0.05] dark:hover:bg-white/[0.08]'
+          )}
+          title="Поиск по сообщениям"
+        >
+          <Search className="h-4 w-4" />
+        </Button>
         {canManageChannelMembers && (
           <Button variant="ghost" size="icon" onClick={() => setIsAddMemberOpen(true)}
               className="h-8 w-8 text-black/40 dark:text-white/40 hover:text-black/80 dark:hover:text-white/80 hover:bg-black/[0.05] dark:hover:bg-white/[0.08] rounded-lg">
@@ -458,6 +568,55 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
           )
         })()}
       </div>
+
+      {isSearchOpen && (
+        <div className="border-b border-black/[0.06] dark:border-white/[0.08] px-3 py-2 bg-white dark:bg-[#111112]">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-black/35 dark:text-white/35" />
+            <Input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Поиск по сообщениям в этом чате..."
+              className="pl-9 bg-black/[0.04] dark:bg-white/[0.07] border-0 rounded-xl h-9 text-sm"
+              autoFocus
+            />
+          </div>
+          {isSearching && (
+            <p className="mt-2 text-xs text-black/45 dark:text-white/45">Поиск...</p>
+          )}
+          {!isSearching && searchError && (
+            <p className="mt-2 text-xs text-red-500">{searchError}</p>
+          )}
+          {!isSearching && !searchError && searchQuery.trim().length >= 2 && (
+            <div className="mt-2 max-h-44 overflow-y-auto rounded-xl border border-black/[0.06] dark:border-white/[0.08]">
+              {searchResults.length === 0 ? (
+                <p className="px-3 py-2 text-xs text-black/45 dark:text-white/45">Ничего не найдено</p>
+              ) : (
+                <>
+                  {searchResults.map(result => (
+                    <button
+                      key={result.id}
+                      onClick={() => { void handleJumpToSearchMessage(result.id) }}
+                      className="w-full text-left px-3 py-2.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] border-b border-black/[0.04] dark:border-white/[0.06] last:border-b-0"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-black/70 dark:text-white/75 truncate">{result.senderUsername ?? 'Пользователь'}</span>
+                        <span className="text-[11px] text-black/35 dark:text-white/35">{formatTime(result.createdAt)}</span>
+                      </div>
+                      <p className="text-sm text-black dark:text-white line-clamp-2 break-words">{result.content || '...'}</p>
+                    </button>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+          {searchTruncated && (
+            <p className="mt-2 text-[11px] text-black/40 dark:text-white/40">
+              Показана часть результатов. Уточните запрос.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Messages */}
       <div className="relative flex-1 min-h-0">
@@ -504,7 +663,14 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                 )
 
                 return (
-                  <div key={msg.id} className="animate-in fade-in slide-in-from-bottom-2 duration-150">
+                  <div
+                    key={msg.id}
+                    ref={node => { messageRefs.current[msg.id] = node }}
+                    className={cn(
+                      'animate-in fade-in slide-in-from-bottom-2 duration-150 rounded-xl transition-colors',
+                      highlightedMessageId === msg.id && 'bg-[#5D6CF5]/10 dark:bg-[#5D6CF5]/20'
+                    )}
+                  >
                       <div
                         className={cn('flex gap-2 items-end', alignOwnRight ? 'flex-row-reverse' : 'flex-row')}
                         onContextMenu={e => {
@@ -782,9 +948,9 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
             <Input placeholder="Поиск пользователей..." value={userSearchQuery}
               onChange={e => handleUserSearch(e.target.value)}
               className="bg-black/[0.05] dark:bg-white/[0.08] border-0 text-black dark:text-white placeholder:text-black/30 dark:placeholder:text-white/30 rounded-xl h-10" />
-            {searchResults.length > 0 && (
+            {memberSearchResults.length > 0 && (
               <div className="bg-black/[0.04] dark:bg-white/[0.06] rounded-xl overflow-hidden max-h-40 overflow-y-auto">
-                {searchResults.map(u => (
+                {memberSearchResults.map(u => (
                   <button key={u.id} onClick={() => toggleUserSelection(u)}
                     className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors">
                     <Avatar className="h-7 w-7">
