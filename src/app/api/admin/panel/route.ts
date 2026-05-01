@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { hasAdminAccess } from '@/lib/admin'
+import { hasAdminAccess, isPrimaryAdminEmail } from '@/lib/admin'
 import { getAdminByPanelToken } from '@/lib/admin-panel-auth'
 import { ADMIN_PANEL_TREND_DAYS } from '@/lib/product-config'
 
@@ -11,6 +11,8 @@ export async function GET(request: NextRequest) {
 
     const admin = await getAdminByPanelToken(panelToken)
     if (!admin) return NextResponse.json({ error: 'Недействительная или истекшая ссылка' }, { status: 401 })
+
+    const adminUser = await db.user.findUnique({ where: { id: admin.adminId }, select: { email: true } })
 
     const now = new Date()
     const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000)
@@ -27,12 +29,21 @@ export async function GET(request: NextRequest) {
       blockedUsersCount,
       badgeVerifiedCount,
       newUsers24hCount,
+      adminUsersCount,
+      groupChatsCount,
+      personalChannelsCount,
+      gameModeChatsCount,
+      clipMeLikesCount,
+      clipMeViewsCount,
+      clipMeCommentsCount,
+      messageViewsCount,
       suspiciousAccounts,
       recentUsers,
       recentMessages,
       recentStories,
       recentVideos,
       recentRegistrations,
+      recentMessages24h,
       personalChannels,
     ] = await Promise.all([
       db.user.count(),
@@ -44,6 +55,14 @@ export async function GET(request: NextRequest) {
       db.user.count({ where: { isBlocked: true } }),
       db.user.count({ where: { isBadgeVerified: true } }),
       db.user.count({ where: { createdAt: { gte: last24h } } }),
+      db.user.count({ where: { isAdmin: true } }),
+      db.chat.count({ where: { isGroup: true, isPersonalChannel: false, gameMode: false } }),
+      db.chat.count({ where: { isPersonalChannel: true } }),
+      db.chat.count({ where: { gameMode: true } }),
+      db.clipMeLike.count(),
+      db.clipMeView.count(),
+      db.clipMeComment.count(),
+      db.messageView.count(),
       db.user.findMany({
         where: {
           OR: [
@@ -67,7 +86,7 @@ export async function GET(request: NextRequest) {
       }),
       db.user.findMany({
         orderBy: { createdAt: 'desc' },
-        take: 100,
+        take: 200,
         select: {
           id: true,
           username: true,
@@ -84,10 +103,11 @@ export async function GET(request: NextRequest) {
       db.story.findMany({ where: { createdAt: { gte: trendStart } }, select: { createdAt: true } }),
       db.clipMeVideo.findMany({ where: { createdAt: { gte: trendStart } }, select: { createdAt: true } }),
       db.user.findMany({ where: { createdAt: { gte: trendStart } }, select: { createdAt: true } }),
+      db.message.count({ where: { createdAt: { gte: last24h } } }),
       db.chat.findMany({
         where: { isPersonalChannel: true },
         orderBy: { createdAt: 'desc' },
-        take: 100,
+        take: 200,
         select: {
           id: true,
           title: true,
@@ -144,6 +164,15 @@ export async function GET(request: NextRequest) {
         blockedUsersCount,
         badgeVerifiedCount,
         newUsers24hCount,
+        adminUsersCount,
+        groupChatsCount,
+        personalChannelsCount,
+        gameModeChatsCount,
+        clipMeLikesCount,
+        clipMeViewsCount,
+        clipMeCommentsCount,
+        messageViewsCount,
+        newMessages24hCount: recentMessages24h,
         messme: {
           chatsCount,
           messagesCount,
@@ -173,6 +202,7 @@ export async function GET(request: NextRequest) {
         ownerUsername: c.owner?.username ?? null,
         subscribersCount: c._count.members,
       })),
+      isPrimaryAdmin: isPrimaryAdminEmail(adminUser?.email),
     })
   } catch (error) {
     console.error('Admin panel stats error:', error)
