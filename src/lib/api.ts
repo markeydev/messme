@@ -43,6 +43,12 @@ export interface Chat {
   } | null
   updatedAt?: string
   hasMore?: boolean
+  pinnedMessage?: {
+    id: string
+    content: string
+    senderUsername?: string | null
+    createdAt: string
+  } | null
 }
 
 export interface Message {
@@ -74,6 +80,14 @@ export interface Message {
   // Client-only optimistic status (never persisted / sent to server)
   pendingStatus?: 'sending' | 'failed'
   reactions?: Array<{ emoji: string; count: number; reactedByMe: boolean }>
+  commentsCount?: number
+  linkPreview?: {
+    title: string
+    description?: string | null
+    image?: string | null
+    siteName?: string | null
+    url: string
+  } | null
 }
 
 export interface Story {
@@ -318,7 +332,7 @@ export const chatsAPI = {
     return { error: result.error }
   },
 
-  async sendMessage(chatId: string, content: string, replyToId?: string, forwardMeta?: { isForwarded: boolean; forwardedFromUsername?: string; forwardedFromChatId?: string }, audioMeta?: { audioUrl: string; audioDuration?: number | null }, fileMeta?: { fileUrl: string; fileName: string; fileSize: number; type: 'IMAGE' | 'FILE' }, videoNoteMeta?: { videoNoteUrl: string; videoNoteDuration?: number | null }): Promise<{ message?: Message; error?: string }> {
+  async sendMessage(chatId: string, content: string, replyToId?: string, forwardMeta?: { isForwarded: boolean; forwardedFromUsername?: string; forwardedFromChatId?: string }, audioMeta?: { audioUrl: string; audioDuration?: number | null }, fileMeta?: { fileUrl: string; fileName: string; fileSize: number; type: 'IMAGE' | 'FILE' }, videoNoteMeta?: { videoNoteUrl: string; videoNoteDuration?: number | null }, linkPreview?: Message['linkPreview']): Promise<{ message?: Message; error?: string }> {
     const result = await fetchAPI<{ message: Message }>(`/chats/${chatId}/messages`, {
       method: 'POST',
       body: JSON.stringify({
@@ -328,6 +342,7 @@ export const chatsAPI = {
         ...(audioMeta ? { type: 'AUDIO', audioUrl: audioMeta.audioUrl, audioDuration: audioMeta.audioDuration } : {}),
         ...(fileMeta ? { type: fileMeta.type, fileUrl: fileMeta.fileUrl, fileName: fileMeta.fileName, fileSize: fileMeta.fileSize } : {}),
         ...(videoNoteMeta ? { type: 'VIDEO_NOTE', videoNoteUrl: videoNoteMeta.videoNoteUrl, videoNoteDuration: videoNoteMeta.videoNoteDuration } : {}),
+        ...(linkPreview ? { linkPreview } : {}),
       })
     })
     if (result.data) return { message: result.data.message }
@@ -485,6 +500,91 @@ export const chatsAPI = {
     if (result.data) return { counts: result.data.counts }
     return { error: result.error }
   },
+
+  async getMedia(
+    chatId: string,
+    tab: 'images' | 'files' | 'videos',
+    cursor?: string
+  ): Promise<{
+    items?: Array<{ id: string; type: string; url: string | null; fileName: string | null; fileSize: number | null; createdAt: string; senderUsername: string }>
+    hasMore?: boolean
+    nextCursor?: string | null
+    error?: string
+  }> {
+    const params = new URLSearchParams({ tab })
+    if (cursor) params.set('cursor', cursor)
+    const result = await fetchAPI<{
+      items: Array<{ id: string; type: string; url: string | null; fileName: string | null; fileSize: number | null; createdAt: string; senderUsername: string }>
+      hasMore: boolean
+      nextCursor: string | null
+    }>(`/chats/${encodeURIComponent(chatId)}/media?${params}`)
+    if (result.data) return { items: result.data.items, hasMore: result.data.hasMore, nextCursor: result.data.nextCursor }
+    return { error: result.error }
+  },
+
+  async setPinnedMessage(
+    chatId: string,
+    messageId: string | null
+  ): Promise<{
+    pinnedMessage?: { id: string; content: string; senderUsername?: string | null; createdAt: string } | null
+    error?: string
+  }> {
+    const result = await fetchAPI<{ pinnedMessage: { id: string; content: string; senderUsername?: string | null; createdAt: string } | null }>(
+      `/chats/${encodeURIComponent(chatId)}/pinned-message`,
+      { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageId }) }
+    )
+    if (result.data) return { pinnedMessage: result.data.pinnedMessage }
+    return { error: result.error }
+  },
+
+  async getMessageComments(
+    chatId: string,
+    messageId: string,
+    cursor?: string
+  ): Promise<{ comments?: MessageComment[]; hasMore?: boolean; nextCursor?: string | null; error?: string }> {
+    const params = new URLSearchParams()
+    if (cursor) params.set('cursor', cursor)
+    const qs = params.toString() ? `?${params}` : ''
+    const result = await fetchAPI<{ comments: MessageComment[]; hasMore: boolean; nextCursor: string | null }>(
+      `/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/comments${qs}`
+    )
+    if (result.data) return { comments: result.data.comments, hasMore: result.data.hasMore, nextCursor: result.data.nextCursor }
+    return { error: result.error }
+  },
+
+  async postMessageComment(
+    chatId: string,
+    messageId: string,
+    content: string
+  ): Promise<{ comment?: MessageComment; commentsCount?: number; error?: string }> {
+    const result = await fetchAPI<{ comment: MessageComment; commentsCount: number }>(
+      `/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/comments`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content }) }
+    )
+    if (result.data) return { comment: result.data.comment, commentsCount: result.data.commentsCount }
+    return { error: result.error }
+  },
+}
+
+export type LinkPreview = NonNullable<Message['linkPreview']>
+
+export interface MessageComment {
+  id: string
+  content: string
+  createdAt: string
+  user: Pick<User, 'id' | 'username' | 'avatarUrl' | 'isBadgeVerified'>
+}
+
+export async function fetchLinkPreview(url: string): Promise<LinkPreview | null> {
+  try {
+    const res = await fetch(`/api/link-preview?url=${encodeURIComponent(url)}`)
+    if (!res.ok) return null
+    const data = await res.json() as Partial<LinkPreview>
+    if (!data.title) return null
+    return data as LinkPreview
+  } catch {
+    return null
+  }
 }
 
 // Users API

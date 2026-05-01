@@ -1,10 +1,10 @@
 ﻿'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Textarea } from '@/components/ui/textarea'
 import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
-import { chatsAPI, type Message } from '@/lib/api'
+import { chatsAPI, fetchLinkPreview, type Message, type LinkPreview } from '@/lib/api'
 import { Send, Loader2, X, Reply, Pencil, Check, Mic, Trash2, Paperclip, FileText, Video, SwitchCamera } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -53,6 +53,12 @@ export function MessageInput({
     previewUrl?: string
   }>>([])
 
+  // Link preview state
+  const [linkPreview, setLinkPreview] = useState<LinkPreview | null>(null)
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false)
+  const [previewDismissed, setPreviewDismissed] = useState(false)
+  const lastPreviewedUrl = useRef<string | null>(null)
+  const previewDebounceRef = useRef<NodeJS.Timeout | null>(null)
   // Video note recording state
   const [isRecordingVideo, setIsRecordingVideo] = useState(false)
   const [videoSeconds, setVideoSeconds] = useState(0)
@@ -108,6 +114,35 @@ export function MessageInput({
     return () => { if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current) }
   }, [message, chatId, user?.id])
 
+  // Debounced link preview fetch
+  const extractFirstUrl = (text: string): string | null => {
+    const m = text.match(/https?:\/\/[^\s]{4,}/)
+    return m ? m[0] : null
+  }
+  useEffect(() => {
+    if (editingMessage) return // no preview while editing
+    const url = extractFirstUrl(message)
+    if (!url) {
+      setLinkPreview(null)
+      setPreviewDismissed(false)
+      lastPreviewedUrl.current = null
+      return
+    }
+    if (previewDismissed && url === lastPreviewedUrl.current) return
+    if (url === lastPreviewedUrl.current) return
+    if (previewDebounceRef.current) clearTimeout(previewDebounceRef.current)
+    previewDebounceRef.current = setTimeout(async () => {
+      lastPreviewedUrl.current = url
+      setPreviewDismissed(false)
+      setIsLoadingPreview(true)
+      const preview = await fetchLinkPreview(url)
+      setIsLoadingPreview(false)
+      setLinkPreview(preview)
+    }, 800)
+    return () => { if (previewDebounceRef.current) clearTimeout(previewDebounceRef.current) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [message])
+
   const handleSend = async () => {
     if (!message.trim() || !user) return
     const text = message
@@ -137,6 +172,7 @@ export function MessageInput({
     }
 
     // Optimistic UI
+    const pendingPreview = !previewDismissed ? linkPreview : null
     const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2)}`
     const optimisticMsg: Message = {
       id: tempId,
@@ -155,11 +191,15 @@ export function MessageInput({
             content: replyTo.text,
           }
         : null,
+      linkPreview: pendingPreview,
       pendingStatus: 'sending',
     }
 
     addMessage(chatId, optimisticMsg)
     setMessage('')
+    setLinkPreview(null)
+    setPreviewDismissed(false)
+    lastPreviewedUrl.current = null
     justSentRef.current = true
     setTimeout(() => { justSentRef.current = false }, 500)
     onCancelReply?.()
@@ -169,7 +209,7 @@ export function MessageInput({
     setTimeout(() => textareaRef.current?.focus(), 0)
 
     try {
-      const result = await chatsAPI.sendMessage(chatId, text, replyTo?.message.id)
+      const result = await chatsAPI.sendMessage(chatId, text, replyTo?.message.id, undefined, undefined, undefined, undefined, pendingPreview ?? undefined)
       if (result.error || !result.message) {
         console.error('Failed to save message:', result.error)
         updateMessageStatus(chatId, tempId, 'failed')
@@ -515,6 +555,45 @@ export function MessageInput({
                   </button>
                 </div>
               ))}
+            </div>
+          )}
+          {/* Link preview banner */}
+          {!editingMessage && (linkPreview || isLoadingPreview) && (
+            <div className="flex items-start gap-3 px-4 py-2.5 border-t border-black/[0.06] dark:border-white/[0.08] bg-black/[0.03] dark:bg-white/[0.04]">
+              {isLoadingPreview && !linkPreview ? (
+                <div className="flex items-center gap-2 flex-1">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-black/30 dark:text-white/30 flex-shrink-0" />
+                  <span className="text-xs text-black/30 dark:text-white/30">Загрузка превью…</span>
+                </div>
+              ) : linkPreview ? (
+                <>
+                  {linkPreview.image ? (
+                    <img src={linkPreview.image} alt="" className="h-12 w-16 object-cover rounded-lg flex-shrink-0 bg-black/[0.06]" />
+                  ) : (
+                    <div className="h-12 w-16 rounded-lg bg-[#5d6cf5]/10 flex items-center justify-center flex-shrink-0">
+                      <svg className="h-5 w-5 text-[#5d6cf5]/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                      </svg>
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    {linkPreview.siteName && (
+                      <p className="text-[10px] text-[#5d6cf5] font-semibold uppercase tracking-wide truncate">{linkPreview.siteName}</p>
+                    )}
+                    <p className="text-xs font-medium text-black dark:text-white truncate leading-tight">{linkPreview.title}</p>
+                    {linkPreview.description && (
+                      <p className="text-[11px] text-black/40 dark:text-white/40 truncate">{linkPreview.description}</p>
+                    )}
+                  </div>
+                </>
+              ) : null}
+              <button
+                onClick={() => { setPreviewDismissed(true); setLinkPreview(null) }}
+                className="text-black/30 dark:text-white/30 hover:text-black/60 dark:hover:text-white/60 flex-shrink-0 p-0.5 mt-0.5"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
             </div>
           )}
         </>

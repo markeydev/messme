@@ -804,7 +804,7 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                           <span className="font-semibold truncate text-[14px] text-black dark:text-white">
                             {chat.title}
                           </span>
-                          {peer?.isBadgeVerified && <VerifiedBadge className="flex-shrink-0" />}
+                          {(peer?.isBadgeVerified || chat.isVerified) && <VerifiedBadge className="flex-shrink-0" />}
                         </div>
                         {chat.lastMessage?.createdAt && (
                           <span className={cn('text-[11px] flex-shrink-0',

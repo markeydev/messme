@@ -43,6 +43,7 @@ model User {
   clipMeFollowers  ClipMeSubscription[] @relation("ClipMeFollowers")
   adminPanelTokens AdminPanelLinkToken[]
   messageViews     MessageView[]
+  messageComments  MessageComment[]
 
   @@map("users")
 }
@@ -83,11 +84,13 @@ model Chat {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
   ownerId   String?
+  pinnedMessageId String?
   members   ChatMember[]
   owner     User?        @relation(fields: [ownerId], references: [id])
   messages  Message[]
   channels  Channel[]
   roles     GameRoomRole[]
+  pinnedMessage Message?  @relation("ChatPinnedMessage", fields: [pinnedMessageId], references: [id], onDelete: SetNull)
 
   @@map("chats")
 }
@@ -124,12 +127,15 @@ model Message {
   fileUrl               String?
   videoNoteUrl          String?
   videoNoteDuration     Int?
+  linkPreviewJson       String?
   chat                  Chat        @relation(fields: [chatId], references: [id], onDelete: Cascade)
   replyTo               Message?    @relation("MessageReplies", fields: [replyToId], references: [id])
   replies               Message[]   @relation("MessageReplies")
   sender                User        @relation(fields: [senderId], references: [id], onDelete: Cascade)
   reactions             MessageReaction[]
   views                 MessageView[]
+  pinnedInChat          Chat[]      @relation("ChatPinnedMessage")
+  comments              MessageComment[]
 
   @@index([chatId])
   @@index([senderId])
@@ -147,6 +153,20 @@ model MessageView {
   @@unique([messageId, viewerId])
   @@index([messageId])
   @@map("message_views")
+}
+
+model MessageComment {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  content   String
+  createdAt DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([messageId, createdAt])
+  @@index([userId])
+  @@map("message_comments")
 }
 
 model MessageReaction {

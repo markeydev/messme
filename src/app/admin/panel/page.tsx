@@ -788,6 +788,10 @@ export default function AdminPanelPage() {
               className="text-xs text-white/50 hover:text-white px-3 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] transition-all">
               ↻ Обновить
             </button>
+            <a href="/"
+              className="text-xs text-white/50 hover:text-white px-3 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] transition-all">
+              ← Мессенджер
+            </a>
           </div>
         </div>
       </div>

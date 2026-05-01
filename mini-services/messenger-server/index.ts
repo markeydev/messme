@@ -250,6 +250,13 @@ io.on('connection', (socket) => {
     broadcastToChat(message.chatId, 'message-edited', message)
   })
 
+  // Pin/unpin message — broadcast updated pin state to all chat members
+  socket.on('pin-updated', (data: { chatId: string; pinnedMessage: { id: string; content: string; senderUsername: string | null; createdAt: string } | null }) => {
+    const { chatId } = data
+    console.log(`[WS] Pin updated in chat ${chatId}`)
+    broadcastToChat(chatId, 'pin-updated', data)
+  })
+
   // Send message (legacy — keep for compatibility but prefer broadcast-message)
   socket.on('send-message', (data: {
     chatId: string,

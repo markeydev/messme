@@ -59,6 +59,14 @@ export async function GET(
     const chat = await db.chat.findUnique({
       where: { id: chatId },
       include: {
+        pinnedMessage: {
+          select: {
+            id: true,
+            encryptedContent: true,
+            createdAt: true,
+            sender: { select: { username: true } },
+          },
+        },
         members: {
           include: {
             user: {
@@ -78,6 +86,7 @@ export async function GET(
           include: {
             sender: { select: { username: true } },
             reactions: { select: { emoji: true, userId: true } },
+            _count: { select: { comments: true } },
             replyTo: {
               select: {
                 id: true,
@@ -115,6 +124,8 @@ export async function GET(
           fileSize: (msg as any).fileSize ?? null,
           videoNoteUrl: (msg as any).videoNoteUrl ?? null,
           videoNoteDuration: (msg as any).videoNoteDuration ?? null,
+          linkPreview: (() => { try { const j = (msg as any).linkPreviewJson; return j ? JSON.parse(j) : null } catch { return null } })(),
+          commentsCount: (msg as any)._count?.comments ?? 0,
           senderId: msg.senderId,
           senderUsername: (msg as any).sender?.username,
           isEdited: (msg as any).isEdited ?? false,
@@ -160,6 +171,14 @@ export async function GET(
         gameMode: (chat as any).gameMode ?? false,
         avatarUrl: (chat as any).avatarUrl ?? null,
         ownerId: (chat as any).ownerId ?? null,
+        pinnedMessage: (chat as any).pinnedMessage
+          ? {
+              id: (chat as any).pinnedMessage.id,
+              content: decryptText((chat as any).pinnedMessage.encryptedContent),
+              senderUsername: (chat as any).pinnedMessage.sender?.username ?? null,
+              createdAt: (chat as any).pinnedMessage.createdAt,
+            }
+          : null,
         members: chat.members.map(m => ({
           id: m.user.id,
           username: m.user.username,

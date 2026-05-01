@@ -51,7 +51,7 @@ export async function POST(
     }
 
     const body = await request.json()
-    const { content, replyToId, isForwarded, forwardedFromUsername, forwardedFromChatId, type, audioUrl, audioDuration, fileUrl, fileName, fileSize, videoNoteUrl, videoNoteDuration } = body
+    const { content, replyToId, isForwarded, forwardedFromUsername, forwardedFromChatId, type, audioUrl, audioDuration, fileUrl, fileName, fileSize, videoNoteUrl, videoNoteDuration, linkPreview } = body
     if (content === undefined || content === null || typeof content !== 'string') {
       return NextResponse.json({ error: 'Нет содержимого' }, { status: 400 })
     }
@@ -75,6 +75,7 @@ export async function POST(
         ...(fileSize != null ? { fileSize: Math.round(fileSize) } : {}),
         ...(videoNoteUrl ? { videoNoteUrl } : {}),
         ...(videoNoteDuration != null ? { videoNoteDuration: Math.round(videoNoteDuration) } : {}),
+        ...(linkPreview && typeof linkPreview === 'object' ? { linkPreviewJson: JSON.stringify(linkPreview) } : {}),
         ...(replyToId ? { replyToId } : {}),
         ...(isForwarded
           ? {
@@ -177,6 +178,7 @@ export async function POST(
         fileSize: (message as any).fileSize ?? null,
         videoNoteUrl: (message as any).videoNoteUrl ?? null,
         videoNoteDuration: (message as any).videoNoteDuration ?? null,
+        linkPreview: (() => { try { const j = (message as any).linkPreviewJson; return j ? JSON.parse(j) : null } catch { return null } })(),
         replyToId: message.replyToId ?? null,
         replyTo: (message as any).replyTo ? {
           id: (message as any).replyTo.id,

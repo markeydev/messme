@@ -18,6 +18,7 @@ export interface SocketEvents {
   'test-response': (data: { message: string; timestamp: string }) => void
   'message-deleted': (data: { chatId: string; messageId: string }) => void
   'message-edited': (message: Message) => void
+  'pin-updated': (data: { chatId: string; pinnedMessage: { id: string; content: string; senderUsername: string | null; createdAt: string } | null }) => void
   'disconnect': (data: Record<string, never>) => void
   // WebRTC calls
   'call-incoming': (data: { chatId: string; callerId: string; callerName: string; offer: RTCSessionDescriptionInit; withVideo: boolean }) => void
@@ -244,6 +245,12 @@ class MessengerSocket {
   broadcastEditMessage(message: import('./api').Message) {
     if (this.socket) {
       this.socket.emit('edit-message', message)
+    }
+  }
+
+  broadcastPinUpdated(chatId: string, pinnedMessage: { id: string; content: string; senderUsername: string | null; createdAt: string } | null) {
+    if (this.socket) {
+      this.socket.emit('pin-updated', { chatId, pinnedMessage })
     }
   }
 

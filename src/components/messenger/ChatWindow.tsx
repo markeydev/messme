@@ -13,12 +13,14 @@ import { GroupSettingsDialog } from './GroupSettingsDialog'
 import { CallWindow } from './CallWindow'
 import { StoryViewer } from './StoryViewer'
 import { UserPublicProfileDialog } from './UserPublicProfileDialog'
+import { ChatMediaGallery } from './ChatMediaGallery'
+import { PostComments } from './PostComments'
 import { VerifiedBadge } from './VerifiedBadge'
 import { useMessengerStore } from '@/lib/store'
 import { messengerSocket } from '@/lib/socket'
 import { chatsAPI, usersAPI, storiesAPI, type Chat, type Message, type StoryFeedItem, type User } from '@/lib/api'
 import { CHAT_MESSAGE_CONTEXT_MENU_ITEM_HEIGHT, CHAT_MESSAGE_CONTEXT_REACTIONS_MENU_EXTRA_HEIGHT, REACTION_EMOJIS } from '@/lib/product-config'
-import { ArrowDown, ArrowLeft, Users, Loader2, UserPlus, Check, X, Reply, Forward, Trash2, Pencil, FileText, Download, ZoomIn, Copy, Phone, Clock, AlertCircle, ShieldCheck, Smile, Circle, Eye } from 'lucide-react'
+import { ArrowDown, ArrowLeft, Users, Loader2, UserPlus, Check, X, Reply, Forward, Trash2, Pencil, FileText, Download, ZoomIn, Copy, Phone, Clock, AlertCircle, ShieldCheck, Smile, Circle, Eye, GalleryHorizontalEnd, Pin, PinOff, MessageSquare } from 'lucide-react'
 import { cn, openExternalUrl } from '@/lib/utils'
 
 interface ChatWindowProps {
@@ -68,13 +70,20 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
   const [peerLastSeenAt, setPeerLastSeenAt] = useState<string | null>(null)
   const [messageViewCounts, setMessageViewCounts] = useState<Record<string, number>>({})
   const viewedMsgIdsRef = useRef<Set<string>>(new Set())
+  const [isMediaGalleryOpen, setIsMediaGalleryOpen] = useState(false)
+  const [pinnedMessage, setPinnedMessage] = useState<{ id: string; content: string; senderUsername?: string | null; createdAt: string } | null>(
+    (chat as any).pinnedMessage ?? null
+  )
+  const [commentsPanel, setCommentsPanel] = useState<{ messageId: string; postPreview: string; initialCount: number } | null>(null)
+  const [commentsCounts, setCommentsCounts] = useState<Record<string, number>>({})
 
-  const { user, addMessage, deleteMessage, chats, removeChat, setActiveChat, prependMessages, updateChatMembers, updateMessageReactions } = useMessengerStore()
+  const { user, addMessage, deleteMessage, chats, removeChat, setActiveChat, prependMessages, updateChatMembers, updateMessageReactions, updateChat } = useMessengerStore()
   const baseReactions = REACTION_EMOJIS
   const currentUserMember = chat.members.find(m => m.id === user?.id)
   const isChannelAdmin = !!currentUserMember?.isAdmin
   const isReadOnlyPersonalChannel = !!chat.isPersonalChannel && chat.ownerId !== user?.id && !isChannelAdmin
   const canManageChannelMembers = !!chat.isGroup && (!chat.isPersonalChannel || chat.ownerId === user?.id)
+  const canPin = !!chat.isGroup && (chat.ownerId === user?.id || isChannelAdmin)
 
   // Infinite scroll state
   const [isLoadingMore, setIsLoadingMore] = useState(false)
@@ -208,6 +217,17 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
     }
   }, [chat.id])
 
+  // Listen for real-time pin updates from other members
+  useEffect(() => {
+    const handlePinUpdated = (data: { chatId: string; pinnedMessage: { id: string; content: string; senderUsername: string | null; createdAt: string } | null }) => {
+      if (data.chatId !== chat.id) return
+      setPinnedMessage(data.pinnedMessage)
+      updateChat(chat.id, { pinnedMessage: data.pinnedMessage } as any)
+    }
+    messengerSocket.on('pin-updated', handlePinUpdated)
+    return () => messengerSocket.off('pin-updated', handlePinUpdated)
+  }, [chat.id, updateChat])
+
 
   const handleUserSearch = async (query: string) => {
     setUserSearchQuery(query)
@@ -289,6 +309,16 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
   const handleStartEdit = (msg: Message) => {
     setEditingMessage(msg)
     setEditingText(msg.content)
+  }
+
+  const handlePinMessage = async (messageId: string | null) => {
+    const result = await chatsAPI.setPinnedMessage(chat.id, messageId)
+    if (!result.error) {
+      const newPinned = result.pinnedMessage ?? null
+      setPinnedMessage(newPinned)
+      updateChat(chat.id, { pinnedMessage: newPinned } as any)
+      messengerSocket.broadcastPinUpdated(chat.id, newPinned)
+    }
   }
 
   const handleForward = async (targetChatId: string) => {
@@ -480,6 +510,12 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
             <UserPlus className="h-4 w-4" />
           </Button>
         )}
+        <Button variant="ghost" size="icon" onClick={() => setIsMediaGalleryOpen(true)}
+          className="h-8 w-8 text-black/40 dark:text-white/40 hover:text-black/80 dark:hover:text-white/80 hover:bg-black/[0.05] dark:hover:bg-white/[0.08] rounded-lg"
+          title="Медиафайлы"
+        >
+          <GalleryHorizontalEnd className="h-4 w-4" />
+        </Button>
         {/* Call buttons — only for 1-on-1 chats */}
         {!chat.isGroup && (() => {
           const remote = chatMembers.find(m => m.id !== user?.id)
@@ -506,6 +542,39 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
           )
         })()}
       </div>
+
+      {/* Pinned message banner */}
+      {pinnedMessage && (
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-black/[0.06] dark:border-white/[0.08] bg-black/[0.02] dark:bg-white/[0.03] flex-shrink-0">
+          <svg className="h-3.5 w-3.5 text-[#5d6cf5] flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="17" x2="12" y2="22" />
+            <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
+          </svg>
+          <button
+            className="flex-1 min-w-0 text-left"
+            onClick={() => {
+              const el = messageRefs.current[pinnedMessage.id]
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                el.classList.add('bg-[#5d6cf5]/10')
+                setTimeout(() => el.classList.remove('bg-[#5d6cf5]/10'), 1500)
+              }
+            }}
+          >
+            <span className="text-xs font-medium text-[#5d6cf5] block leading-none mb-0.5">Закреплённое сообщение</span>
+            <span className="text-xs text-black/60 dark:text-white/60 truncate block">{pinnedMessage.content}</span>
+          </button>
+          {canPin && (
+            <button
+              onClick={() => handlePinMessage(null)}
+              className="h-6 w-6 flex items-center justify-center rounded text-black/30 dark:text-white/30 hover:text-black/60 dark:hover:text-white/60 transition-colors flex-shrink-0"
+              title="Открепить"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Messages */}
       <div className="relative flex-1 min-h-0">
@@ -705,9 +774,53 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                               <Download className={cn('h-4 w-4 flex-shrink-0 opacity-60 group-hover:opacity-100 transition-opacity', isOwn ? 'text-white' : 'text-black/40 dark:text-white/40')} />
                             </a>
                           ) : (
-                            <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-                              {renderTextWithLinks(msg.content)}
-                            </p>
+                            <>
+                              <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+                                {renderTextWithLinks(msg.content)}
+                              </p>
+                              {(msg as any).linkPreview && (() => {
+                                const lp = (msg as any).linkPreview as { title: string; description?: string | null; image?: string | null; siteName?: string | null; url: string }
+                                return (
+                                  <a
+                                    href={lp.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={e => { e.preventDefault(); openExternalUrl(lp.url) }}
+                                    className={cn(
+                                      'mt-2 flex gap-2.5 rounded-xl overflow-hidden border transition-opacity hover:opacity-90',
+                                      isOwn
+                                        ? 'bg-white/10 border-white/15'
+                                        : 'bg-black/[0.04] dark:bg-white/[0.06] border-black/[0.08] dark:border-white/[0.10]'
+                                    )}
+                                  >
+                                    {lp.image && (
+                                      <img
+                                        src={lp.image}
+                                        alt=""
+                                        className="h-16 w-20 object-cover flex-shrink-0"
+                                        loading="lazy"
+                                        onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+                                      />
+                                    )}
+                                    <div className="flex-1 min-w-0 py-2 pr-2.5 pl-1">
+                                      {lp.siteName && (
+                                        <p className={cn('text-[10px] font-semibold uppercase tracking-wide truncate mb-0.5', isOwn ? 'text-white/60' : 'text-[#5d6cf5]')}>
+                                          {lp.siteName}
+                                        </p>
+                                      )}
+                                      <p className={cn('text-xs font-semibold leading-snug truncate', isOwn ? 'text-white' : 'text-black dark:text-white')}>
+                                        {lp.title}
+                                      </p>
+                                      {lp.description && (
+                                        <p className={cn('text-[11px] mt-0.5 line-clamp-2 leading-snug', isOwn ? 'text-white/60' : 'text-black/40 dark:text-white/40')}>
+                                          {lp.description}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </a>
+                                )
+                              })()}
+                            </>
                           )}
                           {!!msg.reactions?.length && (
                             <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -756,6 +869,28 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                               </span>
                             )}
                           </div>
+                          {/* Comment button — only in personal channels */}
+                          {chat.isPersonalChannel && !(msg as any).pendingStatus && (
+                            <button
+                              className={cn(
+                                'flex items-center gap-1 mt-1.5 text-[11px] transition-colors self-start',
+                                isOwn
+                                  ? 'text-white/50 hover:text-white/80'
+                                  : 'text-black/30 dark:text-white/30 hover:text-[#5D6CF5] dark:hover:text-[#5D6CF5]'
+                              )}
+                              onClick={() => setCommentsPanel({
+                                messageId: msg.id,
+                                postPreview: msg.content.length > 80 ? msg.content.slice(0, 80) + '…' : msg.content,
+                                initialCount: commentsCounts[msg.id] ?? (msg as any).commentsCount ?? 0,
+                              })}
+                            >
+                              <MessageSquare className="h-3.5 w-3.5" />
+                              {(commentsCounts[msg.id] ?? (msg as any).commentsCount ?? 0) > 0
+                                ? <span>{commentsCounts[msg.id] ?? (msg as any).commentsCount ?? 0}</span>
+                                : <span>Комментарии</span>
+                              }
+                            </button>
+                          )}
                         </div>
                       </div>
                   </div>
@@ -922,6 +1057,31 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
         }}
       />
 
+      {/* Media Gallery overlay */}
+      {isMediaGalleryOpen && (
+        <div className="absolute inset-0 z-40 flex flex-col bg-white dark:bg-[#111112]">
+          <ChatMediaGallery
+            chatId={chat.id}
+            chatTitle={currentChat.title ?? ''}
+            onClose={() => setIsMediaGalleryOpen(false)}
+          />
+        </div>
+      )}
+
+      {/* Post Comments overlay */}
+      {commentsPanel && (
+        <div className="absolute inset-0 z-40 flex flex-col bg-white dark:bg-[#111112]">
+          <PostComments
+            chatId={chat.id}
+            messageId={commentsPanel.messageId}
+            postPreview={commentsPanel.postPreview}
+            initialCount={commentsPanel.initialCount}
+            onClose={() => setCommentsPanel(null)}
+            onCountChange={(msgId, count) => setCommentsCounts(prev => ({ ...prev, [msgId]: count }))}
+          />
+        </div>
+      )}
+
       <UserPublicProfileDialog
         open={!!profileUserId}
         userId={profileUserId}
@@ -944,7 +1104,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
         const canReplyToMessages = true
         const menuW = 196
         const selectionItems = hasSelection ? (canReplyToMessages ? 2 : 1) : 0
-        const itemCount = (canReplyToMessages ? 1 : 0) + 1 + (isText ? 1 : 0) + (menuIsOwn && isText ? 1 : 0) + 1 + selectionItems // +1 delete
+        const itemCount = (canReplyToMessages ? 1 : 0) + 1 + (isText ? 1 : 0) + (menuIsOwn && isText ? 1 : 0) + (canPin ? 1 : 0) + 1 + selectionItems // +1 delete
         const menuH = itemCount * CHAT_MESSAGE_CONTEXT_MENU_ITEM_HEIGHT + CHAT_MESSAGE_CONTEXT_REACTIONS_MENU_EXTRA_HEIGHT
         const vw = typeof window !== 'undefined' ? window.innerWidth : 400
         const vh = typeof window !== 'undefined' ? window.innerHeight : 800
@@ -1037,6 +1197,17 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                 >
                   <Pencil className="h-4 w-4 text-black/40 dark:text-white/40 flex-shrink-0" />
                   <span className="text-black dark:text-white text-sm">Изменить</span>
+                </button>
+              )}
+              {canPin && (
+                <button
+                  className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] active:bg-black/[0.06] dark:active:bg-white/[0.08] transition-colors text-left"
+                  onClick={() => { handlePinMessage(pinnedMessage?.id === m.id ? null : m.id); setContextMenu(null) }}
+                >
+                  {pinnedMessage?.id === m.id
+                    ? <><PinOff className="h-4 w-4 text-black/40 dark:text-white/40 flex-shrink-0" /><span className="text-black dark:text-white text-sm">Открепить</span></>
+                    : <><Pin className="h-4 w-4 text-black/40 dark:text-white/40 flex-shrink-0" /><span className="text-black dark:text-white text-sm">Закрепить</span></>
+                  }
                 </button>
               )}
               <div className="my-1 h-px bg-black/[0.06] dark:bg-white/[0.08]" />
