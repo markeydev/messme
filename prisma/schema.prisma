@@ -42,6 +42,7 @@ model User {
   clipMeFollowing  ClipMeSubscription[] @relation("ClipMeFollowing")
   clipMeFollowers  ClipMeSubscription[] @relation("ClipMeFollowers")
   adminPanelTokens AdminPanelLinkToken[]
+  messageViews     MessageView[]
 
   @@map("users")
 }
@@ -128,10 +129,24 @@ model Message {
   replies               Message[]   @relation("MessageReplies")
   sender                User        @relation(fields: [senderId], references: [id], onDelete: Cascade)
   reactions             MessageReaction[]
+  views                 MessageView[]
 
   @@index([chatId])
   @@index([senderId])
   @@map("messages")
+}
+
+model MessageView {
+  id        String   @id @default(cuid())
+  messageId String
+  viewerId  String
+  viewedAt  DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  viewer    User     @relation(fields: [viewerId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, viewerId])
+  @@index([messageId])
+  @@map("message_views")
 }
 
 model MessageReaction {

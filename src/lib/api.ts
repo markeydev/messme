@@ -469,6 +469,22 @@ export const chatsAPI = {
     if (result.data) return { success: true }
     return { error: result.error }
   },
+
+  async markMessageViewed(chatId: string, messageId: string): Promise<{ viewsCount?: number; error?: string }> {
+    const result = await fetchAPI<{ viewsCount: number }>(`/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/view`, {
+      method: 'POST',
+    })
+    if (result.data) return { viewsCount: result.data.viewsCount }
+    return { error: result.error }
+  },
+
+  async getMessageViewCounts(chatId: string, messageIds: string[]): Promise<{ counts?: Record<string, number>; error?: string }> {
+    if (messageIds.length === 0) return { counts: {} }
+    const ids = messageIds.join(',')
+    const result = await fetchAPI<{ counts: Record<string, number> }>(`/chats/${encodeURIComponent(chatId)}/message-view-counts?ids=${encodeURIComponent(ids)}`)
+    if (result.data) return { counts: result.data.counts }
+    return { error: result.error }
+  },
 }
 
 // Users API

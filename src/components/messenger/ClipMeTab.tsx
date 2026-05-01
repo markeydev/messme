@@ -71,7 +71,7 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
   const [videos, setVideos] = useState<ClipMeVideo[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null)
-  const [isChannelSearchOpen, setIsChannelSearchOpen] = useState(false)
+  const [currentView, setCurrentView] = useState<'feed' | 'search' | 'channel'>('feed')
   const [channelSearchQuery, setChannelSearchQuery] = useState('')
   const [channelSearchResults, setChannelSearchResults] = useState<Array<{ id: string; username: string; avatarUrl?: string | null; isBadgeVerified?: boolean }>>([])
   const [isChannelSearchLoading, setIsChannelSearchLoading] = useState(false)
@@ -105,7 +105,6 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
   const [channelBioDraft, setChannelBioDraft] = useState('')
   const [isSavingChannelBio, setIsSavingChannelBio] = useState(false)
   const [channelError, setChannelError] = useState<string | null>(null)
-  const [feedPausedForOverlay, setFeedPausedForOverlay] = useState(false)
 
   const [uploadPickerOpen, setUploadPickerOpen] = useState(false)
   const [uploadSettingsOpen, setUploadSettingsOpen] = useState(false)
@@ -180,7 +179,7 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
   useEffect(() => { void refreshFeed() }, [initialVideoId])
 
   useEffect(() => {
-    if (!isChannelSearchOpen) return
+    if (currentView !== 'search') return
     const q = channelSearchQuery.trim()
     if (q.length < 1) {
       setChannelSearchResults([])
@@ -204,7 +203,7 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [channelSearchQuery, isChannelSearchOpen])
+  }, [channelSearchQuery, currentView])
 
   const initialUserIdRef = useRef(initialUserId)
   useEffect(() => {
@@ -271,7 +270,7 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
 
   useEffect(() => {
     if (pendingViewTimerRef.current) clearTimeout(pendingViewTimerRef.current)
-    if (!activeVideoId || feedPausedForOverlay) {
+    if (!activeVideoId) {
       activeVideoStartedAtRef.current = null
       return
     }
@@ -299,7 +298,7 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
     return () => {
       if (pendingViewTimerRef.current) clearTimeout(pendingViewTimerRef.current)
     }
-  }, [activeVideoId, feedPausedForOverlay])
+  }, [activeVideoId])
 
   const patchVideoEverywhere = (videoId: string, patch: Partial<ClipMeVideo>) => {
     setVideos(prev => prev.map(video => video.id === videoId ? { ...video, ...patch } : video))
@@ -428,15 +427,9 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
   }
 
   async function openChannel(targetUserId: string) {
-    if (typeof document !== 'undefined') {
-      document.querySelectorAll('video').forEach(video => {
-        try { video.pause() } catch {}
-      })
-    }
-    const currentActive = activeVideoId
-    previousActiveVideoIdRef.current = currentActive
-    setFeedPausedForOverlay(true)
+    previousActiveVideoIdRef.current = activeVideoId
     setActiveVideoId(null)
+    setCurrentView('channel')
     setActiveChannelUserId(targetUserId)
     setChannelLoading(true)
     setChannelError(null)
@@ -456,21 +449,22 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
   }
 
   const openChannelFromSearch = async (targetUserId: string) => {
-    setIsChannelSearchOpen(false)
     setChannelSearchQuery('')
     setChannelSearchResults([])
     await openChannel(targetUserId)
   }
 
   const closeChannel = () => {
+    setCurrentView('feed')
     setActiveChannelUserId(null)
     setChannelOverlayVideo(null)
-    setFeedPausedForOverlay(false)
     const previousActive = previousActiveVideoIdRef.current
     if (previousActive) {
       setActiveVideoId(previousActive)
-      const node = videoRefs.current[previousActive]
-      if (node) node.scrollIntoView({ block: 'start' })
+      requestAnimationFrame(() => {
+        const node = videoRefs.current[previousActive]
+        if (node) node.scrollIntoView({ block: 'start' })
+      })
     }
   }
 
@@ -636,6 +630,7 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
 
   return (
     <div className="h-full min-h-0 md:fixed md:inset-0 md:z-40 md:flex md:items-center md:justify-center md:bg-black md:p-0">
+      {currentView === 'feed' && (
       <div className="h-full min-h-0 flex flex-col bg-black text-white md:w-[min(560px,100vw)] md:h-full md:border-x md:border-white/10 overflow-hidden relative">
         <div className="absolute left-3 top-3 z-30 flex items-center gap-2">
           {onClose && (
@@ -650,7 +645,7 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
           <div className="h-9 rounded-full bg-black/55 px-3 inline-flex items-center gap-2 max-w-[180px]">
             <Search className="h-3.5 w-3.5 text-white/70" />
             <button
-              onClick={() => setIsChannelSearchOpen(true)}
+              onClick={() => setCurrentView('search')}
               className="w-full text-left bg-transparent text-xs text-white/90 truncate"
             >
               Поиск каналов
@@ -678,7 +673,7 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
                 <CustomVideoPlayer
                   src={video.videoUrl}
                   className="h-full w-full"
-                  shouldPlay={!activeChannelUserId && !channelOverlayVideo && isActive}
+                  shouldPlay={!channelOverlayVideo && isActive}
                   loop
                   fit="contain"
                   onDoubleTap={() => {
@@ -776,43 +771,49 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
           <Plus className="h-7 w-7" />
         </button>
       </div>
+      )}
 
-      <Dialog open={isChannelSearchOpen} onOpenChange={setIsChannelSearchOpen}>
-        <DialogContent className="max-w-md bg-white dark:bg-[#15151a] border-black/[0.08] dark:border-white/[0.08]">
-          <DialogTitle>Поиск каналов ClipMe</DialogTitle>
-          <div className="space-y-3">
+      {currentView === 'search' && (
+        <div className="h-full min-h-0 flex flex-col bg-white dark:bg-[#15151a] text-black dark:text-white md:w-[min(560px,100vw)] md:h-full md:border-x md:border-black/[0.08] dark:md:border-white/[0.08] overflow-hidden">
+          <div className="h-14 px-4 flex items-center gap-3 border-b border-black/[0.08] dark:border-white/[0.08] bg-white dark:bg-[#15151a] shrink-0">
+            <button
+              onClick={() => { setCurrentView('feed'); setChannelSearchQuery(''); setChannelSearchResults([]) }}
+              className="h-9 w-9 rounded-full flex items-center justify-center hover:bg-black/[0.06] dark:hover:bg-white/[0.08]"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
             <Input
               value={channelSearchQuery}
               onChange={e => setChannelSearchQuery(e.target.value)}
-              placeholder="Введите имя канала"
-              className="h-10"
+              placeholder="Поиск каналов"
+              className="h-9 flex-1"
               autoFocus
             />
-            <div className="max-h-[48vh] overflow-y-auto space-y-1">
-              {isChannelSearchLoading && <p className="text-sm text-black/60 dark:text-white/60 px-1 py-2">Поиск...</p>}
-              {!isChannelSearchLoading && channelSearchQuery.trim().length > 0 && channelSearchResults.length === 0 && (
-                <p className="text-sm text-black/60 dark:text-white/60 px-1 py-2">Каналы не найдены</p>
-              )}
-              {channelSearchResults.map(channel => (
-                <button
-                  key={channel.id}
-                  onClick={() => { void openChannelFromSearch(channel.id) }}
-                  className="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] text-left"
-                >
-                  <Avatar className="h-9 w-9">
-                    {channel.avatarUrl && <AvatarImage src={channel.avatarUrl} />}
-                    <AvatarFallback className="bg-[#5d6cf5] text-white text-xs font-semibold">{channel.username.slice(0, 2).toUpperCase()}</AvatarFallback>
-                  </Avatar>
-                  <span className="text-sm font-medium inline-flex items-center gap-1">
-                    @{channel.username}
-                    {channel.isBadgeVerified && <VerifiedBadge className="h-3.5 w-3.5 min-h-3.5 min-w-3.5" />}
-                  </span>
-                </button>
-              ))}
-            </div>
           </div>
-        </DialogContent>
-      </Dialog>
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            {isChannelSearchLoading && <p className="text-sm text-black/60 dark:text-white/60 px-4 py-4">Поиск...</p>}
+            {!isChannelSearchLoading && channelSearchQuery.trim().length > 0 && channelSearchResults.length === 0 && (
+              <p className="text-sm text-black/60 dark:text-white/60 px-4 py-4">Каналы не найдены</p>
+            )}
+            {channelSearchResults.map(channel => (
+              <button
+                key={channel.id}
+                onClick={() => { void openChannelFromSearch(channel.id) }}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-black/[0.05] dark:hover:bg-white/[0.08] text-left"
+              >
+                <Avatar className="h-9 w-9">
+                  {channel.avatarUrl && <AvatarImage src={channel.avatarUrl} />}
+                  <AvatarFallback className="bg-[#5d6cf5] text-white text-xs font-semibold">{channel.username.slice(0, 2).toUpperCase()}</AvatarFallback>
+                </Avatar>
+                <span className="text-sm font-medium inline-flex items-center gap-1">
+                  @{channel.username}
+                  {channel.isBadgeVerified && <VerifiedBadge className="h-3.5 w-3.5 min-h-3.5 min-w-3.5" />}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <Drawer open={!!commentsOpenFor} onOpenChange={open => !open && setCommentsOpenFor(null)}>
         <DrawerContent className="bg-white dark:bg-[#15151a] border-white/10 h-[80dvh] max-h-[80dvh] flex flex-col">
@@ -876,9 +877,9 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
         </DialogContent>
       </Dialog>
 
-      {activeChannelUserId !== null && (
-        <div className="fixed inset-0 z-40 bg-black/95 text-white animate-in fade-in-0 duration-200">
-          <div className="h-full max-w-4xl mx-auto flex flex-col">
+      {currentView === 'channel' && activeChannelUserId !== null && (
+        <div className="h-full min-h-0 flex flex-col bg-black/95 text-white md:w-[min(560px,100vw)] md:h-full md:border-x md:border-white/10 overflow-hidden">
+          <div className="h-full flex flex-col">
             <div className="h-14 px-4 flex items-center justify-between border-b border-white/10 bg-black/80 backdrop-blur">
               <button onClick={closeChannel} className="h-9 w-9 rounded-full bg-white/10 hover:bg-white/15 flex items-center justify-center">
                 <ChevronLeft className="h-5 w-5" />

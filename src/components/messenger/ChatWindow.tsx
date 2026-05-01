@@ -66,6 +66,8 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
   const [storyInfo, setStoryInfo] = useState<StoryFeedItem | null>(null)
   const [isPeerOnline, setIsPeerOnline] = useState(false)
   const [peerLastSeenAt, setPeerLastSeenAt] = useState<string | null>(null)
+  const [messageViewCounts, setMessageViewCounts] = useState<Record<string, number>>({})
+  const viewedMsgIdsRef = useRef<Set<string>>(new Set())
 
   const { user, addMessage, deleteMessage, chats, removeChat, setActiveChat, prependMessages, updateChatMembers, updateMessageReactions } = useMessengerStore()
   const baseReactions = REACTION_EMOJIS
@@ -133,6 +135,38 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
     setChatMembers(currentChat.members)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentChat.members])
+
+  // Fetch initial message view counts for personal channels
+  useEffect(() => {
+    if (!chat.isPersonalChannel || messages.length === 0) return
+    const ids = messages.map(m => m.id).filter(id => !id.startsWith('tmp_'))
+    void chatsAPI.getMessageViewCounts(chat.id, ids).then(result => {
+      if (result.counts) setMessageViewCounts(result.counts)
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat.isPersonalChannel, chat.id, messages.length])
+
+  // Register views as personal channel messages scroll into view (for non-owners)
+  useEffect(() => {
+    if (!chat.isPersonalChannel || chat.ownerId === user?.id) return
+    const refs = messageRefs.current
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (!entry.isIntersecting) return
+        const msgId = entry.target.getAttribute('data-msg-id')
+        if (!msgId || viewedMsgIdsRef.current.has(msgId)) return
+        viewedMsgIdsRef.current.add(msgId)
+        void chatsAPI.markMessageViewed(chat.id, msgId).then(result => {
+          if (typeof result.viewsCount === 'number') {
+            setMessageViewCounts(prev => ({ ...prev, [msgId]: result.viewsCount! }))
+          }
+        })
+      })
+    }, { threshold: 0.5 })
+    Object.values(refs).forEach(node => { if (node) observer.observe(node) })
+    return () => observer.disconnect()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat.isPersonalChannel, chat.ownerId, user?.id, chat.id, messages.length])
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -325,7 +359,6 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
   }
 
   const getSender = (senderId: string) => chatMembers.find(m => m.id === senderId)
-  const channelViewsCount = chat.isPersonalChannel ? chatMembers.length : 0
   const scrollToMessage = (messageId?: string | null) => {
     if (!messageId) return
     const node = messageRefs.current[messageId]
@@ -429,7 +462,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="font-semibold text-black dark:text-white text-sm truncate">{currentChat.title}</h3>
-            {peerMember?.isBadgeVerified && <VerifiedBadge className="flex-shrink-0" />}
+            {(peerMember?.isBadgeVerified || (chat.isPersonalChannel && currentChat.isVerified)) && <VerifiedBadge className="flex-shrink-0" />}
             {chat.isGroup && (
               <span className="text-xs text-black/30 dark:text-white/30">{chatMembers.length} {chat.isPersonalChannel ? 'подписчиков' : 'участников'}</span>
             )}
@@ -523,6 +556,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                       <div
                         id={`msg-${msg.id}`}
                         ref={node => { messageRefs.current[msg.id] = node }}
+                        data-msg-id={msg.id}
                         className={cn('flex gap-2 items-end', alignOwnRight ? 'flex-row-reverse' : 'flex-row')}
                         onContextMenu={e => {
                           e.preventDefault()
@@ -707,7 +741,7 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
                             </p>
                             {chat.isPersonalChannel && (
                               <span className={cn('text-[10px] inline-flex items-center gap-0.5', isOwn ? 'text-white/60' : 'text-black/30 dark:text-white/40')}>
-                                <Eye className="h-2.5 w-2.5" /> {channelViewsCount}
+                                <Eye className="h-2.5 w-2.5" /> {messageViewCounts[msg.id] ?? 0}
                               </span>
                             )}
                             {isOwn && (msg as any).pendingStatus === 'sending' && (
