@@ -47,6 +47,7 @@ interface PersistedVoice {
   isScreenSharing: boolean
   pcs: Map<string, RTCPeerConnection>
   audioEls: Map<string, HTMLAudioElement>
+  gainEls: Map<string, GainNode>
   peers: VoicePeer[]
   isMuted: boolean
   isDeafened: boolean
@@ -65,6 +66,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   const {
     user, updateChatMembers, updateChat, removeChat, setActiveChat, addChat,
     audioInputDeviceId, audioOutputDeviceId, outputVolume,
+    noiseSuppressionEnabled, noiseSuppressionLevel,
   } = useMessengerStore()
 
   // ── Channels ──────────────────────────────────────────────────────────────
@@ -112,6 +114,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   const localVideoStreamRef = useRef<MediaStream | null>(null)
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map())
   const audioElements = useRef<Map<string, HTMLAudioElement>>(new Map())
+  const gainNodes = useRef<Map<string, GainNode>>(new Map())
   const audioCtxRef = useRef<AudioContext | null>(null)
   const analyserNodes = useRef<Map<string, AnalyserNode>>(new Map())
   const userVolumesRef = useRef<Record<string, number>>({})
@@ -175,14 +178,31 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     const out = Math.max(0, Math.min(200, outputVolume))
     return Math.min(MAX_AUDIO_VOLUME, (userVol / 100) * (out / 100))
   }, [outputVolume])
+
+  /** Set volume for a peer via GainNode (supports 0–2). Falls back to el.volume clamped to 1 if gain not ready. */
+  const setPeerGain = useCallback((uid: string, value: number) => {
+    const gain = gainNodes.current.get(uid)
+    if (gain) { gain.gain.value = Math.max(0, value); return }
+    const el = audioElements.current.get(uid)
+    if (el) el.volume = Math.min(1, Math.max(0, value))
+  }, [])
+
   useEffect(() => {
-    audioElements.current.forEach((el, uid) => {
-      el.volume = isDeafened ? 0 : getOutputAdjustedVolume(uid)
-      if (audioOutputDeviceId && (el as any).setSinkId) {
-        ;(el as any).setSinkId(audioOutputDeviceId).catch(() => {})
-      }
+    audioElements.current.forEach((_el, uid) => {
+      setPeerGain(uid, isDeafened ? 0 : getOutputAdjustedVolume(uid))
     })
-  }, [audioOutputDeviceId, getOutputAdjustedVolume, isDeafened])
+    // Route audio output device through AudioContext when available
+    if (audioOutputDeviceId && audioCtxRef.current) {
+      ;(audioCtxRef.current as any).setSinkId?.(audioOutputDeviceId).catch?.(() => {})
+    } else if (audioOutputDeviceId) {
+      // Fallback: set on elements not yet routed through gain
+      audioElements.current.forEach((el, uid) => {
+        if (!gainNodes.current.has(uid) && (el as any).setSinkId) {
+          ;(el as any).setSinkId(audioOutputDeviceId).catch(() => {})
+        }
+      })
+    }
+  }, [audioOutputDeviceId, getOutputAdjustedVolume, isDeafened, setPeerGain])
 
   // ── Voice Activity Detection ──────────────────────────────────────────────
   const setupAnalyser = useCallback((userId: string, stream: MediaStream) => {
@@ -225,11 +245,19 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       localScreenStreamRef.current = v.localScreenStream
       peerConnections.current = v.pcs
       audioElements.current = v.audioEls
+      gainNodes.current = v.gainEls
       setupAnalyser(user.id, v.stream)
       for (const peer of v.peers) {
         if (peer.stream) setupAnalyser(peer.userId, peer.stream)
       }
-      v.audioEls.forEach((el, uid) => { el.volume = v.isDeafened ? 0 : getOutputAdjustedVolume(uid, v.isDeafened ? 0 : undefined) })
+      v.audioEls.forEach((_el, uid) => {
+        const gain = gainNodes.current.get(uid)
+        const vol = v.isDeafened ? 0 : getOutputAdjustedVolume(uid)
+        if (gain) { gain.gain.value = Math.max(0, vol) } else {
+          const el = audioElements.current.get(uid)
+          if (el) el.volume = Math.min(1, Math.max(0, vol))
+        }
+      })
       setActiveVoiceChannel(v.channel)
       setVoicePeers([...v.peers])
       setIsMicMuted(v.isMuted)
@@ -261,6 +289,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
           isScreenSharing: isScreenSharingRef.current,
           pcs: peerConnections.current,
           audioEls: audioElements.current,
+          gainEls: gainNodes.current,
           peers: voicePeersRef.current,
           isMuted: isMicMutedRef.current,
           isDeafened: isDeafenedRef.current,
@@ -504,12 +533,24 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       if (e.track.kind === 'audio') {
         setVoicePeers(prev => prev.map(p => p.userId === remoteUserId ? { ...p, stream } : p))
         let el = audioElements.current.get(remoteUserId)
+        const isNew = !el
         if (!el) { el = new Audio(); el.autoplay = true; audioElements.current.set(remoteUserId, el) }
         el.srcObject = stream
-        el.volume = isDeafenedRef.current ? 0 : getOutputAdjustedVolume(remoteUserId)
-        if (audioOutputDeviceId && (el as any).setSinkId) {
-          ;(el as any).setSinkId(audioOutputDeviceId).catch(() => {})
+        // Route through GainNode so we can set gain > 1 without browser errors
+        if (isNew) {
+          if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+            audioCtxRef.current = new AudioContext()
+          }
+          const gainNode = audioCtxRef.current.createGain()
+          try { audioCtxRef.current.createMediaElementSource(el).connect(gainNode) } catch { /* already connected */ }
+          gainNode.connect(audioCtxRef.current.destination)
+          gainNodes.current.set(remoteUserId, gainNode)
+          // Route output device through AudioContext
+          if (audioOutputDeviceId) {
+            ;(audioCtxRef.current as any).setSinkId?.(audioOutputDeviceId).catch?.(() => {})
+          }
         }
+        setPeerGain(remoteUserId, isDeafenedRef.current ? 0 : getOutputAdjustedVolume(remoteUserId))
         setupAnalyser(remoteUserId, stream)
       } else if (e.track.kind === 'video') {
         if (expectingScreenTrack.current.has(remoteUserId)) {
@@ -549,6 +590,8 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     peerConnections.current.delete(remoteUserId)
     const el = audioElements.current.get(remoteUserId)
     if (el) { el.srcObject = null; audioElements.current.delete(remoteUserId) }
+    const gain = gainNodes.current.get(remoteUserId)
+    if (gain) { gain.disconnect(); gainNodes.current.delete(remoteUserId) }
     analyserNodes.current.delete(remoteUserId)
     setSpeakingUsers(prev => { const n = new Set(prev); n.delete(remoteUserId); return n })
   }, [])
@@ -558,8 +601,16 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     if (activeVoiceChannel) await leaveVoiceChannel()
     setIsJoiningVoice(true)
     try {
+      const audioConstraints: MediaTrackConstraints = {
+        ...(audioInputDeviceId ? { deviceId: { exact: audioInputDeviceId } } : {}),
+        noiseSuppression: noiseSuppressionEnabled,
+        echoCancellation: noiseSuppressionEnabled,
+        autoGainControl: noiseSuppressionEnabled,
+        // Higher noiseSuppressionLevel → reduce latency hints (browser-specific)
+        ...(noiseSuppressionEnabled && noiseSuppressionLevel >= 75 ? { googNoiseSuppression2: true } : {}),
+      }
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: audioInputDeviceId ? { deviceId: { exact: audioInputDeviceId } } : true,
+        audio: audioConstraints,
         video: false,
       })
       localStreamRef.current = stream
@@ -587,6 +638,8 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     peerConnections.current.clear()
     audioElements.current.forEach(el => { el.srcObject = null })
     audioElements.current.clear()
+    gainNodes.current.forEach(g => g.disconnect())
+    gainNodes.current.clear()
     analyserNodes.current.clear()
     audioCtxRef.current?.close().catch(() => {})
     audioCtxRef.current = null
@@ -616,8 +669,8 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
     setIsMicMuted(newMuted)
     if (!newMuted && isDeafenedRef.current) {
       setIsDeafened(false)
-      audioElements.current.forEach((el, uid) => {
-        el.volume = getOutputAdjustedVolume(uid)
+      audioElements.current.forEach((_el, uid) => {
+        setPeerGain(uid, getOutputAdjustedVolume(uid))
       })
     }
   }
@@ -628,8 +681,8 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = false })
       setIsMicMuted(true)
     }
-    audioElements.current.forEach((el, uid) => {
-      el.volume = newDeafened ? 0 : getOutputAdjustedVolume(uid)
+    audioElements.current.forEach((_el, uid) => {
+      setPeerGain(uid, newDeafened ? 0 : getOutputAdjustedVolume(uid))
     })
     setIsDeafened(newDeafened)
   }
@@ -1401,8 +1454,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                             onChange={e => {
                               const vol = parseInt(e.target.value)
                               setUserVolumes(prev => ({ ...prev, [tile.userId]: vol }))
-                              const el = audioElements.current.get(tile.userId)
-                              if (el) el.volume = isDeafened ? 0 : getOutputAdjustedVolume(tile.userId, vol)
+                              setPeerGain(tile.userId, isDeafened ? 0 : getOutputAdjustedVolume(tile.userId, vol))
                             }}
                             className="h-16 cursor-pointer accent-[#5d6cf5]"
                             style={{ writingMode: 'vertical-lr', direction: 'rtl' } as React.CSSProperties}
@@ -1841,8 +1893,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
               onChange={e => {
                 const v = Number(e.target.value)
                 setUserVolumes(prev => ({ ...prev, [userVolumeMenu.userId]: v }))
-                const el = audioElements.current.get(userVolumeMenu.userId)
-                if (el) el.volume = isDeafened ? 0 : getOutputAdjustedVolume(userVolumeMenu.userId, v)
+                setPeerGain(userVolumeMenu.userId, isDeafened ? 0 : getOutputAdjustedVolume(userVolumeMenu.userId, v))
               }}
               className="flex-1 accent-[#5d6cf5]"
             />

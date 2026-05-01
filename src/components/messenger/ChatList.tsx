@@ -43,10 +43,18 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
     chats, addChat, user, unreadCounts, mutedChats, updateUser, notificationsEnabled, setNotificationsEnabled,
     darkMode, setDarkMode, removeChat, setActiveChat, microphoneVolume, outputVolume,
     audioInputDeviceId, audioOutputDeviceId, soundEffectsEnabled, autoPlayMedia,
-    setMicrophoneVolume, setOutputVolume, setAudioInputDeviceId, setAudioOutputDeviceId, setSoundEffectsEnabled, setAutoPlayMedia
+    noiseSuppressionEnabled, noiseSuppressionLevel,
+    setMicrophoneVolume, setOutputVolume, setAudioInputDeviceId, setAudioOutputDeviceId, setSoundEffectsEnabled, setAutoPlayMedia,
+    setNoiseSuppressionEnabled, setNoiseSuppressionLevel,
   } = useMessengerStore()
   const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([])
   const [audioOutputs, setAudioOutputs] = useState<MediaDeviceInfo[]>([])
+  // Mic test
+  const [isMicTesting, setIsMicTesting] = useState(false)
+  const [micTestLevel, setMicTestLevel] = useState(0)
+  const micTestStreamRef = useRef<MediaStream | null>(null)
+  const micTestCtxRef = useRef<AudioContext | null>(null)
+  const micTestRafRef = useRef<number | null>(null)
   const [chatSearchQuery, setChatSearchQuery] = useState('')
   const [chatGroupFilter, setChatGroupFilter] = useState<'MESSME' | 'PLAYME'>('MESSME')
   const [storyFeed, setStoryFeed] = useState<StoryFeedItem[]>([])
@@ -145,6 +153,46 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
     navigator.mediaDevices?.addEventListener?.('devicechange', loadDevices)
     return () => navigator.mediaDevices?.removeEventListener?.('devicechange', loadDevices)
   }, [])
+
+  // ── Mic test ──────────────────────────────────────────────────────────────
+  const startMicTest = useCallback(async () => {
+    try {
+      const audioConstraints: MediaTrackConstraints = {
+        ...(audioInputDeviceId ? { deviceId: { exact: audioInputDeviceId } } : {}),
+        noiseSuppression: noiseSuppressionEnabled,
+        echoCancellation: noiseSuppressionEnabled,
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: false })
+      micTestStreamRef.current = stream
+      const ctx = new AudioContext()
+      micTestCtxRef.current = ctx
+      const analyser = ctx.createAnalyser()
+      analyser.fftSize = 256
+      ctx.createMediaStreamSource(stream).connect(analyser)
+      const buf = new Uint8Array(analyser.frequencyBinCount)
+      const tick = () => {
+        analyser.getByteFrequencyData(buf)
+        const avg = buf.reduce((s, v) => s + v, 0) / buf.length
+        setMicTestLevel(Math.min(100, Math.round((avg / 128) * 100)))
+        micTestRafRef.current = requestAnimationFrame(tick)
+      }
+      micTestRafRef.current = requestAnimationFrame(tick)
+      setIsMicTesting(true)
+    } catch {
+      // Mic access denied — ignore
+    }
+  }, [audioInputDeviceId, noiseSuppressionEnabled])
+
+  const stopMicTest = useCallback(() => {
+    if (micTestRafRef.current) { cancelAnimationFrame(micTestRafRef.current); micTestRafRef.current = null }
+    micTestStreamRef.current?.getTracks().forEach(t => t.stop()); micTestStreamRef.current = null
+    micTestCtxRef.current?.close().catch(() => {}); micTestCtxRef.current = null
+    setMicTestLevel(0)
+    setIsMicTesting(false)
+  }, [])
+
+  // Stop mic test when profile tab is closed
+  useEffect(() => { if (activeTab !== 'profile') stopMicTest() }, [activeTab, stopMicTest])
 
   const handleStoriesWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
     const container = storiesScrollRef.current
@@ -1227,6 +1275,79 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                       </div>
                     </div>
                     <Slider min={0} max={200} step={1} value={[outputVolume]} onValueChange={(value) => setOutputVolume(value[0] ?? 0)} className="w-full" />
+                  </div>
+
+                  {/* ── Noise suppression ────────────────────────────────── */}
+                  <div className="w-full bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 py-3 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Mic className="h-5 w-5 text-black/50 dark:text-white/50" />
+                        <div>
+                          <p className="text-[15px] font-medium text-black dark:text-white">Шумоподавление</p>
+                          <p className="text-xs text-black/40 dark:text-white/40">{noiseSuppressionEnabled ? 'Включено' : 'Отключено'}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setNoiseSuppressionEnabled(!noiseSuppressionEnabled)}
+                        className={cn('relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none', noiseSuppressionEnabled ? 'bg-[#5d6cf5]' : 'bg-black/[0.15] dark:bg-white/[0.15]')}
+                      >
+                        <span className={cn('inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform', noiseSuppressionEnabled ? 'translate-x-6' : 'translate-x-1')} />
+                      </button>
+                    </div>
+                    {noiseSuppressionEnabled && (
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <p className="text-xs text-black/50 dark:text-white/50">Интенсивность</p>
+                          <p className="text-xs font-mono text-black/60 dark:text-white/60">{noiseSuppressionLevel}%</p>
+                        </div>
+                        <Slider
+                          min={0} max={100} step={5}
+                          value={[noiseSuppressionLevel]}
+                          onValueChange={(v) => setNoiseSuppressionLevel(v[0] ?? 50)}
+                          className="w-full"
+                        />
+                        <p className="text-[10px] text-black/30 dark:text-white/30 mt-1.5">Применяется при следующем входе в голосовой канал</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── Mic test ─────────────────────────────────────────── */}
+                  <div className="w-full bg-black/[0.05] dark:bg-white/[0.07] rounded-xl px-4 py-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Mic className={cn('h-5 w-5', isMicTesting ? 'text-[#5d6cf5]' : 'text-black/50 dark:text-white/50')} />
+                        <div>
+                          <p className="text-[15px] font-medium text-black dark:text-white">Проверка микрофона</p>
+                          <p className="text-xs text-black/40 dark:text-white/40">{isMicTesting ? 'Говорите — уровень отображается ниже' : 'Тест входного сигнала'}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={isMicTesting ? stopMicTest : startMicTest}
+                        className={cn(
+                          'px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors',
+                          isMicTesting
+                            ? 'bg-red-500/15 text-red-500 hover:bg-red-500/25'
+                            : 'bg-[#5d6cf5]/15 text-[#5d6cf5] hover:bg-[#5d6cf5]/25'
+                        )}
+                      >
+                        {isMicTesting ? 'Стоп' : 'Тест'}
+                      </button>
+                    </div>
+                    {isMicTesting && (
+                      <div className="w-full h-3 bg-black/[0.08] dark:bg-white/[0.08] rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-75"
+                          style={{
+                            width: `${micTestLevel}%`,
+                            background: micTestLevel > 75
+                              ? '#ef4444'
+                              : micTestLevel > 40
+                              ? '#f59e0b'
+                              : '#5d6cf5',
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
                 </AccordionContent>
               </AccordionItem>

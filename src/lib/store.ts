@@ -26,7 +26,8 @@ interface MessengerState {
   audioOutputDeviceId: string | null
   soundEffectsEnabled: boolean
   autoPlayMedia: boolean
-
+  noiseSuppressionEnabled: boolean
+  noiseSuppressionLevel: number // 0–100
   // UI state
   isLoading: boolean
   error: string | null
@@ -66,6 +67,8 @@ interface MessengerState {
   setAudioOutputDeviceId: (deviceId: string | null) => void
   setSoundEffectsEnabled: (enabled: boolean) => void
   setAutoPlayMedia: (enabled: boolean) => void
+  setNoiseSuppressionEnabled: (enabled: boolean) => void
+  setNoiseSuppressionLevel: (level: number) => void
 
   darkMode: boolean
   setDarkMode: (dark: boolean) => void
@@ -97,6 +100,8 @@ export const useMessengerStore = create<MessengerState>()(
       audioOutputDeviceId: null,
       soundEffectsEnabled: true,
       autoPlayMedia: true,
+      noiseSuppressionEnabled: false,
+      noiseSuppressionLevel: 50,
 
       darkMode: false,
 
@@ -274,6 +279,8 @@ export const useMessengerStore = create<MessengerState>()(
       setAudioOutputDeviceId: (deviceId) => set({ audioOutputDeviceId: deviceId }),
       setSoundEffectsEnabled: (enabled) => set({ soundEffectsEnabled: enabled }),
       setAutoPlayMedia: (enabled) => set({ autoPlayMedia: enabled }),
+      setNoiseSuppressionEnabled: (enabled) => set({ noiseSuppressionEnabled: enabled }),
+      setNoiseSuppressionLevel: (level) => set({ noiseSuppressionLevel: Math.max(0, Math.min(100, level)) }),
 
       setDarkMode: (dark) => set({ darkMode: dark }),
 
@@ -297,7 +304,9 @@ export const useMessengerStore = create<MessengerState>()(
         audioInputDeviceId: state.audioInputDeviceId,
         audioOutputDeviceId: state.audioOutputDeviceId,
         soundEffectsEnabled: state.soundEffectsEnabled,
-        autoPlayMedia: state.autoPlayMedia
+        autoPlayMedia: state.autoPlayMedia,
+        noiseSuppressionEnabled: state.noiseSuppressionEnabled,
+        noiseSuppressionLevel: state.noiseSuppressionLevel,
       }),
       // Custom serialization for Map
       storage: {
