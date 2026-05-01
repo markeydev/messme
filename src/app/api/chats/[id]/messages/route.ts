@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { randomUUID } from 'crypto'
 import { encryptText, decryptText } from '@/lib/serverCrypto'
 import webpush from 'web-push'
+import { getSessionByToken, invalidateChatListCache } from '@/lib/cache'
 
 if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(
@@ -25,8 +26,8 @@ export async function POST(
       return NextResponse.json({ error: 'Не авторизован' }, { status: 401 })
     }
 
-    const session = await db.session.findUnique({ where: { token } })
-    if (!session || session.expiresAt < new Date()) {
+    const session = await getSessionByToken(token)
+    if (!session || new Date(session.expiresAt) < new Date()) {
       return NextResponse.json({ error: 'Сессия истекла' }, { status: 401 })
     }
 
@@ -101,6 +102,11 @@ export async function POST(
       where: { id: chatId },
       data: { updatedAt: new Date() }
     })
+
+    // Invalidate the chat list cache for all members so they see the latest message
+    db.chatMember.findMany({ where: { chatId }, select: { userId: true } })
+      .then(members => members.forEach(m => invalidateChatListCache(m.userId)))
+      .catch(() => {})
 
     // Send push notifications to other members
     if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {

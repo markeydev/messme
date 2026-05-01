@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getSessionByToken, getUserSearchCache, setUserSearchCache } from '@/lib/cache'
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,11 +15,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Find session
-    const session = await db.session.findUnique({
-      where: { token }
-    })
+    const session = await getSessionByToken(token)
 
-    if (!session || session.expiresAt < new Date()) {
+    if (!session || new Date(session.expiresAt) < new Date()) {
       return NextResponse.json(
         { error: 'Сессия истекла' },
         { status: 401 }
@@ -31,6 +30,10 @@ export async function GET(request: NextRequest) {
     if (!query || query.length < 2) {
       return NextResponse.json({ users: [] })
     }
+
+    // Return cached results for this query if available
+    const cached = await getUserSearchCache(query)
+    if (cached) return NextResponse.json({ users: cached })
 
     // Search users by username or email
     const users = await db.user.findMany({
@@ -54,14 +57,16 @@ export async function GET(request: NextRequest) {
       take: 10
     })
 
-    return NextResponse.json({
-      users: users.map(u => ({
-        id: u.id,
-        username: u.username,
-        avatarUrl: u.avatarUrl ?? null,
-        isBadgeVerified: u.isBadgeVerified,
-      }))
-    })
+    const result = users.map(u => ({
+      id: u.id,
+      username: u.username,
+      avatarUrl: u.avatarUrl ?? null,
+      isBadgeVerified: u.isBadgeVerified,
+    }))
+
+    setUserSearchCache(query, result)
+
+    return NextResponse.json({ users: result })
   } catch (error) {
     console.error('Search users error:', error)
     return NextResponse.json(

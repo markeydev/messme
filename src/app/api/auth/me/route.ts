@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hasAdminAccess } from '@/lib/admin'
 import { MAX_PROFILE_BIO_LENGTH } from '@/lib/product-config'
+import { getSessionByToken, invalidateSessionCache } from '@/lib/cache'
 
 async function getSession(request: NextRequest) {
   const token = request.headers.get('Authorization')?.replace('Bearer ', '')
   if (!token) return null
-  const session = await db.session.findUnique({ where: { token } })
-  if (!session || session.expiresAt < new Date()) return null
+  const session = await getSessionByToken(token)
+  if (!session || new Date(session.expiresAt) < new Date()) return null
   return session
 }
 
@@ -24,34 +25,40 @@ export async function GET(request: NextRequest) {
     }
 
     // Find session with user
-    const session = await db.session.findUnique({
-      where: { token },
-      include: {
-        user: {
-          select: {
-            id: true,
-            username: true,
-            email: true,
-            avatarUrl: true,
-            bio: true,
-            linkedMessmeChannelId: true,
-            isBadgeVerified: true,
-            isAdmin: true,
-            isBlocked: true,
-          }
-        }
-      }
-    })
+    const session = await getSessionByToken(token)
 
-    if (!session || session.expiresAt < new Date()) {
+    if (!session || new Date(session.expiresAt) < new Date()) {
       return NextResponse.json(
         { error: 'Сессия истекла' },
         { status: 401 }
       )
     }
 
-    if (session.user.isBlocked) {
+    const user = await db.user.findUnique({
+      where: { id: session.userId },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        avatarUrl: true,
+        bio: true,
+        linkedMessmeChannelId: true,
+        isBadgeVerified: true,
+        isAdmin: true,
+        isBlocked: true,
+      }
+    })
+
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Сессия истекла' },
+        { status: 401 }
+      )
+    }
+
+    if (user.isBlocked) {
       await db.session.delete({ where: { token } }).catch(() => {})
+      invalidateSessionCache(token)
       return NextResponse.json(
         { error: 'Аккаунт заблокирован' },
         { status: 403 }
@@ -60,15 +67,15 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       user: {
-        id: session.user.id,
-        username: session.user.username,
-        email: session.user.email,
-        avatarUrl: session.user.avatarUrl ?? null,
-        bio: session.user.bio ?? null,
-        linkedMessmeChannelId: session.user.linkedMessmeChannelId ?? null,
-        isBadgeVerified: session.user.isBadgeVerified,
-        isAdmin: hasAdminAccess(session.user),
-        isBlocked: session.user.isBlocked,
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        avatarUrl: user.avatarUrl ?? null,
+        bio: user.bio ?? null,
+        linkedMessmeChannelId: user.linkedMessmeChannelId ?? null,
+        isBadgeVerified: user.isBadgeVerified,
+        isAdmin: hasAdminAccess(user),
+        isBlocked: user.isBlocked,
       }
     })
   } catch (error) {

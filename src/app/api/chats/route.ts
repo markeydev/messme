@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { decryptText } from '@/lib/serverCrypto'
+import { getSessionByToken, getChatListCache, setChatListCache } from '@/lib/cache'
 
 // Get all chats for authenticated user
 export async function GET(request: NextRequest) {
@@ -16,12 +17,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Find session
-    const session = await db.session.findUnique({
-      where: { token },
-      include: { user: true }
-    })
+    const session = await getSessionByToken(token)
 
-    if (!session || session.expiresAt < new Date()) {
+    if (!session || new Date(session.expiresAt) < new Date()) {
       return NextResponse.json(
         { error: 'Сессия истекла' },
         { status: 401 }
@@ -30,6 +28,10 @@ export async function GET(request: NextRequest) {
 
     const devId = request.headers.get('X-Device-Id') ?? ''
     void devId // no longer used
+
+    // Return cached chat list if available
+    const cached = await getChatListCache(session.userId)
+    if (cached) return NextResponse.json({ chats: cached })
 
     // Get all chats where user is a member
     const chatMembers = await db.chatMember.findMany({
@@ -111,6 +113,8 @@ export async function GET(request: NextRequest) {
         updatedAt: chat.updatedAt
       }
     })
+
+    setChatListCache(session.userId, chats)
 
     return NextResponse.json({ chats })
   } catch (error) {

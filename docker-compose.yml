@@ -1,4 +1,15 @@
 services:
+  # ── Redis (cache) ─────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save "" --appendonly no --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   # ── PostgreSQL ────────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
@@ -71,6 +82,7 @@ services:
     environment:
       NODE_ENV:     production
       DATABASE_URL: postgresql://messme:${POSTGRES_PASSWORD:-messme_secret}@postgres:5432/messme
+      REDIS_URL:    redis://redis:6379
       SECRET_KEY:   ${SECRET_KEY:?SECRET_KEY is required}
       # Server-side message encryption key (64-char hex = 32 bytes AES-256)
       # Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
@@ -94,6 +106,8 @@ services:
       NEXT_PUBLIC_TURN_PASSWORD: ${TURN_PASSWORD:-}
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       messenger-server:
         condition: service_started
