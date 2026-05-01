@@ -35,7 +35,8 @@ export default function MessengerPage() {
     user, isAuthenticated, activeChat, activeChatId, messages,
     setUser, setToken, setAuthenticated, logout, setActiveChat,
     setMessages, setChats, addChat, addMessage, deleteMessage, updateMessage,
-    incrementUnread, clearUnread, updateChat, darkMode, unreadCounts, notificationsEnabled
+    incrementUnread, clearUnread, updateChat, darkMode, unreadCounts, notificationsEnabled,
+    activeVoiceInfo,
   } = useMessengerStore()
 
   const [isConnected, setIsConnected] = useState(false)
@@ -43,8 +44,6 @@ export default function MessengerPage() {
   const [chatListTab, setChatListTab] = useState<Tab>('chats')
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [initialClipVideoId, setInitialClipVideoId] = useState<string | null>(null)
-  const [lastPlaymeChat, setLastPlaymeChat] = useState<Chat | null>(null)
-  const [returnedFromPlayme, setReturnedFromPlayme] = useState(false)
   const [playmeOverlayPos, setPlaymeOverlayPos] = useState({ x: 12, y: 12 })
   const dragOffsetRef = useRef<{ dx: number; dy: number } | null>(null)
   const [notificationCenterOpen, setNotificationCenterOpen] = useState(false)
@@ -233,10 +232,6 @@ export default function MessengerPage() {
       setActiveChat(chat)
       return
     }
-    if (chat.gameMode) {
-      setLastPlaymeChat(chat)
-      setReturnedFromPlayme(false)
-    }
     setActiveChat(chat)
     clearUnread(chat.id)
     const result = await chatsAPI.getById(chat.id)
@@ -248,8 +243,6 @@ export default function MessengerPage() {
   }, [user, setActiveChat, setMessages, clearUnread, updateChat])
 
   const handleBack = useCallback(() => {
-    if (activeChat?.gameMode) setReturnedFromPlayme(true)
-    else setReturnedFromPlayme(false)
     if (activeChatId && activeChatId !== 'adminbot' && user && !activeChat?.gameMode) messengerSocket.leaveChat(activeChatId, user.id)
     setActiveChat(null)
   }, [activeChatId, activeChat?.gameMode, user, setActiveChat])
@@ -556,20 +549,21 @@ export default function MessengerPage() {
         )
       })()}
 
-      {lastPlaymeChat && returnedFromPlayme && activeChat && !activeChat.gameMode && activeChat.isGroup && (
+      {/* PlayMe voice badge — only when actually in a voice channel and not viewing PlayMe */}
+      {activeVoiceInfo && !activeChat?.gameMode && (
         <button
-          className="fixed z-30 rounded-xl bg-[#5d6cf5] hover:bg-[#4a5be0] text-white px-3 py-2 shadow-xl flex items-center gap-2 select-none"
+          className="fixed z-30 rounded-2xl bg-black/70 dark:bg-black/80 backdrop-blur-md text-white px-3 py-2 shadow-2xl flex items-center gap-2.5 select-none border border-white/10"
           style={{ left: playmeOverlayPos.x, bottom: playmeOverlayPos.y }}
           onClick={() => {
-            setReturnedFromPlayme(false)
-            setActiveChat(lastPlaymeChat)
+            const chat = useMessengerStore.getState().chats.find(c => c.id === activeVoiceInfo.chatId)
+            if (chat) handleSelectChat(chat)
           }}
           onMouseDown={e => {
             dragOffsetRef.current = { dx: e.clientX - playmeOverlayPos.x, dy: e.clientY - (window.innerHeight - playmeOverlayPos.y) }
             const move = (ev: MouseEvent) => {
               if (!dragOffsetRef.current) return
-              const nextX = Math.max(8, Math.min(window.innerWidth - 180, ev.clientX - dragOffsetRef.current.dx))
-              const bottomY = Math.max(8, Math.min(window.innerHeight - 56, window.innerHeight - (ev.clientY - dragOffsetRef.current.dy)))
+              const nextX = Math.max(8, Math.min(window.innerWidth - 220, ev.clientX - dragOffsetRef.current.dx))
+              const bottomY = Math.max(8, Math.min(window.innerHeight - 72, window.innerHeight - (ev.clientY - dragOffsetRef.current.dy)))
               setPlaymeOverlayPos({ x: nextX, y: bottomY })
             }
             const up = () => {
@@ -582,8 +576,23 @@ export default function MessengerPage() {
           }}
           title="Вернуться в Playme"
         >
-          <Gamepad2 className="h-4 w-4" />
-          <span className="text-xs font-semibold">Вернуться в Playme</span>
+          {/* Pulsing green dot */}
+          <span className="relative flex h-2.5 w-2.5 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-400" />
+          </span>
+          <Avatar className="h-7 w-7 shrink-0">
+            <AvatarImage src={user?.avatarUrl ?? undefined} />
+            <AvatarFallback className="text-[10px] bg-[#5d6cf5] text-white">
+              {(user?.username ?? '?')[0].toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex flex-col items-start leading-none min-w-0">
+            <span className="text-[11px] font-semibold text-white truncate max-w-[120px]">{user?.username}</span>
+            <span className="text-[10px] text-white/60 truncate max-w-[120px]">
+              <Gamepad2 className="inline h-2.5 w-2.5 mr-0.5 -mt-px" />{activeVoiceInfo.channelName}
+            </span>
+          </div>
         </button>
       )}
 

@@ -28,6 +28,9 @@ interface MessengerState {
   autoPlayMedia: boolean
   noiseSuppressionEnabled: boolean
   noiseSuppressionLevel: number // 0–100
+  // Active voice channel info (runtime only, not persisted)
+  activeVoiceInfo: { chatId: string; channelName: string; chatName: string } | null
+  setActiveVoiceInfo: (info: { chatId: string; channelName: string; chatName: string } | null) => void
   // UI state
   isLoading: boolean
   error: string | null
@@ -102,6 +105,7 @@ export const useMessengerStore = create<MessengerState>()(
       autoPlayMedia: true,
       noiseSuppressionEnabled: false,
       noiseSuppressionLevel: 50,
+      activeVoiceInfo: null,
 
       darkMode: false,
 
@@ -281,6 +285,7 @@ export const useMessengerStore = create<MessengerState>()(
       setAutoPlayMedia: (enabled) => set({ autoPlayMedia: enabled }),
       setNoiseSuppressionEnabled: (enabled) => set({ noiseSuppressionEnabled: enabled }),
       setNoiseSuppressionLevel: (level) => set({ noiseSuppressionLevel: Math.max(0, Math.min(100, level)) }),
+      setActiveVoiceInfo: (info) => set({ activeVoiceInfo: info }),
 
       setDarkMode: (dark) => set({ darkMode: dark }),
 

@@ -66,7 +66,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   const {
     user, updateChatMembers, updateChat, removeChat, setActiveChat, addChat,
     audioInputDeviceId, audioOutputDeviceId, outputVolume,
-    noiseSuppressionEnabled, noiseSuppressionLevel,
+    noiseSuppressionEnabled, noiseSuppressionLevel, setActiveVoiceInfo,
   } = useMessengerStore()
 
   // ── Channels ──────────────────────────────────────────────────────────────
@@ -617,6 +617,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       setupAnalyser(user.id, stream)
       setActiveVoiceChannel(channel)
       setVoicePeers([])
+      setActiveVoiceInfo({ chatId: chat.id, channelName: channel.name, chatName: chat.name || chat.username || '' })
       messengerSocket.joinVoiceChannel(channel.id, chat.id, user.id, user.username, user.avatarUrl)
       playVcSound(1)
       pingIntervalRef.current = setInterval(async () => {
@@ -632,6 +633,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   const leaveVoiceChannel = useCallback(async () => {
     if (!user || !activeVoiceChannelRef.current) return
     _persistedVoice = null // explicit leave
+    setActiveVoiceInfo(null)
     playVcSound(1)
     messengerSocket.leaveVoiceChannel(activeVoiceChannelRef.current.id, user.id)
     peerConnections.current.forEach(pc => pc.close())
