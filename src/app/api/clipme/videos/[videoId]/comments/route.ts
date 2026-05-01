@@ -113,7 +113,7 @@ export async function POST(
         {
           title: actor?.username ?? 'Новый комментарий',
           body: comment.parentId ? 'Ответил(а) на комментарий в ClipMe' : 'Оставил(а) комментарий к ролику ClipMe',
-          url: '/',
+          url: `/?tab=clipme&clip=${videoId}`,
         }
       )
     }

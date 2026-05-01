@@ -82,7 +82,7 @@ export async function POST(
         {
           title: actor?.username ?? 'Новый лайк',
           body: 'Лайкнул(а) вашу сторис',
-          url: '/',
+          url: '/?tab=chats',
         }
       )
     }

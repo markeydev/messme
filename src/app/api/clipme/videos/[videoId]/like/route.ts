@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { canAccessClipVideo, getSession } from '@/lib/clipme'
+import { sendPushToUsers } from '@/lib/pushNotifications'
 
 export async function POST(
   request: NextRequest,
@@ -27,6 +28,13 @@ export async function POST(
       await db.clipMeLike.delete({ where: { id: existing.id } })
     } else {
       await db.clipMeLike.create({ data: { videoId, userId: session.userId } })
+      if (video.userId !== session.userId) {
+        const actor = await db.user.findUnique({ where: { id: session.userId }, select: { username: true } })
+        sendPushToUsers(
+          [video.userId],
+          { title: actor?.username ?? 'Новый лайк', body: 'Понравился ваш ролик ClipMe', url: `/?tab=clipme&clip=${videoId}` }
+        ).catch(() => {})
+      }
     }
     const likesCount = await db.clipMeLike.count({ where: { videoId } })
 

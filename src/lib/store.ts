@@ -294,7 +294,6 @@ export const useMessengerStore = create<MessengerState>()(
         user: state.user,
         token: state.token,
         isAuthenticated: state.isAuthenticated,
-        privateKeyBase64: state.privateKeyBase64,
         chats: state.chats,
         notificationsEnabled: state.notificationsEnabled,
         mutedChats: state.mutedChats,

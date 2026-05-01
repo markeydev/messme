@@ -22,6 +22,11 @@ interface ActivityNotification {
   title: string
   message: string
   createdAt: string
+  isRead: boolean
+  type: 'message' | 'call' | 'clipme' | 'story' | 'generic'
+  chatId?: string
+  videoId?: string
+  storyUserId?: string
 }
 const MAX_ACTIVITY_NOTIFICATIONS = 200
 
@@ -44,7 +49,7 @@ export default function MessengerPage() {
   const dragOffsetRef = useRef<{ dx: number; dy: number } | null>(null)
   const [notificationCenterOpen, setNotificationCenterOpen] = useState(false)
   const [activityNotifications, setActivityNotifications] = useState<ActivityNotification[]>([])
-  const notificationsCount = activityNotifications.length
+  const notificationsCount = activityNotifications.filter(n => !n.isRead).length
   // Incoming call state
   const [incomingCall, setIncomingCall] = useState<{
     chatId: string; callerId: string; callerName: string
@@ -57,12 +62,21 @@ export default function MessengerPage() {
 
   usePushNotifications(isAuthenticated, notificationsEnabled)
 
-  const addActivityNotification = useCallback((title: string, message: string) => {
+  const addActivityNotification = useCallback((
+    title: string,
+    message: string,
+    meta?: { type?: ActivityNotification['type']; chatId?: string; videoId?: string; storyUserId?: string }
+  ) => {
     const item: ActivityNotification = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       title,
       message,
       createdAt: new Date().toISOString(),
+      isRead: false,
+      type: meta?.type ?? 'generic',
+      chatId: meta?.chatId,
+      videoId: meta?.videoId,
+      storyUserId: meta?.storyUserId,
     }
     setActivityNotifications(prev => [item, ...prev].slice(0, MAX_ACTIVITY_NOTIFICATIONS))
   }, [])
@@ -125,7 +139,7 @@ export default function MessengerPage() {
 
     const handleIncoming = (data: { chatId: string; callerId: string; callerName: string; offer: RTCSessionDescriptionInit; withVideo: boolean }) => {
       setIncomingCall(data)
-      addActivityNotification('Звонок', `${data.callerName} звонит вам`)
+      addActivityNotification('Звонок', `${data.callerName} звонит вам`, { type: 'call' })
     }
 
     // Caller cancelled before callee answered — dismiss the incoming call dialog
@@ -172,7 +186,7 @@ export default function MessengerPage() {
           const chat = allChats.find(c => c.id === msg.chatId)
           const title = chat ? `Messme · ${chat.title}` : 'Messme'
           const body = getMessagePreview(msg)
-          addActivityNotification(title, body)
+          addActivityNotification(title, body, { type: 'message', chatId: msg.chatId })
           if (typeof window !== 'undefined' && window.messmeDesktop?.notify) {
             window.messmeDesktop.notify({ title, body })
           }
@@ -202,9 +216,13 @@ export default function MessengerPage() {
 
   useEffect(() => {
     const handler = (event: Event) => {
-      const payload = (event as CustomEvent<{ title?: string; message?: string }>).detail
+      const payload = (event as CustomEvent<{ title?: string; message?: string; type?: ActivityNotification['type']; chatId?: string; videoId?: string; storyUserId?: string }>).detail
       if (!payload) return
-      addActivityNotification(payload.title ?? 'Уведомление', payload.message ?? '')
+      addActivityNotification(
+        payload.title ?? 'Уведомление',
+        payload.message ?? '',
+        { type: payload.type, chatId: payload.chatId, videoId: payload.videoId, storyUserId: payload.storyUserId }
+      )
     }
     window.addEventListener('messme:notify', handler as EventListener)
     return () => window.removeEventListener('messme:notify', handler as EventListener)
@@ -299,7 +317,15 @@ export default function MessengerPage() {
             <div className="flex items-center gap-2">
               <button
                 className="relative h-8 w-8 rounded-lg text-black/50 dark:text-white/70 hover:text-black/90 dark:hover:text-white hover:bg-black/[0.05] dark:hover:bg-white/[0.08] flex items-center justify-center transition-colors"
-                onClick={() => setNotificationCenterOpen(v => !v)}
+                onClick={() => {
+                  setNotificationCenterOpen(v => {
+                    if (!v) {
+                      // Mark all as read when opening
+                      setActivityNotifications(prev => prev.map(n => ({ ...n, isRead: true })))
+                    }
+                    return !v
+                  })
+                }}
                 title="Уведомления"
               >
                 <Bell className="h-4 w-4" />
@@ -386,30 +412,67 @@ export default function MessengerPage() {
       {isAuthenticated && (
         <>
           {notificationCenterOpen && (
-            <div className="fixed right-4 top-[72px] z-40 w-[min(360px,calc(100vw-2rem))] max-h-[60vh] overflow-hidden rounded-2xl border border-black/[0.08] dark:border-white/[0.12] bg-white/95 dark:bg-[#1a1a1d]/95 backdrop-blur shadow-2xl animate-in fade-in-0 zoom-in-95 duration-200">
-              <div className="h-11 px-3 flex items-center justify-between border-b border-black/[0.06] dark:border-white/[0.08]">
-                <p className="text-sm font-semibold text-black dark:text-white">Уведомления</p>
-                <button
-                  className="text-xs text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white"
-                  onClick={() => setActivityNotifications([])}
-                >
-                  Очистить
-                </button>
+            <>
+              {/* Backdrop — closes panel on any click */}
+              <div
+                className="fixed inset-0 z-30"
+                onClick={() => setNotificationCenterOpen(false)}
+              />
+              <div className="fixed right-4 top-[72px] z-40 w-[min(360px,calc(100vw-2rem))] max-h-[60vh] overflow-hidden rounded-2xl border border-black/[0.08] dark:border-white/[0.12] bg-white/95 dark:bg-[#1a1a1d]/95 backdrop-blur shadow-2xl animate-in fade-in-0 zoom-in-95 duration-200">
+                <div className="h-11 px-3 flex items-center justify-between border-b border-black/[0.06] dark:border-white/[0.08]">
+                  <p className="text-sm font-semibold text-black dark:text-white">Уведомления</p>
+                  <button
+                    className="text-xs text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white"
+                    onClick={() => setActivityNotifications([])}
+                  >
+                    Очистить
+                  </button>
+                </div>
+                <div className="max-h-[calc(60vh-44px)] overflow-y-auto">
+                  {activityNotifications.length === 0 ? (
+                    <p className="p-4 text-sm text-black/45 dark:text-white/45">Пока уведомлений нет</p>
+                  ) : (
+                    activityNotifications.map(item => {
+                      const isNavigable = item.type === 'message' || item.type === 'clipme' || item.type === 'story'
+                      const handleClick = () => {
+                        setNotificationCenterOpen(false)
+                        if (item.type === 'message' && item.chatId) {
+                          const chat = useMessengerStore.getState().chats.find(c => c.id === item.chatId)
+                          if (chat) handleSelectChat(chat)
+                        } else if (item.type === 'clipme' && item.videoId) {
+                          setInitialClipVideoId(item.videoId)
+                          setChatListTab('clipme')
+                          if (activeChat) setActiveChat(null)
+                        } else if (item.type === 'story') {
+                          setChatListTab('chats')
+                          if (activeChat) setActiveChat(null)
+                        }
+                      }
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={isNavigable ? handleClick : undefined}
+                          className={cn(
+                            'px-3 py-2.5 border-b border-black/[0.04] dark:border-white/[0.06] transition-colors',
+                            !item.isRead && 'bg-[#5d6cf5]/[0.04] dark:bg-[#5d6cf5]/[0.07]',
+                            isNavigable && 'cursor-pointer hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+                          )}
+                        >
+                          <div className="flex items-start gap-2">
+                            {!item.isRead && <span className="mt-1.5 flex-shrink-0 w-1.5 h-1.5 rounded-full bg-[#5d6cf5]" />}
+                            <div className={cn('min-w-0', !item.isRead && 'pl-0', item.isRead && 'pl-3.5')}>
+                              <p className="text-xs font-semibold text-black/85 dark:text-white/90 truncate">{item.title}</p>
+                              <p className="text-sm text-black/70 dark:text-white/75">{item.message}</p>
+                              <p className="text-[11px] text-black/35 dark:text-white/35 mt-1">{new Date(item.createdAt).toLocaleString('ru-RU')}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
               </div>
-              <div className="max-h-[calc(60vh-44px)] overflow-y-auto">
-                {activityNotifications.length === 0 ? (
-                  <p className="p-4 text-sm text-black/45 dark:text-white/45">Пока уведомлений нет</p>
-                ) : (
-                  activityNotifications.map(item => (
-                    <div key={item.id} className="px-3 py-2.5 border-b border-black/[0.04] dark:border-white/[0.06]">
-                      <p className="text-xs font-semibold text-black/85 dark:text-white/90">{item.title}</p>
-                      <p className="text-sm text-black/70 dark:text-white/75">{item.message}</p>
-                      <p className="text-[11px] text-black/35 dark:text-white/35 mt-1">{new Date(item.createdAt).toLocaleString('ru-RU')}</p>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
+            </>
           )}
         </>
       )}

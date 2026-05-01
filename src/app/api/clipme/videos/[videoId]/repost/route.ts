@@ -38,7 +38,7 @@ export async function POST(
           {
             title: actor?.username ?? 'Новый репост',
             body: 'Сделал(а) репост вашего ролика ClipMe',
-            url: '/',
+            url: `/?tab=clipme&clip=${videoId}`,
           }
         )
       }
