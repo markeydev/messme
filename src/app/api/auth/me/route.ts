@@ -43,6 +43,7 @@ export async function GET(request: NextRequest) {
         avatarUrl: true,
         bio: true,
         linkedMessmeChannelId: true,
+        clipMeBio: true,
         isBadgeVerified: true,
         isAdmin: true,
         isBlocked: true,
@@ -73,6 +74,7 @@ export async function GET(request: NextRequest) {
         avatarUrl: user.avatarUrl ?? null,
         bio: user.bio ?? null,
         linkedMessmeChannelId: user.linkedMessmeChannelId ?? null,
+        clipMeBio: user.clipMeBio ?? null,
         isBadgeVerified: user.isBadgeVerified,
         isAdmin: hasAdminAccess(user),
         isBlocked: user.isBlocked,
@@ -146,7 +148,7 @@ export async function PATCH(request: NextRequest) {
         ...(bio !== undefined ? { bio: typeof bio === 'string' ? bio.trim().slice(0, MAX_PROFILE_BIO_LENGTH) || null : null } : {}),
         ...(nextLinkedChannelId !== undefined ? { linkedMessmeChannelId: nextLinkedChannelId } : {}),
       },
-      select: { id: true, username: true, email: true, avatarUrl: true, bio: true, linkedMessmeChannelId: true, isBadgeVerified: true, isAdmin: true, isBlocked: true }
+      select: { id: true, username: true, email: true, avatarUrl: true, bio: true, linkedMessmeChannelId: true, clipMeBio: true, isBadgeVerified: true, isAdmin: true, isBlocked: true }
     })
 
     return NextResponse.json({

@@ -690,58 +690,56 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto">
-            {filteredChats.length === 0 ? (
-              /* Empty state */
-              <div className="relative flex flex-col items-center justify-center py-12 px-4 min-h-[320px] overflow-hidden">
-                {/* Decorative background text watermark */}
-                <div aria-hidden className="absolute inset-0 flex flex-col items-center justify-center select-none pointer-events-none overflow-hidden">
-                  <span className="text-[56px] font-black text-black/[0.04] dark:text-white/[0.04] leading-tight tracking-tight whitespace-nowrap">
-                    {chatSearchQuery ? 'Не найдено' : 'Найди людей'}
-                  </span>
-                  {!chatSearchQuery && (
-                  <span className="text-[56px] font-black text-black/[0.04] dark:text-white/[0.04] leading-tight tracking-tight whitespace-nowrap">
-                      Начни общаться
-                    </span>
+            <div className="px-2 pb-[128px] md:pb-2">
+              {isAdminUser && (
+                <button
+                  onClick={() => onSelectChat?.(adminbotChat)}
+                  className={cn(
+                    'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 text-left mb-1.5',
+                    activeChatId === 'adminbot'
+                      ? 'bg-[#152cff]/[0.08] dark:bg-[#5d6cf5]/[0.15]'
+                      : 'hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
                   )}
-                </div>
-                {/* Icon */}
-                <div className="relative z-10 mb-5 w-[88px] h-[88px] rounded-full bg-[#eef1ff] dark:bg-[#1e1e24] flex items-center justify-center shadow-[0_8px_28px_rgba(21,44,255,0.14)]">
-                  <MessageSquare className="h-9 w-9 text-[#152cff]/50" />
-                </div>
-                {/* CTA */}
-                <Button
-                  onClick={() => { resetSearch(); onTabChange('search') }}
-                  className="relative z-10 bg-white dark:bg-white/[0.08] hover:bg-gray-50 dark:hover:bg-white/[0.12] text-black dark:text-white border-0 rounded-full px-8 h-[42px] text-[15px] font-medium shadow-[0_4px_16px_rgba(0,0,0,0.12)]"
                 >
-                  Начать общение
-                </Button>
-              </div>
-            ) : (
-              <div className="px-2 pb-[128px] md:pb-2">
-                {isAdminUser && (
-                  <button
-                    onClick={() => onSelectChat?.(adminbotChat)}
-                    className={cn(
-                      'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 text-left mb-1.5',
-                      activeChatId === 'adminbot'
-                        ? 'bg-[#152cff]/[0.08] dark:bg-[#5d6cf5]/[0.15]'
-                        : 'hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+                  <div className="h-12 w-12 rounded-full bg-[#5d6cf5]/15 text-[#5d6cf5] flex items-center justify-center flex-shrink-0">
+                    <Bot className="h-6 w-6" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-semibold truncate text-[14px] text-black dark:text-white">adminbot</span>
+                      <VerifiedBadge />
+                    </div>
+                    <div className="text-[13px] text-black/50 dark:text-white/50 truncate leading-snug">
+                      Сгенерируйте ссылку на админ-панель
+                    </div>
+                  </div>
+                </button>
+              )}
+              {filteredChats.length === 0 ? (
+                /* Empty state */
+                <div className="relative flex flex-col items-center justify-center py-12 px-2 min-h-[280px] overflow-hidden">
+                  <div aria-hidden className="absolute inset-0 flex flex-col items-center justify-center select-none pointer-events-none overflow-hidden">
+                    <span className="text-[56px] font-black text-black/[0.04] dark:text-white/[0.04] leading-tight tracking-tight whitespace-nowrap">
+                      {chatSearchQuery ? 'Не найдено' : 'Найди людей'}
+                    </span>
+                    {!chatSearchQuery && (
+                      <span className="text-[56px] font-black text-black/[0.04] dark:text-white/[0.04] leading-tight tracking-tight whitespace-nowrap">
+                        Начни общаться
+                      </span>
                     )}
+                  </div>
+                  <div className="relative z-10 mb-5 w-[88px] h-[88px] rounded-full bg-[#eef1ff] dark:bg-[#1e1e24] flex items-center justify-center shadow-[0_8px_28px_rgba(21,44,255,0.14)]">
+                    <MessageSquare className="h-9 w-9 text-[#152cff]/50" />
+                  </div>
+                  <Button
+                    onClick={() => { resetSearch(); onTabChange('search') }}
+                    className="relative z-10 bg-white dark:bg-white/[0.08] hover:bg-gray-50 dark:hover:bg-white/[0.12] text-black dark:text-white border-0 rounded-full px-8 h-[42px] text-[15px] font-medium shadow-[0_4px_16px_rgba(0,0,0,0.12)]"
                   >
-                    <div className="h-12 w-12 rounded-full bg-[#5d6cf5]/15 text-[#5d6cf5] flex items-center justify-center flex-shrink-0">
-                      <Bot className="h-6 w-6" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-semibold truncate text-[14px] text-black dark:text-white">adminbot</span>
-                        <VerifiedBadge />
-                      </div>
-                      <div className="text-[13px] text-black/50 dark:text-white/50 truncate leading-snug">
-                        Сгенерируйте ссылку на админ-панель
-                      </div>
-                    </div>
-                  </button>
-                )}
+                    Начать общение
+                  </Button>
+                </div>
+              ) : (
+                <>
                 {filteredChats.map(chat => {
                   const peerUserId = !chat.isGroup ? chat.members.find(m => m.id !== user?.id)?.id ?? null : null
                   const peer = !chat.isGroup ? chat.members.find(m => m.id !== user?.id) : null
@@ -840,8 +838,9 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
                     </div>
                   </button>
                 )})}
-              </div>
-            )}
+                </>
+              )}
+            </div>
           </div>
         </>
       )}

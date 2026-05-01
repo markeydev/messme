@@ -104,6 +104,9 @@ services:
       NEXT_PUBLIC_TURN_URL:      turn:${TURN_EXTERNAL_IP:-aty-market.ru}:3478
       NEXT_PUBLIC_TURN_USERNAME: messme
       NEXT_PUBLIC_TURN_PASSWORD: ${TURN_PASSWORD:-}
+      # Primary admin (grants isAdmin=true regardless of DB flag)
+      PRIMARY_ADMIN_EMAIL: ${PRIMARY_ADMIN_EMAIL:-}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-}
     depends_on:
       postgres:
         condition: service_healthy

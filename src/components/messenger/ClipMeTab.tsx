@@ -122,6 +122,7 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
   const pendingViewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const activeVideoStartedAtRef = useRef<number | null>(null)
   const previousActiveVideoIdRef = useRef<string | null>(null)
+  const prevPlayingVideoIdRef = useRef<string | null>(null)
   const deepLinkResolvedRef = useRef(false)
 
   const messmeChats = useMemo(() => chats.filter(c => !c.gameMode), [chats])
@@ -299,6 +300,37 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
       if (pendingViewTimerRef.current) clearTimeout(pendingViewTimerRef.current)
     }
   }, [activeVideoId])
+
+  // Reels-like imperative play/pause: pause previous, play current from start
+  useEffect(() => {
+    if (currentView !== 'feed' || channelOverlayVideo) {
+      // Pause everything when overlay is open or not in feed view
+      if (prevPlayingVideoIdRef.current) {
+        const container = videoRefs.current[prevPlayingVideoIdRef.current]
+        container?.querySelector('video')?.pause()
+        prevPlayingVideoIdRef.current = null
+      }
+      return
+    }
+    const prev = prevPlayingVideoIdRef.current
+    const next = activeVideoId
+    if (prev === next) return
+    // Pause previous
+    if (prev) {
+      const container = videoRefs.current[prev]
+      container?.querySelector('video')?.pause()
+    }
+    // Play next from the beginning
+    if (next) {
+      const container = videoRefs.current[next]
+      const videoEl = container?.querySelector('video')
+      if (videoEl) {
+        videoEl.currentTime = 0
+        void videoEl.play().catch(() => {})
+      }
+    }
+    prevPlayingVideoIdRef.current = next
+  }, [activeVideoId, currentView, channelOverlayVideo])
 
   const patchVideoEverywhere = (videoId: string, patch: Partial<ClipMeVideo>) => {
     setVideos(prev => prev.map(video => video.id === videoId ? { ...video, ...patch } : video))
@@ -673,7 +705,6 @@ export function ClipMeTab({ onClose, initialVideoId, initialUserId }: ClipMeTabP
                 <CustomVideoPlayer
                   src={video.videoUrl}
                   className="h-full w-full"
-                  shouldPlay={!channelOverlayVideo && isActive}
                   loop
                   fit="contain"
                   onDoubleTap={() => {
