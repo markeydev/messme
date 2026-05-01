@@ -59,12 +59,17 @@ export async function GET(
     const chat = await db.chat.findUnique({
       where: { id: chatId },
       include: {
-        pinnedMessage: {
-          select: {
-            id: true,
-            encryptedContent: true,
-            createdAt: true,
-            sender: { select: { username: true } },
+        pinnedMessages: {
+          orderBy: { pinnedAt: 'desc' },
+          include: {
+            message: {
+              select: {
+                id: true,
+                encryptedContent: true,
+                createdAt: true,
+                sender: { select: { username: true } },
+              },
+            },
           },
         },
         members: {
@@ -171,14 +176,13 @@ export async function GET(
         gameMode: (chat as any).gameMode ?? false,
         avatarUrl: (chat as any).avatarUrl ?? null,
         ownerId: (chat as any).ownerId ?? null,
-        pinnedMessage: (chat as any).pinnedMessage
-          ? {
-              id: (chat as any).pinnedMessage.id,
-              content: decryptText((chat as any).pinnedMessage.encryptedContent),
-              senderUsername: (chat as any).pinnedMessage.sender?.username ?? null,
-              createdAt: (chat as any).pinnedMessage.createdAt,
-            }
-          : null,
+        pinnedMessages: ((chat as any).pinnedMessages ?? []).map((pm: any) => ({
+          id: pm.message.id,
+          content: decryptText(pm.message.encryptedContent),
+          senderUsername: pm.message.sender?.username ?? null,
+          createdAt: pm.message.createdAt,
+          pinnedAt: pm.pinnedAt,
+        })),
         members: chat.members.map(m => ({
           id: m.user.id,
           username: m.user.username,

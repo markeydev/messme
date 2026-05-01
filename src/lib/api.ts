@@ -43,12 +43,13 @@ export interface Chat {
   } | null
   updatedAt?: string
   hasMore?: boolean
-  pinnedMessage?: {
+  pinnedMessages?: Array<{
     id: string
     content: string
     senderUsername?: string | null
     createdAt: string
-  } | null
+    pinnedAt: string
+  }>
 }
 
 export interface Message {
@@ -524,16 +525,17 @@ export const chatsAPI = {
 
   async setPinnedMessage(
     chatId: string,
-    messageId: string | null
+    messageId: string,
+    pin: boolean
   ): Promise<{
-    pinnedMessage?: { id: string; content: string; senderUsername?: string | null; createdAt: string } | null
+    pinnedMessages?: Array<{ id: string; content: string; senderUsername?: string | null; createdAt: string; pinnedAt: string }>
     error?: string
   }> {
-    const result = await fetchAPI<{ pinnedMessage: { id: string; content: string; senderUsername?: string | null; createdAt: string } | null }>(
+    const result = await fetchAPI<{ pinnedMessages: Array<{ id: string; content: string; senderUsername?: string | null; createdAt: string; pinnedAt: string }> }>(
       `/chats/${encodeURIComponent(chatId)}/pinned-message`,
-      { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageId }) }
+      { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageId, pin }) }
     )
-    if (result.data) return { pinnedMessage: result.data.pinnedMessage }
+    if (result.data) return { pinnedMessages: result.data.pinnedMessages }
     return { error: result.error }
   },
 

@@ -44,6 +44,7 @@ model User {
   adminPanelTokens AdminPanelLinkToken[]
   messageViews     MessageView[]
   messageComments  MessageComment[]
+  pinnedMessages   PinnedChatMessage[]
 
   @@map("users")
 }
@@ -84,13 +85,12 @@ model Chat {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
   ownerId   String?
-  pinnedMessageId String?
   members   ChatMember[]
   owner     User?        @relation(fields: [ownerId], references: [id])
   messages  Message[]
   channels  Channel[]
   roles     GameRoomRole[]
-  pinnedMessage Message?  @relation("ChatPinnedMessage", fields: [pinnedMessageId], references: [id], onDelete: SetNull)
+  pinnedMessages PinnedChatMessage[]
 
   @@map("chats")
 }
@@ -134,7 +134,7 @@ model Message {
   sender                User        @relation(fields: [senderId], references: [id], onDelete: Cascade)
   reactions             MessageReaction[]
   views                 MessageView[]
-  pinnedInChat          Chat[]      @relation("ChatPinnedMessage")
+  pinnedIn              PinnedChatMessage[]
   comments              MessageComment[]
 
   @@index([chatId])
@@ -167,6 +167,21 @@ model MessageComment {
   @@index([messageId, createdAt])
   @@index([userId])
   @@map("message_comments")
+}
+
+model PinnedChatMessage {
+  id         String   @id @default(cuid())
+  chatId     String
+  messageId  String
+  pinnedById String
+  pinnedAt   DateTime @default(now())
+  chat       Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  message    Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  pinnedBy   User     @relation(fields: [pinnedById], references: [id], onDelete: Cascade)
+
+  @@unique([chatId, messageId])
+  @@index([chatId, pinnedAt])
+  @@map("pinned_chat_messages")
 }
 
 model MessageReaction {

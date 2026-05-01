@@ -71,9 +71,12 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
   const [messageViewCounts, setMessageViewCounts] = useState<Record<string, number>>({})
   const viewedMsgIdsRef = useRef<Set<string>>(new Set())
   const [isMediaGalleryOpen, setIsMediaGalleryOpen] = useState(false)
-  const [pinnedMessage, setPinnedMessage] = useState<{ id: string; content: string; senderUsername?: string | null; createdAt: string } | null>(
-    (chat as any).pinnedMessage ?? null
+  type PinnedMsg = { id: string; content: string; senderUsername?: string | null; createdAt: string; pinnedAt: string }
+  const [pinnedMessages, setPinnedMessages] = useState<PinnedMsg[]>(
+    (chat as any).pinnedMessages ?? []
   )
+  const [pinnedIndex, setPinnedIndex] = useState(0)
+  const currentPin = pinnedMessages[pinnedIndex] ?? null
   const [commentsPanel, setCommentsPanel] = useState<{ messageId: string; postPreview: string; initialCount: number } | null>(null)
   const [commentsCounts, setCommentsCounts] = useState<Record<string, number>>({})
 
@@ -83,7 +86,8 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
   const isChannelAdmin = !!currentUserMember?.isAdmin
   const isReadOnlyPersonalChannel = !!chat.isPersonalChannel && chat.ownerId !== user?.id && !isChannelAdmin
   const canManageChannelMembers = !!chat.isGroup && (!chat.isPersonalChannel || chat.ownerId === user?.id)
-  const canPin = !!chat.isGroup && (chat.ownerId === user?.id || isChannelAdmin)
+  // Any member can pin in 1-on-1; group/channel requires owner or admin
+  const canPin = !chat.isGroup || chat.ownerId === user?.id || isChannelAdmin
 
   // Infinite scroll state
   const [isLoadingMore, setIsLoadingMore] = useState(false)
@@ -219,10 +223,11 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
 
   // Listen for real-time pin updates from other members
   useEffect(() => {
-    const handlePinUpdated = (data: { chatId: string; pinnedMessage: { id: string; content: string; senderUsername: string | null; createdAt: string } | null }) => {
+    const handlePinUpdated = (data: { chatId: string; pinnedMessages: Array<{ id: string; content: string; senderUsername: string | null; createdAt: string; pinnedAt: string }> }) => {
       if (data.chatId !== chat.id) return
-      setPinnedMessage(data.pinnedMessage)
-      updateChat(chat.id, { pinnedMessage: data.pinnedMessage } as any)
+      setPinnedMessages(data.pinnedMessages)
+      setPinnedIndex(0)
+      updateChat(chat.id, { pinnedMessages: data.pinnedMessages } as any)
     }
     messengerSocket.on('pin-updated', handlePinUpdated)
     return () => messengerSocket.off('pin-updated', handlePinUpdated)
@@ -311,13 +316,14 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
     setEditingText(msg.content)
   }
 
-  const handlePinMessage = async (messageId: string | null) => {
-    const result = await chatsAPI.setPinnedMessage(chat.id, messageId)
+  const handlePinMessage = async (messageId: string, pin: boolean) => {
+    const result = await chatsAPI.setPinnedMessage(chat.id, messageId, pin)
     if (!result.error) {
-      const newPinned = result.pinnedMessage ?? null
-      setPinnedMessage(newPinned)
-      updateChat(chat.id, { pinnedMessage: newPinned } as any)
-      messengerSocket.broadcastPinUpdated(chat.id, newPinned)
+      const newPins = result.pinnedMessages ?? []
+      setPinnedMessages(newPins)
+      setPinnedIndex(0)
+      updateChat(chat.id, { pinnedMessages: newPins } as any)
+      messengerSocket.broadcastPinUpdated(chat.id, newPins)
     }
   }
 
@@ -544,29 +550,54 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
       </div>
 
       {/* Pinned message banner */}
-      {pinnedMessage && (
+      {currentPin && (
         <div className="flex items-center gap-2 px-4 py-2 border-b border-black/[0.06] dark:border-white/[0.08] bg-black/[0.02] dark:bg-white/[0.03] flex-shrink-0">
-          <svg className="h-3.5 w-3.5 text-[#5d6cf5] flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="12" y1="17" x2="12" y2="22" />
-            <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
-          </svg>
+          {/* Vertical segment indicators (Telegram-style) — shown when >1 pin */}
+          {pinnedMessages.length > 1 && (
+            <div className="flex flex-col gap-[3px] flex-shrink-0">
+              {pinnedMessages.map((_, i) => (
+                <div
+                  key={i}
+                  className={cn(
+                    'w-[3px] rounded-full transition-all',
+                    i === pinnedIndex ? 'h-3 bg-[#5d6cf5]' : 'h-1.5 bg-black/20 dark:bg-white/20'
+                  )}
+                />
+              ))}
+            </div>
+          )}
+          {pinnedMessages.length === 1 && (
+            <svg className="h-3.5 w-3.5 text-[#5d6cf5] flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="17" x2="12" y2="22" />
+              <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
+            </svg>
+          )}
           <button
             className="flex-1 min-w-0 text-left"
             onClick={() => {
-              const el = messageRefs.current[pinnedMessage.id]
+              const el = messageRefs.current[currentPin.id]
               if (el) {
                 el.scrollIntoView({ behavior: 'smooth', block: 'center' })
                 el.classList.add('bg-[#5d6cf5]/10')
                 setTimeout(() => el.classList.remove('bg-[#5d6cf5]/10'), 1500)
               }
+              // Cycle to next pin
+              if (pinnedMessages.length > 1) {
+                setPinnedIndex(prev => (prev + 1) % pinnedMessages.length)
+              }
             }}
           >
-            <span className="text-xs font-medium text-[#5d6cf5] block leading-none mb-0.5">Закреплённое сообщение</span>
-            <span className="text-xs text-black/60 dark:text-white/60 truncate block">{pinnedMessage.content}</span>
+            <span className="text-xs font-medium text-[#5d6cf5] block leading-none mb-0.5">
+              {pinnedMessages.length > 1
+                ? `Закреплённое сообщение ${pinnedMessages.length - pinnedIndex} из ${pinnedMessages.length}`
+                : 'Закреплённое сообщение'
+              }
+            </span>
+            <span className="text-xs text-black/60 dark:text-white/60 truncate block">{currentPin.content}</span>
           </button>
           {canPin && (
             <button
-              onClick={() => handlePinMessage(null)}
+              onClick={() => handlePinMessage(currentPin.id, false)}
               className="h-6 w-6 flex items-center justify-center rounded text-black/30 dark:text-white/30 hover:text-black/60 dark:hover:text-white/60 transition-colors flex-shrink-0"
               title="Открепить"
             >
@@ -1202,9 +1233,9 @@ export function ChatWindow({ chat, messages, onBack, isMobile }: ChatWindowProps
               {canPin && (
                 <button
                   className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] active:bg-black/[0.06] dark:active:bg-white/[0.08] transition-colors text-left"
-                  onClick={() => { handlePinMessage(pinnedMessage?.id === m.id ? null : m.id); setContextMenu(null) }}
+                  onClick={() => { handlePinMessage(m.id, !pinnedMessages.some(p => p.id === m.id)); setContextMenu(null) }}
                 >
-                  {pinnedMessage?.id === m.id
+                  {pinnedMessages.some(p => p.id === m.id)
                     ? <><PinOff className="h-4 w-4 text-black/40 dark:text-white/40 flex-shrink-0" /><span className="text-black dark:text-white text-sm">Открепить</span></>
                     : <><Pin className="h-4 w-4 text-black/40 dark:text-white/40 flex-shrink-0" /><span className="text-black dark:text-white text-sm">Закрепить</span></>
                   }
