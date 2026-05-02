@@ -103,7 +103,7 @@ export const useMessengerStore = create<MessengerState>()(
       audioOutputDeviceId: null,
       soundEffectsEnabled: true,
       autoPlayMedia: true,
-      noiseSuppressionEnabled: false,
+      noiseSuppressionEnabled: true,
       noiseSuppressionLevel: 50,
       activeVoiceInfo: null,
 

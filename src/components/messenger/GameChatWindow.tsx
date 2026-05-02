@@ -48,10 +48,12 @@ interface PersistedVoice {
   pcs: Map<string, RTCPeerConnection>
   audioEls: Map<string, HTMLAudioElement>
   gainEls: Map<string, GainNode>
+  audioCtx: AudioContext | null
   peers: VoicePeer[]
   isMuted: boolean
   isDeafened: boolean
   isCameraOn: boolean
+  userVolumes: Record<string, number>
 }
 
 // Module-level: survives component unmounts (user switching between chats)
@@ -158,6 +160,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
   const avatarFileInputRef = useRef<HTMLInputElement>(null)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [showVoiceRestoredBanner, setShowVoiceRestoredBanner] = useState(false)
+  const [noMicBanner, setNoMicBanner] = useState<'mic' | 'output' | null>(null)
   const [desktopSources, setDesktopSources] = useState<Array<{ id: string; name: string; thumbnail?: string; appIcon?: string | null }>>([])
   const [showDesktopSourcePicker, setShowDesktopSourcePicker] = useState(false)
   const [roles, setRoles] = useState<GameRoomRole[]>([])
@@ -246,6 +249,12 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       peerConnections.current = v.pcs
       audioElements.current = v.audioEls
       gainNodes.current = v.gainEls
+      // Restore the same AudioContext so GainNodes remain connected to it
+      if (v.audioCtx && v.audioCtx.state !== 'closed') {
+        audioCtxRef.current = v.audioCtx
+        audioCtxRef.current.resume().catch(() => {})
+      }
+      setUserVolumes({ ...v.userVolumes })
       setupAnalyser(user.id, v.stream)
       for (const peer of v.peers) {
         if (peer.stream) setupAnalyser(peer.userId, peer.stream)
@@ -290,10 +299,12 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
           pcs: peerConnections.current,
           audioEls: audioElements.current,
           gainEls: gainNodes.current,
+          audioCtx: audioCtxRef.current,
           peers: voicePeersRef.current,
           isMuted: isMicMutedRef.current,
           isDeafened: isDeafenedRef.current,
           isCameraOn: isCameraOnRef.current,
+          userVolumes: userVolumesRef.current,
         }
       }
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current)
@@ -545,6 +556,8 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
           try { audioCtxRef.current.createMediaElementSource(el).connect(gainNode) } catch { /* already connected */ }
           gainNode.connect(audioCtxRef.current.destination)
           gainNodes.current.set(remoteUserId, gainNode)
+          // Resume AudioContext in case it was suspended by browser autoplay policy
+          audioCtxRef.current.resume().catch(() => {})
           // Route output device through AudioContext
           if (audioOutputDeviceId) {
             ;(audioCtxRef.current as any).setSinkId?.(audioOutputDeviceId).catch?.(() => {})
@@ -604,17 +617,22 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       const audioConstraints: MediaTrackConstraints = {
         ...(audioInputDeviceId ? { deviceId: { exact: audioInputDeviceId } } : {}),
         noiseSuppression: noiseSuppressionEnabled,
-        echoCancellation: noiseSuppressionEnabled,
-        autoGainControl: noiseSuppressionEnabled,
-        // Higher noiseSuppressionLevel → reduce latency hints (browser-specific)
-        ...(noiseSuppressionEnabled && noiseSuppressionLevel >= 75 ? { googNoiseSuppression2: true } : {}),
+        echoCancellation: true,
+        autoGainControl: true,
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: audioConstraints,
-        video: false,
-      })
-      localStreamRef.current = stream
-      setupAnalyser(user.id, stream)
+      let stream: MediaStream | null = null
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: false })
+      } catch (micErr: any) {
+        // Join without audio — warn the user to configure device in settings
+        const isNotFound = micErr?.name === 'NotFoundError' || micErr?.name === 'DevicesNotFoundError'
+        setNoMicBanner(isNotFound ? 'mic' : 'mic')
+        setTimeout(() => setNoMicBanner(null), 8000)
+      }
+      if (stream) {
+        localStreamRef.current = stream
+        setupAnalyser(user.id, stream)
+      }
       setActiveVoiceChannel(channel)
       setVoicePeers([])
       setActiveVoiceInfo({ chatId: chat.id, channelName: channel.name, chatName: chat.name || chat.username || '' })
@@ -626,7 +644,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       }, 3000)
       const ms = await messengerSocket.measurePing()
       setPing(ms)
-    } catch { console.error('Microphone denied') }
+    } catch { console.error('Voice channel join error') }
     finally { setIsJoiningVoice(false) }
   }
 
@@ -1260,7 +1278,7 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                           <div
                             key={p.userId}
                             className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] text-white/50 cursor-context-menu"
-                            onContextMenu={isConnected ? e => { e.preventDefault(); setUserVolumeMenu({ userId: p.userId, username: p.username, channelId: ch.id, x: e.clientX, y: e.clientY }) } : undefined}
+                            onContextMenu={canMoveMembers ? e => { e.preventDefault(); setUserVolumeMenu({ userId: p.userId, username: p.username, channelId: ch.id, x: e.clientX, y: e.clientY }) } : undefined}
                             draggable={canMoveMembers}
                             onDragStart={e => {
                               if (!canMoveMembers) return
@@ -1622,8 +1640,8 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
                   >
                     {showHeader ? (
                       <Avatar className="h-9 w-9 flex-shrink-0 mt-0.5">
-                        {chat.avatarUrl && <AvatarImage src={chat.avatarUrl} />}
-                        <AvatarFallback className="bg-[#5d6cf5]/40 text-white text-xs font-bold">{getInitials(chat.title || '#')}</AvatarFallback>
+                        {getMemberAvatar(msg.senderId) && <AvatarImage src={getMemberAvatar(msg.senderId)!} />}
+                        <AvatarFallback className="bg-[#5d6cf5]/40 text-white text-xs font-bold">{getInitials(msg.senderUsername || '#')}</AvatarFallback>
                       </Avatar>
                     ) : (
                       <div className="w-9 flex-shrink-0" />
@@ -1846,6 +1864,13 @@ export function GameChatWindow({ chat, onBack }: GameChatWindowProps) {
       {showVoiceRestoredBanner && activeVoiceChannel && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-xl bg-[#5d6cf5] text-white text-sm shadow-lg">
           Вы в голосовом канале: {activeVoiceChannel.name}
+        </div>
+      )}
+
+      {noMicBanner && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/90 text-white text-sm shadow-lg max-w-xs text-center">
+          <MicOff className="h-4 w-4 flex-shrink-0" />
+          <span>Микрофон не найден. <button className="underline font-semibold" onClick={() => setShowRoomSettings(true)}>Настройте устройство</button> в настройках.</span>
         </div>
       )}
 

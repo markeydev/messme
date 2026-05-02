@@ -160,7 +160,8 @@ export function ChatList({ onSelectChat, activeChatId, onProfileClick, onLogout,
       const audioConstraints: MediaTrackConstraints = {
         ...(audioInputDeviceId ? { deviceId: { exact: audioInputDeviceId } } : {}),
         noiseSuppression: noiseSuppressionEnabled,
-        echoCancellation: noiseSuppressionEnabled,
+        echoCancellation: true,
+        autoGainControl: true,
       }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: false })
       micTestStreamRef.current = stream

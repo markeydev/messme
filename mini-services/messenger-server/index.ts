@@ -439,6 +439,8 @@ io.on('connection', (socket) => {
 
   socket.on('vc-leave', (data: { channelId: string; userId: string }) => {
     const { channelId, userId } = data
+    // Read chatId BEFORE any potential deletion so broadcast always works
+    const chatId = channelChatMap.get(channelId)
     const members = voiceChannelMembers.get(channelId)
     if (members) {
       members.delete(userId)
@@ -448,11 +450,10 @@ io.on('connection', (socket) => {
       }
     }
     // Notify ALL chat members so they can update sidebar occupant lists
-    const chatId = channelChatMap.get(channelId)
     if (chatId) {
       broadcastToChat(chatId, 'voice-channel-left', { channelId, userId })
     } else {
-      // Fallback: notify remaining voice members
+      // Fallback: notify remaining voice members (shouldn't normally be reached)
       const room = voiceChannelMembers.get(channelId)
       if (room) room.forEach((_info, uid) => notifyUser(uid, 'voice-channel-left', { channelId, userId }))
     }
